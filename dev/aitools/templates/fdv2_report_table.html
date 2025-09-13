@@ -1,0 +1,114 @@
+{% if stats and stats|length %}
+<style>
+  /* inlined for progress view */
+  .pct-ok { background: #e8f9e8; color: #167a16; font-weight: 600; }
+  .pct-warn { background: #ffe6e6; color: #a11; }
+  .pct-bad { background: #ff4d4d; color: #fff; font-weight: 700; }
+  /* single-line, smaller Comments */
+  .comments-cell {
+    white-space: nowrap;
+    font-size: 11px;
+    max-width: 560px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .disp-input { border: none; outline: none; background: transparent; width: 98%; font: inherit; padding: 0 2px; }
+</style>
+<div class="small" style="margin:4px 0 6px 0; color:#444;">
+  {% if limit is none %}
+    Mode: using PASS/FAIL flags from logs.
+  {% else %}
+    Mode: threshold by RBER limit {{ '%.3g' % limit }}.
+  {% endif %}
+</div>
+<table>
+  <thead>
+    <tr>
+      <th>FDV Test</th>
+      <th>PR</th>
+      <th>VCC</th>
+      <th>TM</th>
+      <th>Temp</th>
+  <th>Pagemap</th>
+  <th>Unit Count</th>
+      <th>Count</th>
+      <th>PASS</th>
+      <th>FAIL</th>
+      <th>% FAIL</th>
+      <th>Min</th>
+      <th>Max</th>
+      <th>Mean</th>
+      <th>Stdev</th>
+      <th>Median</th>
+  <th>Comment</th>
+      <th>testtime</th>
+      <th>Start</th>
+  <th>End</th>
+  <th>Unit Info</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for r in stats %}
+    <tr>
+      <td>{{ r['fdv_file'] }}</td>
+      <td>{{ r['pr'] }}</td>
+      <td>{{ r['vcc'] }}</td>
+      <td>{{ r['tm'] }}</td>
+      <td>{{ r['temp'] }}</td>
+  <td>{{ r.get('pagemap', r.get('product_type','')) }}</td>
+  <td>{{ r.get('valid_fuseid_count', '') }}</td>
+      <td>{{ r['count'] }}</td>
+      <td>{{ r.get('pass_n', r.get('pass','')) }}</td>
+      <td>
+        {% set failn = r.get('fail_n', r.get('fail','')) %}
+        {% if token and failn and (failn|int) > 0 %}
+          <a href="/fdv/{{ token }}/fails?fdv={{ r['fdv_file'] }}|{{ r['pr'] }}|{{ r['vcc'] }}|{{ r['tm'] }}|{{ r['temp'] }}&file={{ r['fdv_file']|urlencode }}&limit={{ '' if (limit is none) else ('%.6g' % limit) }}" target="_blank" rel="noopener">{{ failn }}</a>
+        {% else %}
+          {{ failn }}
+        {% endif %}
+      </td>
+      {% set total = (r['count']|int if r['count'] is not none else 0) %}
+      {% set f = (r.get('fail_n', r.get('fail',''))|int) %}
+      {% set pct = (100.0 * f / total) if total > 0 else 0.0 %}
+      <td {% if total > 0 %}class="{% if pct == 0 %}pct-ok{% elif pct <= 25 %}pct-warn{% else %}pct-bad{% endif %}"{% endif %}>
+        {% if total > 0 %}{{ pct | round(1) }}%{% endif %}
+      </td>
+      <td>{{ r['min'] }}</td>
+      <td>{{ r['max'] }}</td>
+      <td>{{ r['mean'] }}</td>
+      <td>{{ r['stdev'] }}</td>
+      <td>{{ r['median'] }}</td>
+      <td>
+        {% set key = r['fdv_file'] ~ '|' ~ r['pr'] ~ '|' ~ r['vcc'] ~ '|' ~ r['tm'] ~ '|' ~ r['temp'] %}
+  <input type="text" class="disp-input" data-key="{{ key }}" value="{{ (dispositions or {}).get(key, '') }}" onchange="return onDispositionChange(this, '{{ token }}');" oninput="return onDispositionChange(this, '{{ token }}');" />
+      </td>
+      <td>{{ r.get('testtime_label','') }}</td>
+      <td>{{ r.get('test_start','') }}</td>
+  <td>{{ r.get('test_end','') }}</td>
+  <td><span class="comments-cell">{{ r.get('comments','') }}</span></td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+<script>
+  function onDispositionChange(inp, token) {
+    try {
+      const key = inp.getAttribute('data-key') || '';
+      const val = inp.value || '';
+      fetch(`/fdv/${token}/disposition`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key: key, value: val })
+      }).then(r => r.json()).then(j => {
+        // no-op; could flash success
+      }).catch(_e => {});
+    } catch (e) {}
+    return false;
+  }
+  </script>
+{% else %}
+<div class="small">No data yet…</div>
+{% if total_rows and (invalid_count or 0) == (total_rows or 0) %}
+  <div class="small" style="color:#b00;">All rows ignored due to invalid or missing FUSEID. Expected: K&lt;6 digits&gt;_&lt;int&gt;_&lt;int&gt;_&lt;int&gt; (first int &gt; 0; last two may be negative).</div>
+{% endif %}
+{% endif %}

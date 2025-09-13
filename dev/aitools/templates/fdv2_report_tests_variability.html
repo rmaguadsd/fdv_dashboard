@@ -1,0 +1,71 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>FDV Report v2 — Variability</title>
+  <style>
+  body { font-family: Arial, sans-serif; margin: 16px; }
+  img { max-width: 100%; height: auto; border: 1px solid #ccc; }
+  .img-wrap { max-width: 700px; }
+    .small { font-size: 12px; color: #666; }
+  </style>
+</head>
+<body>
+  {% with messages = get_flashed_messages() %}
+    {% if messages %}
+      <div class="small" style="color:#b00; margin-bottom:8px;">{{ messages|join(' — ') }}</div>
+    {% endif %}
+  {% endwith %}
+  {% if fdvs and fdvs|length %}
+    <div class="small">Selected FDV tests: {{ fdvs|join(', ') }}</div>
+  {% endif %}
+  <p class="small">WL vs RBER (log) by pagetype, split by testname. Top-10 outliers for each chart are highlighted with red circles.</p>
+  {% if img_urls and img_urls|length %}
+  {% for im in img_urls %}
+      {% set diag = per_diags[loop.index0] if per_diags and per_diags|length > loop.index0 else {} %}
+    {% if im.count and im.count > 0 %}
+  <div class="small" style="margin:6px 0 4px 0;"><strong>{{ im.label }}</strong></div>
+  <p class="img-wrap"><img src="{{ im.url }}" alt="variability {{ im.label }}" /></p>
+  <p class="small">Image URL: <a href="{{ im.url }}" target="_blank">open</a> · <a href="{{ im.url }}&group=plane_addr" target="_blank">color by plane addr</a>
+  · data: <a href="{{ url_for('report_tests_variability_data', token=token) }}?{{ 'fdv=' + ('&fdv='.join(fdvs)) }}&sel={{ im.url.split('sel=')[1].split('&')[0] if 'sel=' in im.url else '' }}&limit=10" target="_blank">first 10</a>
+  · <a href="{{ url_for('report_tests_variability_data', token=token) }}?{{ 'fdv=' + ('&fdv='.join(fdvs)) }}&sel={{ im.url.split('sel=')[1].split('&')[0] if 'sel=' in im.url else '' }}&limit=10&format=json" target="_blank">json</a>
+  {% if fallback %}· fallback=ON (WL preferred, PAGE used if WL missing) · <a href="{{ im.url }}&fallback=0" target="_blank">force WL-only</a>{% else %}· WL-only · <a href="{{ im.url }}&fallback=1" target="_blank">allow PAGE fallback if WL missing</a>{% endif %}
+  </p>
+        {% if diag and (diag.missing_wl or diag.missing_rber or diag.used_page_fallback) %}
+          <div class="small">Diag: matched={{ diag.matched_rows or 0 }}, missing WL={{ diag.missing_wl or 0 }}, missing RBER={{ diag.missing_rber or 0 }}, page fallback used={{ diag.used_page_fallback or 0 }}</div>
+        {% endif %}
+        {% if per_outliers and per_outliers[loop.index0] and per_outliers[loop.index0]|length %}
+          <div class="small">Top 10 outliers for this chart</div>
+      <table>
+            <thead>
+        <tr><th>DUT</th><th>WL</th><th>PAGE</th><th>RBER</th><th>Line #</th><th>Raw</th></tr>
+            </thead>
+            <tbody>
+              {% for o in per_outliers[loop.index0] %}
+                <tr>
+                  <td>{{ o['dut'] }}</td>
+                  <td>{{ '%.0f'|format(o['WL']) }}</td>
+          <td>{{ o.get('PAGE','') }}</td>
+                  <td>{{ '%.3e'|format(o['RBER']) }}</td>
+                  <td>{{ o.get('line_number','') }}</td>
+                  <td><a href="{{ url_for('report_rawline', token=token, idx=o.get('_idx', -1)) }}" target="_blank">view</a></td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        {% endif %}
+      {% else %}
+  <p class="small">No data for this selection. {% if diag and diag.missing_wl %}Rows lacked WL. {% if not fallback %}Try enabling PAGE fallback.{% endif %}{% endif %}</p>
+      {% endif %}
+    {% endfor %}
+  {% else %}
+    <p>No selections to plot.</p>
+  {% endif %}
+  <form method="get" action="{{ url_for('report_tests', token=token) }}">
+    {% for f in fdvs %}
+      <input type="hidden" name="fdv" value="{{ f }}" />
+    {% endfor %}
+    <button type="submit">Back</button>
+  </form>
+</body>
+</html>

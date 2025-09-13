@@ -1,0 +1,371 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>FDV Report v2</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 16px; }
+    .flash { color: #b00; margin: 8px 0; }
+    table { border-collapse: collapse; width: 100%; }
+    th, td { border: 1px solid #ccc; padding: 6px 8px; font-size: 13px; }
+    th { background: #f5f5f5; position: sticky; top: 0; }
+    form.up { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; }
+    .small { font-size: 12px; color: #666; }
+  /* % FAIL coloring */
+  .pct-ok { background: #e8f9e8; color: #167a16; font-weight: 600; }
+  .pct-warn { background: #ffe6e6; color: #a11; }
+  .pct-bad { background: #ff4d4d; color: #fff; font-weight: 700; }
+  /* single-line, smaller Comments */
+  .comments-cell { white-space: nowrap; font-size: 11px; max-width: 560px; overflow: hidden; text-overflow: ellipsis; }
+  /* Borderless Disposition edit box */
+  .disp-input { border: none; outline: none; background: transparent; width: 98%; font: inherit; padding: 0 2px; }
+  </style>
+</head>
+<body>
+  {% with messages = get_flashed_messages() %}
+    {% if messages %}
+      <div class="flash">{{ messages|join(' — ') }}</div>
+    {% endif %}
+  {% endwith %}
+
+  <h2>FDV Report v2</h2>
+    <div id="debugLimitBanner" class="small" style="color:#036; background:#eef; padding:4px 6px; margin:4px 0 10px 0; border-left:4px solid #69c;">
+      Server limit mode: {{ 'token(PASS/FAIL-from-logs)' if (limit is none) else ('threshold %.6g' % limit) }}
+      {% if limit_source %}<span style="margin-left:8px;">source={{ limit_source }}</span>{% endif %}
+      {% if limit_raw_string is defined %}<span style="margin-left:8px;">raw='{{ limit_raw_string }}'</span>{% endif %}
+    </div>
+  <p class="small">Input files → fdvtest report → click fdvtest → testname report → select testnames → plots</p>
+
+  <form class="up" method="post" enctype="multipart/form-data" target="_self" onsubmit="return onAnalyzeSubmit(event);">
+  <label>Directory (recursively scanned):</label>
+  <input type="text" name="dirpath" id="dirpath" size="60" placeholder="C:\\\\path\\\\to\\\\folder (leave empty to upload files)" value="{{ used_dir or request.args.get('dirpath', '') }}" oninput="syncAnalyzeGetState();" />
+    <span>or</span>
+    <input type="file" name="dirfiles" id="dirfiles" multiple onchange="syncAnalyzeGetState();" />
+    <input type="hidden" name="limit" id="limitHidden" />
+  <button type="submit" id="anSubmit">Analyze</button>
+  <a href="#" id="anGet" class="small" onclick="return analyzeByGet();" title="Analyze a directory path using GET (will not include selected files)">Analyze directory (GET)</a>
+  </form>
+
+  <div class="small" style="margin:6px 0 12px 0;">
+    <a id="selfTestLink" href="/selftest/resolve" target="_blank" rel="noopener">Self-test: filename resolver</a>
+    <span style="color:#888;">(opens in a new tab and won’t affect your selected files)</span>
+  </div>
+
+  {% if used_dir %}
+  <p class="small">Source: {{ used_dir }}</p>
+  {% endif %}
+
+  {% if empty_hint %}
+  <div class="flash">{{ empty_hint }}</div>
+  {% endif %}
+
+  {% if persist_url %}
+  <div class="small" style="margin:6px 0 12px 0; color:#444;">
+    Permalink (snapshot): <a href="{{ persist_url }}" target="_blank" rel="noopener">{{ persist_url }}</a>
+  </div>
+  {% endif %}
+
+  {% if not stats or not (stats|length) %}
+    <!-- Global RBER limit control (landing area only) -->
+    <div class="small" style="margin:8px 0 10px 0;">
+      RBER limit:
+  <input type="text" id="limitTop" size="8" placeholder="default" data-server-limit="{{ '' if (limit is none) else ('%.6g' % limit) }}" value="{{ 'default' if (limit is none) else ('%.3g' % limit) }}" />
+  <span>(PASS &lt; limit, FAIL ≥ limit; enter 'default' to use PASS/FAIL from logs)</span>
+      <button type="button" onclick="return applyLimit();" style="margin-left:6px;">Apply</button>
+      <div class="small" style="color:#444; margin-top:2px;">
+        <span id="modeText">
+        {% if limit is none %}
+          Mode: using PASS/FAIL flags from logs (limit=default).
+        {% else %}
+          Mode: threshold by RBER limit {{ '%.3g' % limit }}.
+        {% endif %}
+        </span>
+      </div>
+    </div>
+  {% else %}
+    <!-- FDV tests table page: editable RBER limit control -->
+    <div class="small" style="margin:8px 0 10px 0; color:#444;">
+      RBER limit:
+  <input type="text" id="limitTop" size="8" placeholder="default" data-server-limit="{{ '' if (limit is none) else ('%.6g' % limit) }}" value="{{ 'default' if (limit is none) else ('%.3g' % limit) }}" />
+      <button type="button" onclick="return applyLimitAndReload();" style="margin-left:6px;">Apply</button>
+      <span id="modeText">
+      {% if limit is none %}
+        Mode: using PASS/FAIL flags from logs (limit=default).
+      {% else %}
+        Mode: threshold by RBER limit {{ '%.3g' % limit }}.
+      {% endif %}
+      </span>
+    </div>
+  {% endif %}
+
+  {% if stats and stats|length %}
+  <form id="fdvtests-form" method="post" {% if token %}action="{{ url_for('report_tests', token=token) }}"{% endif %}>
+    <div class="small" style="margin:6px 0;">Check one or more FDV tests, then click “View Testnames”.</div>
+    
+    <table>
+      <thead>
+        <tr>
+          <th>Select</th>
+          <th>FDV Test</th>
+          <th>PR</th>
+          <th>VCC</th>
+          <th>TM</th>
+          <th>Temp</th>
+          <th>Pagemap</th>
+          <th>Unit Count</th>
+          <th>Count</th>
+          <th>PASS</th>
+          <th>FAIL</th>
+          <th>% FAIL</th>
+          <th>Min</th>
+          <th>Max</th>
+          <th>Mean</th>
+          <th>Stdev</th>
+          <th>Median</th>
+          <th>Comment</th>
+          <th>testtime</th>
+          <th>Start</th>
+          <th>End</th>
+          <th>Unit Info</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in stats %}
+        <tr>
+          <td>
+            <input type="checkbox" name="fdv" value="{{ r['fdv_file'] }}|{{ r['pr'] }}|{{ r['vcc'] }}|{{ r['tm'] }}|{{ r['temp'] }}" />
+          </td>
+          <td>{{ r['fdv_file'] }}</td>
+          <td>{{ r['pr'] }}</td>
+          <td>{{ r['vcc'] }}</td>
+          <td>{{ r['tm'] }}</td>
+          <td>{{ r['temp'] }}</td>
+          <td>{{ r.get('pagemap', r.get('product_type','')) }}</td>
+          <td>{{ r.get('valid_fuseid_count', '') }}</td>
+          <td>{{ r['count'] }}</td>
+          <td>{{ r.get('pass_n', r.get('pass','')) }}</td>
+          <td>
+            {% set failn = r.get('fail_n', r.get('fail','')) %}
+            {% if failn and (failn|int) > 0 %}
+              {# Only build the link when a session token exists to avoid BuildError #}
+              {% if token %}
+                <a href="/fdv/{{ token }}/fails?fdv={{ r['fdv_file'] }}|{{ r['pr'] }}|{{ r['vcc'] }}|{{ r['tm'] }}|{{ r['temp'] }}&file={{ r['fdv_file']|urlencode }}&limit={{ '' if (limit is none) else ('%.6g' % limit) }}" target="_blank" rel="noopener">{{ failn }}</a>
+              {% else %}
+                {{ failn }}
+              {% endif %}
+            {% else %}
+              {{ failn }}
+            {% endif %}
+          </td>
+          {% set total = (r['count']|int if r['count'] is not none else 0) %}
+          {% set f = (r.get('fail_n', r.get('fail',''))|int) %}
+          {% set pct = (100.0 * f / total) if total > 0 else 0.0 %}
+          <td {% if total > 0 %}class="{% if pct == 0 %}pct-ok{% elif pct <= 25 %}pct-warn{% else %}pct-bad{% endif %}"{% endif %}>
+            {% if total > 0 %}{{ pct | round(1) }}%{% endif %}
+          </td>
+          <td>{{ r['min'] }}</td>
+          <td>{{ r['max'] }}</td>
+          <td>{{ r['mean'] }}</td>
+          <td>{{ r['stdev'] }}</td>
+          <td>{{ r['median'] }}</td>
+          <td>
+            {% set key = r['fdv_file'] ~ '|' ~ r['pr'] ~ '|' ~ r['vcc'] ~ '|' ~ r['tm'] ~ '|' ~ r['temp'] %}
+            <input type="text" class="disp-input" data-key="{{ key }}" value="{{ (dispositions or {}).get(key, '') }}" onchange="return onDispositionChange(this, '{{ token }}');" oninput="return onDispositionChange(this, '{{ token }}');" />
+          </td>
+          <td>{{ r.get('testtime_label','') }}</td>
+          <td>{{ r.get('test_start','') }}</td>
+          <td>{{ r.get('test_end','') }}</td>
+          <td><span class="comments-cell">{{ r.get('comments','') }}</span></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <div style="margin-top:8px; display:flex; gap:8px; align-items:center;">
+      <a href="#" onclick="return viewTestnames();">View Testnames</a>
+      {% if token %}
+      <a href="/routes" target="_blank" class="small" style="margin-left:8px;">routes</a>
+  <!-- master CSV link removed (endpoint deprecated) -->
+      {% endif %}
+    </div>
+  </form>
+  {% else %}
+    <p class="small">Upload files or provide a directory to see results.</p>
+    {% if empty_hint %}
+      <div class="flash">{{ empty_hint }}</div>
+    {% endif %}
+    {% if dbg_fuseid %}
+    <div class="small" style="margin-top:6px;color:#555;">
+      FUSEID stats — total: {{ dbg_fuseid.total_rows }}, with FUSEID: {{ dbg_fuseid.with_fuseid }}, valid: {{ dbg_fuseid.valid_fuseid }}, invalid: {{ dbg_fuseid.invalid_fuseid }}, missing: {{ dbg_fuseid.missing_fuseid }}
+      {% if dbg_fuseid.sample_invalid and dbg_fuseid.sample_invalid|length %}
+      <div>Sample invalid FUSEIDs: {{ dbg_fuseid.sample_invalid|join(', ') }}</div>
+      {% endif %}
+    </div>
+    {% endif %}
+  {% endif %}
+
+</body>
+<script>
+  function getCookie(name) {
+    const m = document.cookie.match(new RegExp('(?:^|; )' + name.replace(/([.$?*|{}()\[\]\\\/\+^])/g, '\\$1') + '=([^;]*)'));
+    return m ? decodeURIComponent(m[1]) : null;
+  }
+  function effectiveLimitString() {
+    // Authoritative order: URL param > server data attribute > cookie/localStorage (only if server not in token mode)
+    try { const params = new URLSearchParams(window.location.search); if (params.has('limit')) { return params.get('limit') || ''; } } catch(e) {}
+    const input = document.getElementById('limitTop');
+    const serverVal = input ? (input.getAttribute('data-server-limit') || '').trim() : '';
+    const serverTokenMode = ('{{ "1" if (limit is none) else "" }}' === '1');
+  if (serverTokenMode) return '';
+    if (serverVal) return serverVal;
+    try { const c = getCookie('fdv2_limit'); if (c !== null) return c; } catch(e) {}
+    try { const ls = localStorage.getItem('fdv2_limit'); if (ls) return ls; } catch(e) {}
+    return serverVal;
+  }
+  function viewTestnames() {
+    try {
+      const form = document.getElementById('fdvtests-form');
+      if (!form) return false;
+      const checks = Array.from(form.querySelectorAll('input[name="fdv"]:checked')).map(i => (i.value || '').trim()).filter(Boolean);
+      if (!checks.length) { alert('Select at least one FDV test.'); return false; }
+  // Use effective limit (URL -> cookie -> server). Blank means PASS/FAIL-from-logs mode.
+  const currentLimit = effectiveLimitString();
+      const params = new URLSearchParams();
+      checks.forEach(v => params.append('fdv', v));
+  // Only append numeric limit when non-blank; blank => token mode (no limit parameter)
+  if (currentLimit !== '') params.append('limit', currentLimit);
+      const base = "{{ url_for('report_tests', token=token) }}";
+      const url = base + '?' + params.toString();
+      window.location.href = url;
+      return false;
+    } catch (e) {
+      console.error(e);
+      return false;
+    }
+  }
+  function applyLimit() {
+    try {
+      const inp = document.getElementById('limitTop');
+      if (!inp) return false;
+      const val = (inp.value || '').trim();
+      // Persist locally and into hidden field for Analyze POST
+      try { localStorage.setItem('fdv2_limit', val); } catch (e) {}
+      // Also set a cookie so the server can pick it up when no token/query is present
+      try {
+        const enc = encodeURIComponent(val);
+        document.cookie = `fdv2_limit=${enc}; path=/; max-age=31536000; SameSite=Lax`;
+      } catch (e) {}
+      const hid = document.getElementById('limitHidden');
+      if (hid) { hid.value = val; }
+      // Update on-page mode text without navigating to avoid clearing file picker
+      const mode = document.getElementById('modeText');
+      if (mode) {
+    if (val === '' || val.toLowerCase()==='default') mode.textContent = 'Mode: using PASS/FAIL flags from logs.';
+        else mode.textContent = 'Mode: threshold by RBER limit ' + val + '.';
+      }
+      // Do not navigate on landing to preserve file inputs
+      return false;
+    } catch (e) { return false; }
+  }
+  function applyLimitAndReload() {
+    try {
+      const inp = document.getElementById('limitTop');
+      const val = (inp?.value || '').trim();
+      try { localStorage.setItem('fdv2_limit', val); } catch(e) {}
+      try { document.cookie = 'fdv2_limit=' + encodeURIComponent(val) + '; path=/; max-age=31536000; SameSite=Lax'; } catch(e) {}
+      const params = new URLSearchParams(window.location.search);
+      if (val === '' || ['none','default'].includes(val.toLowerCase())) {
+        params.set('limit','default');
+      } else {
+        params.set('limit', val);
+      }
+      // Preserve token param if present
+      const tokenMatch = params.get('token');
+      const base = window.location.pathname;
+      window.location.href = base + '?' + params.toString();
+      return false;
+    } catch(e){ return false; }
+  }
+  function analyzeByGet() {
+    try {
+      const form = document.querySelector('form.up');
+      const fileInput = document.getElementById('dirfiles');
+      if (fileInput && fileInput.files && fileInput.files.length) {
+        alert('You have files selected. Click Analyze to upload via POST, or clear files to use directory (GET).');
+        return false;
+      }
+      const inp = form ? document.getElementById('dirpath') : null;
+      const path = inp ? (inp.value || '').trim() : '';
+      if (!path) { alert('Enter a directory path first.'); return false; }
+      const base = "{{ url_for('report_home') }}";
+      const lim = (document.getElementById('limitTop')?.value || '').trim();
+      const url = base + '?dirpath=' + encodeURIComponent(path) + '&limit=' + encodeURIComponent(lim);
+      // Navigate in the same tab
+      window.location.href = url;
+      return false;
+    } catch (e) { return false; }
+  }
+  function syncAnalyzeGetState() {
+    try {
+      const link = document.getElementById('anGet');
+      const fileInput = document.getElementById('dirfiles');
+      const dirInput = document.getElementById('dirpath');
+      const hasFiles = !!(fileInput && fileInput.files && fileInput.files.length);
+      const hasDir = !!(dirInput && (dirInput.value || '').trim());
+      if (!link) return;
+      // Hide GET link when files are chosen to avoid accidental navigation clearing file selection
+      link.style.display = hasFiles ? 'none' : '';
+      // Subtle cue when no directory text
+      link.style.opacity = hasDir ? '1' : '0.7';
+    } catch (e) {}
+  }
+  function onAnalyzeSubmit(evt) {
+    try {
+      const btn = document.getElementById('anSubmit');
+      const link = document.getElementById('anGet');
+      const form = document.querySelector('form.up');
+      const fileInput = document.getElementById('dirfiles');
+    const dirInput = document.getElementById('dirpath');
+    // Copy current limit into hidden field
+    try { const lim = (document.getElementById('limitTop')?.value || '').trim(); const hid = document.getElementById('limitHidden'); if (hid) hid.value = lim; } catch(e) {}
+      const hasFiles = !!(fileInput && fileInput.files && fileInput.files.length);
+    // Persist directory text locally so it survives navigation
+    try { if (dirInput && dirInput.value) { localStorage.setItem('fdv2_last_dirpath', dirInput.value); } } catch(e) {}
+      if (form) {
+        if (hasFiles) {
+          // Let the browser handle the submit to a new tab; this preserves file selection reliably.
+          form.setAttribute('target', '_blank');
+          // Do not disable UI; keep current page intact.
+        } else {
+          // Directory-only GET/POST: keep in the same tab and show busy state.
+          form.setAttribute('target', '_self');
+          if (btn) { btn.disabled = true; btn.textContent = 'Analyzing…'; }
+          if (link) { link.style.pointerEvents = 'none'; link.style.opacity = '0.5'; }
+        }
+      }
+      return true;
+    } catch (e) { return true; }
+  }
+  function onDispositionChange(inp, token) {
+    try {
+      const key = inp.getAttribute('data-key') || '';
+      const val = inp.value || '';
+      fetch(`/fdv/${token}/disposition`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key: key, value: val })
+      }).then(r => r.json()).then(j => {
+        // optional: indicate saved
+      }).catch(_e => {});
+    } catch (e) {}
+    return false;
+  }
+  // Initialize state
+  syncAnalyzeGetState();
+  // Restore saved limit to input and hidden field
+  // Removed previous restoreLimit to prevent re-populating legacy default 0.01; initial value comes strictly from server (blank means token mode).
+  // Restore last directory if field is empty
+  (function restoreLastDir(){ try { const inp = document.getElementById('dirpath'); if (inp && !inp.value) { const v = localStorage.getItem('fdv2_last_dirpath') || ''; if (v) inp.value = v; } } catch(e) {} })();
+  // Save on change
+  (function bindSave(){ try { const inp = document.getElementById('dirpath'); if (inp) { inp.addEventListener('change', function(){ try { localStorage.setItem('fdv2_last_dirpath', inp.value || ''); } catch(e) {} }); } } catch(e) {} })();
+</script>
+</html>
