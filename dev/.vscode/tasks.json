@@ -1,0 +1,26 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Launch FDV apps",
+			"type": "shell",
+			"command": "C:/Users/rmaguad/OneDrive - NANDPS/Documents/Work_mirror/dev/.venv/Scripts/python.exe",
+			"args": [
+				"C:/Users/rmaguad/OneDrive - NANDPS/Documents/Work_mirror/dev/aitools/launch_fdv_apps.py"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
+			"label": "Launch FDV apps",
+			"type": "shell",
+			"command": "C:/Users/rmaguad/OneDrive - NANDPS/Documents/Work_mirror/dev/.venv/Scripts/python.exe",
+			"args": [
+				"C:/Users/rmaguad/OneDrive - NANDPS/Documents/Work_mirror/dev/aitools/launch_fdv_apps.py"
+			],
+			"isBackground": false,
+			"group": "build"
+		}
+	]
+}

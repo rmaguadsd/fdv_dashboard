@@ -29,6 +29,16 @@
   {% endwith %}
 
   <h2>FDV Report v2</h2>
+  <div class="small" style="margin:4px 0 10px 0; background:#f4f8ff; padding:6px 8px; border-left:4px solid #3a78c2;">
+    {% if job_id %}<span style="margin-right:12px;">Job ID: <span class="mono">{{ job_id }}</span></span>{% endif %}
+    {% if token %}<span style="margin-right:12px;">Token: <span class="mono">{{ token }}</span></span>{% endif %}
+    {% if job_id %}
+      <a href="/job/{{ job_id }}/status" target="_blank" rel="noopener">JSON Status</a>
+      &middot; <a href="/job/{{ job_id }}/progress" target="_blank" rel="noopener">Progress Page</a>
+    {% elif token %}
+      <a href="/status/{{ token }}" target="_blank" rel="noopener">JSON Status</a>
+    {% endif %}
+  </div>
     <div id="debugLimitBanner" class="small" style="color:#036; background:#eef; padding:4px 6px; margin:4px 0 10px 0; border-left:4px solid #69c;">
       Server limit mode: {{ 'token(PASS/FAIL-from-logs)' if (limit is none) else ('threshold %.6g' % limit) }}
       {% if limit_source %}<span style="margin-left:8px;">source={{ limit_source }}</span>{% endif %}

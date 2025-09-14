@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta charset="utf-8" />
+		<title>RCDF Compare</title>
+		<style>
+			body { font-family: Segoe UI, Arial, sans-serif; margin: 24px; }
+			img { max-width: 100%; height: auto; border: 1px solid #ddd; }
+			.back { margin-top: 12px; display: inline-block; }
+		</style>
+	</head>
+	<body>
+		<h2>RCDF Compare</h2>
+		<div style="color:#555; margin: 6px 0 12px;">FDV: {{ sel_fdvs|join(', ') }}</div>
+		<img src="{{ img_url }}" alt="RCDF plot" />
+		<p><a class="back" href="{{ url_for('results_view', token=token) }}">← Back</a></p>
+	</body>
+	</html>
+

@@ -1,0 +1,9 @@
+{
+  "recommendations": [
+    "vscodevim.vim"
+  ],
+  "unwantedRecommendations": [
+    // Avoid conflicts with modal editors
+    "asvetliakov.vscode-neovim"
+  ]
+}

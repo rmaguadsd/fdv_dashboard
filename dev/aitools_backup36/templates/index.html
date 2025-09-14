@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>FDV POLL Stats</title>
+    <style>
+      body { font-family: Segoe UI, Arial, sans-serif; margin: 24px; }
+      .panel { border: 1px solid #ddd; border-radius: 6px; padding: 16px; max-width: 680px; }
+      .btn { background: #0078d4; color: #fff; border: 0; padding: 8px 14px; border-radius: 4px; cursor: pointer; }
+      .btn:disabled { background: #9bbad3; }
+      .note { color: #666; font-size: 12px; }
+      .flash { color: #b00020; margin-bottom: 8px; }
+    </style>
+  </head>
+  <body>
+    <div class="nav" style="margin-bottom: 12px;">
+  <strong>FDV POLL</strong>
+  <span style="margin: 0 10px; color: #888;">|</span>
+  <a href="{{ url_for('eimpro') }}">EIMPRO Plots</a>
+    </div>
+    <h2>FDV POLL Stats</h2>
+    {% with messages = get_flashed_messages() %}
+      {% if messages %}
+        {% for m in messages %}
+          <div class="flash">{{ m }}</div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+    <div class="panel">
+      <form method="POST" enctype="multipart/form-data">
+        <label>Upload FDV logs (.txt)</label><br/>
+        <input type="file" name="logfiles" accept=".txt,.log" multiple /><br/>
+        <div style="margin:8px 0;color:#666;">or pick a folder of logs</div>
+        <input type="file" name="logfiles" webkitdirectory directory /><br/><br/>
+        <button class="btn" type="submit">Process</button>
+        <div class="note">We’ll parse FDV POLL lines, ignore -999, and compute stats. You can select multiple files or a folder.</div>
+      </form>
+    </div>
+  </body>
+</html>

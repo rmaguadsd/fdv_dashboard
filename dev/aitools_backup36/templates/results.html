@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>FDV POLL Stats - Results</title>
+    <style>
+      body { font-family: Segoe UI, Arial, sans-serif; margin: 24px; }
+      table { border-collapse: collapse; width: 100%; margin-bottom: 24px; }
+      th, td { border: 1px solid #ddd; padding: 6px 8px; text-align: left; }
+      th { background: #f4f4f4; }
+      .back { margin-top: 12px; display: inline-block; }
+      h3 { margin-top: 28px; }
+  th[data-col="comments"], td[data-col="comments"] { white-space: nowrap; }
+      /* Borderless edit boxes for MinSpec/MaxSpec */
+      td[data-col="MinSpec"] input,
+      td[data-col="MaxSpec"] input {
+        border: none;
+        outline: none;
+        background: transparent;
+        padding: 0 2px;
+        margin: 0;
+        font: inherit;
+        width: 6.5ch;
+      }
+    </style>
+  </head>
+  <body>
+    <h2>FDV POLL Stats</h2>
+    <div>Rows parsed: {{ rows_count }}</div>
+
+    <div class="panel" style="border:1px solid #ddd; border-radius:6px; padding:12px; margin:12px 0;">
+      <form method="POST" action="{{ url_for('update_report', token=token) }}" enctype="multipart/form-data">
+        <strong>Update existing report</strong><br/>
+        <span class="note" style="color:#666;">Append more FDV POLL logs to this session.</span><br/>
+        <input type="file" name="logfiles" accept=".txt,.log" multiple />
+        <button class="btn" type="submit" style="margin-left:8px;">Update</button>
+      </form>
+    </div>
+
+    <div class="panel" style="border:1px solid #ddd; border-radius:6px; padding:12px; margin:12px 0;">
+      <strong>Aliases</strong>
+      <div style="display:flex; gap:24px; flex-wrap:wrap; margin-top:6px;">
+        <form method="POST" action="/alias/save" style="display:inline-flex; align-items:center; gap:8px;">
+          <input type="hidden" name="token" value="{{ token }}"/>
+          <input type="hidden" name="split_vcc" value="{{ '1' if split_vcc else '0' }}"/>
+          <input type="hidden" name="split_temp" value="{{ '1' if split_temp else '0' }}"/>
+          <input type="hidden" name="split_plane" value="{{ '1' if split_plane else '0' }}"/>
+          <label>Save snapshot as alias:</label>
+          <input type="text" name="alias" placeholder="alias name"/>
+          <button type="submit">Save</button>
+        </form>
+        <form method="POST" action="/alias/update" style="display:inline-flex; align-items:center; gap:8px;">
+          <input type="hidden" name="token" value="{{ token }}"/>
+          <input type="hidden" name="split_vcc" value="{{ '1' if split_vcc else '0' }}"/>
+          <input type="hidden" name="split_temp" value="{{ '1' if split_temp else '0' }}"/>
+          <input type="hidden" name="split_plane" value="{{ '1' if split_plane else '0' }}"/>
+          <label>Update report:</label>
+          <select name="alias" required>
+            <option value="" selected>— select alias —</option>
+            {% for a in (aliases or []) %}
+              <option value="{{ a }}">{{ a }}</option>
+            {% endfor %}
+          </select>
+          <button type="submit">Update</button>
+          {% if persist_url %}
+            <span style="margin-left:8px; color:#666;">Permalink: <a href="{{ persist_url }}" target="_blank">open</a></span>
+          {% endif %}
+        </form>
+      </div>
+    </div>
+
+    <div style="margin:10px 0; padding:8px; background:#f9fafb; border:1px solid #eee;">
+      <strong>Split options:</strong>
+      <label style="margin-left:12px;"><input id="chk-vcc" type="checkbox" {% if split_vcc %}checked{% endif %}/> by VCC</label>
+      <label style="margin-left:12px;"><input id="chk-temp" type="checkbox" {% if split_temp %}checked{% endif %}/> by TEMP</label>
+      <label style="margin-left:12px;"><input id="chk-plane" type="checkbox" {% if split_plane %}checked{% endif %}/> by Plane operation</label>
+      <button id="btn-apply-splits" style="margin-left:16px;">Apply</button>
+    </div>
+
+    <h3>
+      By FDV file{% if split_vcc %}, VCC{% endif %}{% if split_temp %}, TEMP{% endif %}, Status{% if split_plane %}, Plane operation{% endif %}
+    </h3>
+    <p><a id="download-link" class="back" href="{{ download_vt }}">Download CSV</a></p>
+    <table>
+      <thead>
+        <tr>
+          <th data-col="sel" style="width:24px;">Sel</th>
+          <th data-col="fdv_file">fdv_file</th>
+          <th data-col="specname">specname</th>
+          {% if split_vcc %}<th data-col="vcc">vcc</th>{% endif %}
+          {% if split_temp %}<th data-col="temp">temp</th>{% endif %}
+          <th data-col="pagemap">pagemap</th>
+          <th data-col="status">status</th>
+          {% if split_plane %}<th data-col="plane">plane operation</th>{% endif %}
+          <th data-col="pr">PR</th>
+          <th data-col="count">count</th>
+          <th data-col="valid_fuseid_count"># valid fuseid</th>
+          <th data-col="MinSpec">MinSpec</th>
+          <th data-col="MaxSpec">MaxSpec</th>
+          <th data-col="min">min</th>
+          <th data-col="max">max</th>
+          <th data-col="mean">mean</th>
+          <th data-col="stdev">stdev</th>
+          <th data-col="median">median</th>
+          <th data-col="comments">comments</th>
+        </tr>
+        <tr>
+          <th></th>
+          <th>
+            <select class="filter-select" data-col="fdv_file"><option value="">All</option></select>
+          </th>
+          <th>
+            <select class="filter-select" data-col="specname"><option value="">All</option></select>
+          </th>
+          {% if split_vcc %}
+          <th>
+            <select class="filter-select" data-col="vcc"><option value="">All</option></select>
+          </th>
+          {% endif %}
+          {% if split_temp %}
+          <th>
+            <select class="filter-select" data-col="temp"><option value="">All</option></select>
+          </th>
+          {% endif %}
+          <th>
+            <select class="filter-select" data-col="pagemap"><option value="">All</option></select>
+          </th>
+          <th>
+            <select class="filter-select" data-col="status"><option value="">All</option></select>
+          </th>
+          {% if split_plane %}
+          <th>
+            <select class="filter-select" data-col="plane"><option value="">All</option></select>
+          </th>
+          {% endif %}
+          <th>
+            <select class="filter-select" data-col="pr"><option value="">All</option></select>
+          </th>
+          <th>
+            <select class="filter-select" data-col="count"><option value="">All</option></select>
+          </th>
+          <th></th>
+          <th></th>
+          <th></th>
+          <th>
+            <select class="range-mode" data-col="min">
+              <option value="">All</option>
+              <option value="range">Range</option>
+            </select>
+            <input class="range-min" data-col="min" size="6" placeholder=">= min" disabled /> …
+            <input class="range-max" data-col="min" size="6" placeholder="<= max" disabled />
+          </th>
+          <th>
+            <select class="range-mode" data-col="max">
+              <option value="">All</option>
+              <option value="range">Range</option>
+            </select>
+            <input class="range-min" data-col="max" size="6" placeholder=">= min" disabled /> …
+            <input class="range-max" data-col="max" size="6" placeholder="<= max" disabled />
+          </th>
+          <th>
+            <select class="range-mode" data-col="mean">
+              <option value="">All</option>
+              <option value="range">Range</option>
+            </select>
+            <input class="range-min" data-col="mean" size="6" placeholder=">= min" disabled /> …
+            <input class="range-max" data-col="mean" size="6" placeholder="<= max" disabled />
+          </th>
+          <th>
+            <select class="range-mode" data-col="stdev">
+              <option value="">All</option>
+              <option value="range">Range</option>
+            </select>
+            <input class="range-min" data-col="stdev" size="6" placeholder=">= min" disabled /> …
+            <input class="range-max" data-col="stdev" size="6" placeholder="<= max" disabled />
+          </th>
+          <th>
+            <select class="range-mode" data-col="median">
+              <option value="">All</option>
+              <option value="range">Range</option>
+            </select>
+            <input class="range-min" data-col="median" size="6" placeholder=">= min" disabled /> …
+            <input class="range-max" data-col="median" size="6" placeholder="<= max" disabled />
+          </th>
+          <th>
+            <select class="filter-select" data-col="pagemap"><option value="">All</option></select>
+          </th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in stats_vt %}
+        <tr>
+          <td data-col="sel">
+            {% if r.fdv_file %}
+              <input type="checkbox" class="fdv-sel" value="{{ r.fdv_file }}||{{ r.vcc }}||{{ r.temp }}||{{ r.status }}||{{ r.plane_group }}" />
+            {% else %}
+              
+            {% endif %}
+          </td>
+          <td data-col="fdv_file">
+            {% if r.fdv_file %}
+            <a class="fdv-link" href="{{ url_for('hist_overview', token=token, fdv=r.fdv_file, vcc=r.vcc, temp=r.temp, status=r.status, plane=r.plane_group, split=1) }}"
+              data-fdv="{{ r.fdv_file }}"
+              data-vcc="{{ r.vcc }}"
+              data-temp="{{ r.temp }}"
+              data-status="{{ r.status }}"
+              data-plane="{{ r.plane_group }}">{{ r.fdv_file }}</a>
+            {% else %}
+              {{ r.fdv_file }}
+            {% endif %}
+          </td>
+          <td data-col="specname">{{ r.specname }}</td>
+          {% if split_vcc %}<td data-col="vcc">{{ r.vcc }}</td>{% endif %}
+          {% if split_temp %}<td data-col="temp">{{ r.temp }}</td>{% endif %}
+          <td data-col="pagemap">{{ r.pagemap or '' }}</td>
+          <td data-col="status">{{ r.status }}</td>
+          {% if split_plane %}<td data-col="plane">{{ r.plane_group }}</td>{% endif %}
+          <td data-col="pr">{{ r.pr }}</td>
+          <td data-col="count">{{ r.count }}</td>
+          <td data-col="valid_fuseid_count">{{ r.valid_fuseid_count or '' }}</td>
+          <td data-col="MinSpec" data-key="{{ r._group_key }}">{{ r.MinSpec or '' }}</td>
+          <td data-col="MaxSpec" data-key="{{ r._group_key }}">{{ r.MaxSpec or '' }}</td>
+          <td data-col="min">{{ r.min }}</td>
+          <td data-col="max">{{ r.max }}</td>
+          <td data-col="mean">{{ r.mean }}</td>
+          <td data-col="stdev">{{ r.stdev }}</td>
+          <td data-col="median">{{ r.median }}</td>
+          <td data-col="comments">{{ r.comments }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <h3>Compare (RCDF)</h3>
+    <p style="margin:6px 0 12px;color:#555;">Select FDV files above, then either click "Compare selected" or click any selected FDV name to open an RCDF plot. Lines are color-coded by FDV.</p>
+    <button id="btn-compare" type="button">Compare selected (RCDF)</button>
+    <div id="sel-count" style="display:inline-block; margin-left:8px; color:#666;"></div>
+
+    <p>
+      <a class="back" href="{{ url_for('hist_overview', token=token) }}">Open all histograms →</a>
+    </p>
+
+    <a class="back" href="{{ url_for('index') }}">← Back</a>
+
+    <script>
+      (function(){
+        // Make MinSpec/MaxSpec editable and persist to backend; highlight rows out of spec
+        function attachSpecEditors(){
+          const rows = Array.from(document.querySelectorAll('table tbody tr'));
+          rows.forEach(tr => {
+            const key = (tr.querySelector('td[data-col="MinSpec"]')?.dataset.key) || (tr.querySelector('td[data-col="MaxSpec"]')?.dataset.key) || '';
+            if(!key) return;
+            ['MinSpec','MaxSpec'].forEach(col => {
+              const td = tr.querySelector(`td[data-col="${col}"]`);
+              if(!td) return;
+              const current = (td.innerText || '').trim();
+              td.innerHTML = '';
+              const inp = document.createElement('input');
+              inp.type = 'text';
+              inp.size = 7;
+              inp.value = current;
+              inp.placeholder = col;
+              function doSave(){
+                const fd = new FormData();
+                fd.append('key', key);
+                if(col === 'MinSpec') fd.append('MinSpec', inp.value.trim());
+                if(col === 'MaxSpec') fd.append('MaxSpec', inp.value.trim());
+                fetch('{{ url_for("specs_update") }}', { method: 'POST', body: fd }).then(r => r.json()).catch(()=>({}));
+                // update highlight after any change
+                highlightBySpecs();
+              }
+              inp.addEventListener('change', doSave);
+              inp.addEventListener('blur', doSave);
+              inp.addEventListener('keydown', function(e){ if(e.key === 'Enter'){ e.preventDefault(); doSave(); inp.blur(); } });
+              td.appendChild(inp);
+            });
+          });
+        }
+        function highlightBySpecs(){
+          const rows = Array.from(document.querySelectorAll('table tbody tr'));
+          rows.forEach(tr => {
+            tr.style.backgroundColor = '';
+            const meanTxt = (tr.querySelector('td[data-col="mean"]')?.innerText || '').trim();
+            const meanVal = Number(meanTxt.replace(/,/g,''));
+            if(isNaN(meanVal)) return;
+            const minInp = tr.querySelector('td[data-col="MinSpec"] input');
+            const maxInp = tr.querySelector('td[data-col="MaxSpec"] input');
+            const minv = minInp && minInp.value.trim() !== '' ? Number(minInp.value) : null;
+            const maxv = maxInp && maxInp.value.trim() !== '' ? Number(maxInp.value) : null;
+            let out = false;
+            if(minv !== null && maxv !== null){ out = (meanVal < minv || meanVal > maxv); }
+            else if(minv !== null){ out = (meanVal < minv); }
+            else if(maxv !== null){ out = (meanVal > maxv); }
+            if(out){ tr.style.backgroundColor = '#fff4f4'; }
+          });
+        }
+        function unique(arr){ return Array.from(new Set(arr.filter(v => v !== undefined && v !== null))); }
+        function getSelectedRows(){
+          const boxes = Array.from(document.querySelectorAll('input.fdv-sel:checked'));
+          return unique(boxes.map(b => b.value));
+        }
+        function parseNumber(s){ if(s===undefined||s===null) return null; const x = Number((s+"").trim()); return isNaN(x) ? null : x; }
+        function populateDropdowns(){
+          const selects = Array.from(document.querySelectorAll('select.filter-select'));
+          selects.forEach(sel => {
+            const col = sel.dataset.col;
+            const values = unique(Array.from(document.querySelectorAll(`tbody td[data-col="${col}"]`)).map(td => td.innerText.trim())).filter(v => v !== '');
+            const allNumeric = values.every(v => !isNaN(Number(v.replace(/,/g,''))));
+            const sorted = values.sort((a,b)=> allNumeric ? (Number(a.replace(/,/g,'')) - Number(b.replace(/,/g,''))) : a.localeCompare(b));
+            sel.options.length = 1; // keep 'All'
+            sorted.forEach(v => { const opt = document.createElement('option'); opt.value = v; opt.textContent = v; sel.appendChild(opt); });
+          });
+        }
+        function applyTableFilters(){
+          const selects = Array.from(document.querySelectorAll('select.filter-select'));
+          const filters = selects.map(s => ({ col: s.dataset.col, val: s.value })).filter(f => f.val !== '');
+          const rangeCols = ['min','max','mean','stdev','median'];
+          const ranges = rangeCols.map(col => {
+            const minv = parseNumber(document.querySelector(`input.range-min[data-col="${col}"]`)?.value);
+            const maxv = parseNumber(document.querySelector(`input.range-max[data-col="${col}"]`)?.value);
+            const mode = document.querySelector(`select.range-mode[data-col="${col}"]`)?.value || '';
+            return { col, minv, maxv, mode };
+          });
+          // If nothing is selected and all ranges are in 'All' mode or empty, show all rows (default view)
+          const noRange = ranges.every(r => (r.mode !== 'range') || ((r.minv === null || r.minv === undefined) && (r.maxv === null || r.maxv === undefined)));
+          if(filters.length === 0 && noRange){
+            document.querySelectorAll('table tbody tr').forEach(tr => { tr.style.display = ''; });
+            return;
+          }
+          const rows = Array.from(document.querySelectorAll('table tbody tr'));
+          rows.forEach(tr => {
+            let show = true;
+            for(const f of filters){
+              const td = tr.querySelector(`[data-col="${f.col}"]`);
+              const txt = td ? td.innerText.trim() : '';
+              if(txt !== f.val){ show=false; break; }
+            }
+            if(show){
+              for(const r of ranges){
+                if(r.mode === 'range' && (r.minv !== null || r.maxv !== null)){
+                  const td = tr.querySelector(`[data-col="${r.col}"]`);
+                  const txt = td ? td.innerText.trim().replace(/,/g,'') : '';
+                  const t = parseNumber(txt);
+                  if(r.minv !== null && r.minv !== undefined && t !== null && !(t >= r.minv)) { show=false; break; }
+                  if(r.maxv !== null && r.maxv !== undefined && t !== null && !(t <= r.maxv)) { show=false; break; }
+                }
+              }
+            }
+            tr.style.display = show ? '' : 'none';
+          });
+        }
+  populateDropdowns();
+  attachSpecEditors();
+  highlightBySpecs();
+        // Enable/disable range inputs based on mode
+        function syncRangeInputs(){
+          document.querySelectorAll('select.range-mode').forEach(sel => {
+            const col = sel.dataset.col;
+            const on = sel.value === 'range';
+            const minEl = document.querySelector(`input.range-min[data-col="${col}"]`);
+            const maxEl = document.querySelector(`input.range-max[data-col="${col}"]`);
+            if(minEl) { minEl.disabled = !on; if(!on) minEl.value=''; }
+            if(maxEl) { maxEl.disabled = !on; if(!on) maxEl.value=''; }
+          });
+        }
+        syncRangeInputs();
+        document.querySelectorAll('select.filter-select').forEach(sel => sel.addEventListener('change', applyTableFilters));
+        document.querySelectorAll('select.range-mode').forEach(sel => sel.addEventListener('change', function(){ syncRangeInputs(); applyTableFilters(); }));
+        document.querySelectorAll('input.range-min, input.range-max').forEach(inp => inp.addEventListener('input', applyTableFilters));
+        applyTableFilters();
+        function updateCount(){
+          const sel = getSelectedRows();
+          const el = document.getElementById('sel-count');
+          el.textContent = sel.length ? `Selected: ${sel.length}` : '';
+        }
+        function goCompare(rows){
+          if(!rows.length){ return; }
+          const qs = new URLSearchParams({ rows: rows.join(',') });
+          // include current split flags so RCDF can facet accordingly
+          qs.set('split_vcc', document.getElementById('chk-vcc').checked ? '1' : '0');
+          qs.set('split_temp', document.getElementById('chk-temp').checked ? '1' : '0');
+          qs.set('split_plane', document.getElementById('chk-plane').checked ? '1' : '0');
+          window.location.href = `{{ url_for('rcdf_compare', token=token) }}?` + qs.toString();
+        }
+        function applySplits(){
+          const vcc = document.getElementById('chk-vcc').checked ? '1' : '0';
+          const temp = document.getElementById('chk-temp').checked ? '1' : '0';
+          const plane = document.getElementById('chk-plane').checked ? '1' : '0';
+          const url = new URL(`{{ url_for('results_view', token=token) }}`, window.location.origin);
+          url.searchParams.set('split_vcc', vcc);
+          url.searchParams.set('split_temp', temp);
+          url.searchParams.set('split_plane', plane);
+          window.location.href = url.toString();
+        }
+        document.getElementById('btn-compare').addEventListener('click', function(){
+          const rows = getSelectedRows();
+          if(!rows.length){ alert('Select at least one row.'); return; }
+          goCompare(rows);
+        });
+        document.querySelectorAll('input.fdv-sel').forEach(cb => cb.addEventListener('change', updateCount));
+        document.getElementById('btn-apply-splits').addEventListener('click', applySplits);
+        updateCount();
+        // Intercept fdv links: if there are selections, open RCDF compare instead
+        document.querySelectorAll('a.fdv-link').forEach(a => {
+          a.addEventListener('click', function(ev){
+            const sel = getSelectedRows();
+            if(sel.length){
+              ev.preventDefault();
+              const row = `${a.dataset.fdv}||${a.dataset.vcc || ''}||${a.dataset.temp || ''}||${a.dataset.status || ''}||${a.dataset.plane || ''}`;
+              if(row && !sel.includes(row)) sel.push(row);
+              goCompare(unique(sel));
+            }
+          });
+        });
+        // Keep download link in sync
+        (function(){
+          const a = document.getElementById('download-link');
+          const url = new URL(a.href, window.location.origin);
+          url.search = new URLSearchParams({
+            split_vcc: document.getElementById('chk-vcc').checked ? '1' : '0',
+            split_temp: document.getElementById('chk-temp').checked ? '1' : '0',
+            split_plane: document.getElementById('chk-plane').checked ? '1' : '0',
+          }).toString();
+          a.href = url.toString();
+        })();
+      })();
+    </script>
+  </body>
+</html>

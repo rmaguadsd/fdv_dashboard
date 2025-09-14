@@ -14,6 +14,7 @@ from __future__ import annotations
 import os
 import io
 import uuid
+import secrets
 import tempfile
 from pathlib import Path
 from typing import Dict, List, Tuple
@@ -1537,6 +1538,26 @@ def _mk_app() -> Flask:
 
 app = _mk_app()
 CACHE: Dict[str, Dict] = {}
+# Job indirection: expose stable job ids separate from internal parse tokens
+JOBS: Dict[str, Dict[str, object]] = {}
+JOBS_LOCK = threading.Lock()
+
+def _create_job_id(token: str, limit_raw: str) -> str:
+    for _ in range(5):
+        jid = secrets.token_urlsafe(8).replace('-', '').replace('_', '')[:10]
+        with JOBS_LOCK:
+            if jid not in JOBS:
+                JOBS[jid] = {'token': token, 'created_at': time.time(), 'limit_raw': limit_raw or ''}
+                return jid
+    fallback = token[:10]
+    with JOBS_LOCK:
+        JOBS.setdefault(fallback, {'token': token, 'created_at': time.time(), 'limit_raw': limit_raw or ''})
+    return fallback
+
+def _resolve_job_token(job_id: str) -> str | None:
+    with JOBS_LOCK:
+        rec = JOBS.get(job_id)
+        return rec.get('token') if rec else None
 
 
 def _list_files(paths: List[Path]) -> List[Path]:
@@ -2036,11 +2057,10 @@ def report_home():
             # Capture user-provided RBER limit (blank or 'none' => pass/fail-from-logs mode)
             lim_raw = (request.form.get('limit') or '').strip()
             token = uuid.uuid4().hex
-            # Initialize cache and start background parse
             CACHE[token] = {'status': 'queued', 'progress': {'files_total': len(file_list), 'files_done': 0, 'percent': 0.0, 'lines': 0}, 'dir': used_dir}
             _start_parse_job(token, file_list, used_dir, lim_raw)
-            # Show progress page; client will poll status and auto-redirect on completion
-            return render_template('fdv2_progress.html', token=token, limit_raw=lim_raw)
+            job_id = _create_job_id(token, lim_raw)
+            return render_template('fdv2_progress.html', token=token, job_id=job_id, limit_raw=lim_raw)
         except Exception as e:
             flash(f"Failed to start parsing: {e}")
             return redirect(url_for('report_home'))
@@ -2062,7 +2082,8 @@ def report_home():
             token = uuid.uuid4().hex
             CACHE[token] = {'status': 'queued', 'progress': {'files_total': len(file_list), 'files_done': 0, 'percent': 0.0, 'lines': 0}, 'dir': used_dir}
             _start_parse_job(token, file_list, used_dir, lim_raw)
-            return render_template('fdv2_progress.html', token=token, limit_raw=lim_raw)
+            job_id = _create_job_id(token, lim_raw)
+            return render_template('fdv2_progress.html', token=token, job_id=job_id, limit_raw=lim_raw)
         except Exception as e:
             flash(f"Failed to start parsing: {e}")
             return redirect(url_for('report_home'))
@@ -2111,7 +2132,17 @@ def report_home():
             app.logger.info("report_home GET token=%s limit_raw='%s' source=%s passfail_mode=%s effective_limit=%s", tok, lim_raw, limit_source, passfail_mode, (None if passfail_mode else limit_for_stats))
         except Exception:
             pass
-        html = render_template('fdv2_report.html', token=tok, stats=stats, used_dir=data.get('dir'), fdv_order=data.get('fdv_order', []), limit=limit_template, persist_url=persist_url, limit_raw_string=lim_raw, limit_source=limit_source)
+        # Try to find associated job id
+        job_id_for_token = None
+        try:
+            with JOBS_LOCK:
+                for _jid, _rec in JOBS.items():
+                    if _rec.get('token') == tok:
+                        job_id_for_token = _jid
+                        break
+        except Exception:
+            pass
+        html = render_template('fdv2_report.html', token=tok, job_id=job_id_for_token, stats=stats, used_dir=data.get('dir'), fdv_order=data.get('fdv_order', []), limit=limit_template, persist_url=persist_url, limit_raw_string=lim_raw, limit_source=limit_source)
         try:
             _persist_write('report2', tok, html)
         except Exception:
@@ -2121,7 +2152,7 @@ def report_home():
         app.logger.info("report_home GET (no token) limit_raw='%s' source=%s passfail_mode=%s effective_limit=%s", lim_raw, limit_source, passfail_mode, (None if passfail_mode else limit_for_stats))
     except Exception:
         pass
-    return render_template('fdv2_report.html', token='', stats=[], used_dir=None, fdv_order=[], limit=None, limit_raw_string=lim_raw, limit_source=limit_source)
+    return render_template('fdv2_report.html', token='', job_id=None, stats=[], used_dir=None, fdv_order=[], limit=None, limit_raw_string=lim_raw, limit_source=limit_source)
 
 
 @app.route('/status/<token>')
@@ -2136,6 +2167,209 @@ def report_status(token: str):
         'error': data.get('error')
     }
     return Response(json.dumps(out), mimetype='application/json')
+
+@app.route('/job/<job_id>/status')
+def job_status(job_id: str):
+    token = _resolve_job_token(job_id)
+    if not token:
+        return Response(json.dumps({'status': 'missing'}), mimetype='application/json', status=404)
+    return report_status(token)
+
+@app.route('/job/<job_id>/progress')
+def job_progress(job_id: str):
+    token = _resolve_job_token(job_id)
+    if not token:
+        return redirect(url_for('report_home'))
+    data = CACHE.get(token)
+    if not data:
+        return redirect(url_for('report_home'))
+    limit_raw = ''
+    try:
+        with JOBS_LOCK:
+            rec = JOBS.get(job_id)
+            if rec:
+                limit_raw = rec.get('limit_raw','')  # type: ignore[arg-type]
+    except Exception:
+        pass
+    return render_template('fdv2_progress.html', token=token, job_id=job_id, limit_raw=limit_raw)
+
+@app.route('/job/<job_id>/report')
+def job_report(job_id: str):
+    token = _resolve_job_token(job_id)
+    if not token:
+        return redirect(url_for('report_home'))
+    lr = request.args.get('limit')
+    if lr:
+        return redirect(url_for('report_home', token=token, limit=lr))
+    return redirect(url_for('report_home', token=token))
+
+@app.route('/api/launch', methods=['POST'])
+def api_launch():
+    """Launch a parsing job via JSON or multipart form.
+
+    Accepts either a directory path (dirpath) or uploaded files (files field).
+    Optional field 'limit'. Returns JSON with job and status URLs.
+    """
+    try:
+        lim_raw = (request.form.get('limit') or '').strip()
+    except Exception:
+        lim_raw = ''
+    dirpath = (request.form.get('dirpath') or '').strip()
+    used_dir: str | None = None
+    file_list: List[Path] = []
+    try:
+        if dirpath:
+            dp = Path(dirpath)
+            if not dp.exists() or not dp.is_dir():
+                return Response(json.dumps({'error': 'directory not found'}), mimetype='application/json', status=400)
+            used_dir = str(dp)
+            file_list = _list_files([dp])
+        else:
+            files = request.files.getlist('files')
+            if not files:
+                return Response(json.dumps({'error': 'no files provided'}), mimetype='application/json', status=400)
+            tmp_dir = Path(tempfile.mkdtemp(prefix='fdv_run_', dir=tempfile.gettempdir()))
+            saved: List[Path] = []
+            for i, f in enumerate(files):
+                name = f.filename or f"fdv_{i}.txt"
+                base = Path(name).name or f"fdv_{i}.txt"
+                dst = tmp_dir / f"{i:05d}_{base}"
+                dst.write_bytes(f.read())
+                saved.append(dst)
+            used_dir = str(tmp_dir)
+            file_list = saved
+        if not file_list:
+            return Response(json.dumps({'error': 'no files found'}), mimetype='application/json', status=400)
+        token = uuid.uuid4().hex
+        CACHE[token] = {'status': 'queued', 'progress': {'files_total': len(file_list), 'files_done': 0, 'percent': 0.0, 'lines': 0}, 'dir': used_dir}
+        _start_parse_job(token, file_list, used_dir, lim_raw)
+        job_id = _create_job_id(token, lim_raw)
+        base = request.host_url.rstrip('/')
+        payload = {
+            'job_id': job_id,
+            'token': token,
+            'status_url': f"{base}/job/{job_id}/status",
+            'progress_url': f"{base}/job/{job_id}/progress",
+            'report_url': f"{base}/job/{job_id}/report",
+        }
+        return Response(json.dumps(payload), mimetype='application/json')
+    except Exception as e:
+        return Response(json.dumps({'error': str(e)}), mimetype='application/json', status=500)
+
+@app.route('/api/job/<job_id>/progress')
+def api_job_progress(job_id: str):
+    token = _resolve_job_token(job_id)
+    if not token:
+        return Response(json.dumps({'error': 'job not found'}), mimetype='application/json', status=404)
+    data = CACHE.get(token) or {}
+    out = {
+        'job_id': job_id,
+        'token': token,
+        'status': data.get('status','unknown'),
+        'progress': data.get('progress', {}),
+        'error': data.get('error')
+    }
+    return Response(json.dumps(out), mimetype='application/json')
+
+@app.route('/api/job/<job_id>/report/table')
+def api_job_report_table(job_id: str):
+    token = _resolve_job_token(job_id)
+    if not token:
+        return Response(json.dumps({'error': 'job not found'}), mimetype='application/json', status=404)
+    data = CACHE.get(token) or {}
+    rows = data.get('rows', []) or []
+    # Use current limit rules similar to report_home (do not persist new limit modifications here)
+    lim_raw = (JOBS.get(job_id, {}).get('limit_raw') if job_id in JOBS else '') or ''
+    passfail_mode = (lim_raw.strip().lower() in ('', 'none', 'default'))
+    try:
+        if passfail_mode:
+            stats = stats_by_fdv_with_splits(rows, limit=1e9, passfail_mode=True) if rows else []
+            limit_template = None
+        else:
+            try:
+                limit_val = float(lim_raw)
+            except Exception:
+                limit_val = 1e9
+                passfail_mode = True
+            stats = stats_by_fdv_with_splits(rows, limit=limit_val, passfail_mode=False) if rows else []
+            limit_template = limit_val if not passfail_mode else None
+    except Exception:
+        stats = []
+        limit_template = None
+    try:
+        html = render_template('fdv2_report_table_only.html', token=token, job_id=job_id, stats=stats, limit=limit_template)
+    except Exception as e:
+        return Response(json.dumps({'error': f'render failed: {e}'}), mimetype='application/json', status=500)
+    payload = {
+        'job_id': job_id,
+        'token': token,
+        'status': data.get('status','unknown'),
+        'table_html': html,
+        'rows_count': len(rows),
+        'stats_count': len(stats)
+    }
+    return Response(json.dumps(payload), mimetype='application/json')
+
+@app.route('/embed/job/<job_id>/progress')
+def embed_job_progress(job_id: str):
+    token = _resolve_job_token(job_id)
+    if not token:
+        return Response('<div>Job not found</div>', mimetype='text/html', status=404)
+    data = CACHE.get(token) or {}
+    base = request.host_url.rstrip('/')
+    status_text = data.get('status','unknown')
+    # Build JS without f-string to avoid brace escaping complexity
+    js = (
+        "const jid='JOB_ID';"
+        "async function tick(){try{const r=await fetch('BASE_URL/job/JOB_ID/status',{cache:'no-store'});"
+        "if(r.ok){const d=await r.json();document.getElementById('st').textContent=d.status;"
+        "const p=d.progress||{};const pc=Math.max(0,Math.min(100,Number(p.percent||0)));"
+        "document.getElementById('f').style.width=pc.toFixed(1)+'%';"
+        "document.getElementById('pct').textContent=pc.toFixed(1)+'% lines='+(p.lines||0);"
+        "if(d.status==='done')return;}}catch(e){}setTimeout(tick,1000);}tick();"
+    ).replace('JOB_ID', job_id).replace('BASE_URL', base)
+    html = (
+        "<!doctype html><html><head><meta charset='utf-8'>"
+        f"<title>Progress {job_id}</title>"
+        "<style>body{font:12px Arial;margin:6px}.bar{height:8px;background:#eee;border-radius:4px;overflow:hidden}.bar>div{height:100%;background:#4caf50;width:0%}</style>"
+        "</head><body>"
+        f"<div>Job <strong>{job_id}</strong> status: <span id='st'>{status_text}</span></div>"
+        "<div class='bar'><div id='f'></div></div><div id='pct' style='margin-top:4px;'></div>"
+        f"<div style='margin-top:6px;'><a href='{base}/job/{job_id}/report' target='_blank'>Open Report</a> | <a href='{base}/job/{job_id}/status' target='_blank'>JSON</a></div>"
+        f"<script>{js}</script>"
+        "</body></html>"
+    )
+    return Response(html, mimetype='text/html')
+
+@app.route('/embed/job/<job_id>/report')
+def embed_job_report(job_id: str):
+    token = _resolve_job_token(job_id)
+    if not token:
+        return Response('<div>Job not found</div>', mimetype='text/html', status=404)
+    data = CACHE.get(token) or {}
+    rows = data.get('rows', []) or []
+    lim_raw = (JOBS.get(job_id, {}).get('limit_raw') if job_id in JOBS else '') or ''
+    passfail_mode = (lim_raw.strip().lower() in ('', 'none', 'default'))
+    try:
+        if passfail_mode:
+            stats = stats_by_fdv_with_splits(rows, limit=1e9, passfail_mode=True) if rows else []
+            limit_template = None
+        else:
+            try:
+                limit_val = float(lim_raw)
+            except Exception:
+                limit_val = 1e9
+                passfail_mode = True
+            stats = stats_by_fdv_with_splits(rows, limit=limit_val, passfail_mode=False) if rows else []
+            limit_template = limit_val if not passfail_mode else None
+    except Exception:
+        stats = []
+        limit_template = None
+    try:
+        html = render_template('fdv2_report_table_only.html', token=token, job_id=job_id, stats=stats, limit=limit_template)
+    except Exception as e:
+        return Response(f"<div>Render error: {e}</div>", mimetype='text/html', status=500)
+    return Response(html, mimetype='text/html')
 
 @app.route('/status/<token>/fdvtable')
 def report_status_fdvtable(token: str):

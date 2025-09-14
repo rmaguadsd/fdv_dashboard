@@ -1,0 +1,25 @@
+{
+  "python.defaultInterpreterPath": "C:\\Users\\rmaguad\\Documents\\Work\\.venv\\Scripts\\python.exe",
+  "python.terminal.activateEnvironment": true,
+  // Force open as Text Editor for common log-like files
+  "workbench.editorAssociations": [
+    { "viewType": "default", "filenamePattern": "*.txt" },
+    { "viewType": "default", "filenamePattern": "*.log" },
+    { "viewType": "default", "filenamePattern": "*.file" },
+    { "viewType": "default", "filenamePattern": "*.out" },
+    { "viewType": "default", "filenamePattern": "*.csv" }
+  ],
+  // Avoid preview-only tabs so Vim and typing attach reliably
+  "workbench.editor.enablePreview": false,
+  "workbench.editor.enablePreviewFromQuickOpen": false,
+  // Make large files still open in the regular editor
+  "editor.largeFileOptimizations": true,
+  // Keep Vim extension active consistently
+  "vim.useCtrlKeys": true,
+  "vim.handleKeys": {
+    // Let Vim handle Esc reliably
+    "<Esc>": true
+  },
+  // Ensure Vim extension is not disabled per-language
+  "vim.disableExtension": []
+}

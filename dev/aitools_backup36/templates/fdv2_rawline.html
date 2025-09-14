@@ -1,0 +1,27 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>FDV Report v2 — Raw Line</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 16px; }
+    pre { background: #f8f8f8; padding: 12px; border: 1px solid #ddd; overflow-x: auto; }
+    table { border-collapse: collapse; }
+    td { padding: 4px 8px; }
+  </style>
+</head>
+<body>
+  <h3>Raw FDV OUTPUT line</h3>
+  <table>
+    <tr><td><b>FDV</b></td><td>{{ row.get('fdv_file','') }}</td></tr>
+    <tr><td><b>Line #</b></td><td>{{ row.get('line_number','') }}</td></tr>
+    <tr><td><b>DUT</b></td><td>{{ row.get('dut_id','') }}</td></tr>
+    <tr><td><b>Testname</b></td><td>{{ row.get('tname','') }}</td></tr>
+    <tr><td><b>PR</b></td><td>{{ row.get('pr','') }}</td></tr>
+    <tr><td><b>FuseID</b></td><td>{{ row.get('fuseid','') }}</td></tr>
+    <tr><td><b>WL</b></td><td>{{ row.get('wl','') }}</td></tr>
+    <tr><td><b>RBER</b></td><td>{{ row.get('rber','') }}</td></tr>
+  </table>
+  <pre>{{ row.get('raw_line','') }}</pre>
+</body>
+</html>

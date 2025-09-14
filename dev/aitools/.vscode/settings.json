@@ -1,0 +1,7 @@
+{
+  "git.temporaryRepositoryLocation": "global",
+  "terminal.integrated.env.windows": {
+    "TMP": "D:\\vscode-tmp",
+    "TEMP": "D:\\vscode-tmp"
+  }
+}

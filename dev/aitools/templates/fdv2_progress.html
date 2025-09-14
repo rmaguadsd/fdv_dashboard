@@ -13,6 +13,14 @@
 </head>
 <body>
   <h3>Parsing FDV logs…</h3>
+  <div class="small" style="margin:4px 0 10px 0; background:#f4f8ff; padding:6px 8px; border-left:4px solid #3a78c2;">
+    {% if job_id %}<div>Job ID: <span class="mono" id="jobIdDisp">{{ job_id }}</span></div>{% endif %}
+    <div>Token: <span class="mono" id="tokenDisp">{{ token }}</span></div>
+    <div style="margin-top:4px;">
+      <a href="/job/{{ job_id }}/status" target="_blank" rel="noopener" class="small">JSON Status</a>
+      {% if job_id %} &middot; <a href="/job/{{ job_id }}/report" target="_blank" rel="noopener" class="small">Open Report (new tab)</a>{% endif %}
+    </div>
+  </div>
   <div class="bar"><div id="fill"></div></div>
   <div class="small mono" id="txt">Starting…</div>
   <div class="small mono" id="eta" style="margin-top:2px;color:#666;"></div>
@@ -36,6 +44,7 @@
   <div id="fdvtable" class="small">Collecting…</div>
   <script data-limit="{{ limit_raw or '' }}">
   const token = "{{ token }}";
+  const jobId = "{{ job_id or '' }}";
   // RBER limit chosen when analysis started; blank/none => token (log PASS/FAIL) mode
   let limitRaw = (document.currentScript.getAttribute('data-limit') || '').trim();
   function updateLimitModeDisplay(){
