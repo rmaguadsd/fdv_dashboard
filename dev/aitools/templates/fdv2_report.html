@@ -16,7 +16,10 @@
   .pct-warn { background: #ffe6e6; color: #a11; }
   .pct-bad { background: #ff4d4d; color: #fff; font-weight: 700; }
   /* single-line, smaller Comments */
-  .comments-cell { white-space: nowrap; font-size: 11px; max-width: 560px; overflow: hidden; text-overflow: ellipsis; }
+  .comments-cell { white-space: nowrap; font-size: 11px; max-width: 1120px; overflow: hidden; text-overflow: ellipsis; }
+  /* widen editable comment (disposition) column */
+  th.comment-col, td.comment-col { width: 480px; min-width: 480px; }
+  .disp-wrapper { flex: 1 1 auto; }
   /* Borderless Disposition edit box */
   .disp-input { border: none; outline: none; background: transparent; width: 98%; font: inherit; padding: 0 2px; }
   .disp-wrapper { display:flex; align-items:center; gap:4px; }
@@ -137,7 +140,7 @@
           <th>Mean</th>
           <th>Stdev</th>
           <th>Median</th>
-          <th>Comment</th>
+          <th class="comment-col">Comment</th>
           <th>testtime</th>
           <th>Start</th>
           <th>End</th>
@@ -183,7 +186,7 @@
           <td>{{ r['mean'] }}</td>
           <td>{{ r['stdev'] }}</td>
           <td>{{ r['median'] }}</td>
-          <td>
+          <td class="comment-col">
             {% set key = r['fdv_file'] ~ '|' ~ r['pr'] ~ '|' ~ r['vcc'] ~ '|' ~ r['tm'] ~ '|' ~ r['temp'] %}
             <div class="disp-wrapper">
               <input type="text" class="disp-input" data-key="{{ key }}" value="{{ (dispositions or {}).get(key, '') }}" onchange="return onDispositionChange(this, '{{ token }}');" oninput="return onDispositionChange(this, '{{ token }}');" />
