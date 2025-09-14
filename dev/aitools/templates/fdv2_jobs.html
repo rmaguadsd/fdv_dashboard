@@ -49,6 +49,10 @@ async function refreshJobs(){
       const pct = (j.percent!=null)? (Number(j.percent).toFixed(1)+'%') : '';
       const files = (j.files_done!=null)? `${j.files_done}/${j.files_total||''}` : '';
       const upd = (j.updated_secs_ago!=null)? j.updated_secs_ago : '';
+        const reportLink = j.report_ready ? `<a href="${j.report_url}" target="_blank">report</a>` : `<span style="color:#999;cursor:not-allowed;" title="Report not ready yet">report</span>`;
+        const progressLink = (j.status === 'done' || j.status === 'error')
+          ? `<span style="color:#999;cursor:not-allowed;" title="Parsing finished">progress</span>`
+          : `<a href="${j.progress_url}" target="_blank">progress</a>`;
       html += `<tr>`+
         `<td class="mono">${j.job_id}</td>`+
         `<td class="${cls}">${j.status}</td>`+
@@ -56,7 +60,7 @@ async function refreshJobs(){
         `<td>${files}</td>`+
         `<td>${j.lines||''}</td>`+
         `<td>${upd}</td>`+
-        `<td class="small"><a href="${j.progress_url}" target="_blank">progress</a> | <a href="${j.report_url}" target="_blank">report</a> | <a href="${j.status_url}" target="_blank">json</a></td>`+
+          `<td class="small">${progressLink} | ${reportLink} | <a href="${j.status_url}" target="_blank">json</a></td>`+
         `</tr>`;
     }
     body.innerHTML = html;

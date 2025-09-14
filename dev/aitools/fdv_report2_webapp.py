@@ -1643,6 +1643,8 @@ def _start_parse_job(token: str, files: List[Path], used_dir: str | None, limit_
                 'percent': 0.0,
                 'lines': 0,
                 'lines_total': total_lines,
+                # Estimated total lines (same as lines_total; kept for external clients wanting a stable key name)
+                'expected_overall_lines': total_lines,
                 'file_lines_total': 0,
                 'file_lines_done': 0,
                 'file_percent': 0.0,
@@ -1650,6 +1652,8 @@ def _start_parse_job(token: str, files: List[Path], used_dir: str | None, limit_
                 'file_bytes_done': 0,
                 'bytes_total': total_bytes,
                 'bytes_done': 0,
+                # Estimated current file lines (updated when file starts)
+                'expected_file_lines': 0,
             }
             # Persist initial raw limit selection for downstream partial stats ('' or 'none' => token/passfail-from-logs mode)
             CACHE[token] = {
@@ -1677,6 +1681,7 @@ def _start_parse_job(token: str, files: List[Path], used_dir: str | None, limit_
                 file_size = sizes[idx - 1] if idx - 1 < len(sizes) else 0
                 file_lines_total = line_counts[idx - 1] if idx - 1 < len(line_counts) else 0
                 progress['file_lines_total'] = file_lines_total
+                progress['expected_file_lines'] = file_lines_total
                 progress['file_lines_done'] = 0
                 progress['file_bytes_total'] = file_size
                 progress['file_bytes_done'] = 0
@@ -1707,6 +1712,9 @@ def _start_parse_job(token: str, files: List[Path], used_dir: str | None, limit_
                         'file_bytes_total': file_size,
                         'file_percent': pct,
                         'bytes_done': total_done,
+                        # Keep expected values stable (only change if unknown (0) and we can approximate)
+                        'expected_overall_lines': total_lines or progress.get('expected_overall_lines', 0),
+                        'expected_file_lines': file_lines_total or progress.get('expected_file_lines', 0),
                     })
                     # Store back into CACHE for polling clients (tolerate missing entry)
                     try:
@@ -2464,10 +2472,15 @@ def stream_job(job_id: str):
                     'progress': {
                         'percent': prog.get('percent'),
                         'lines': prog.get('lines'),
+                        'lines_total': prog.get('lines_total'),
+                        'expected_overall_lines': prog.get('expected_overall_lines') or prog.get('lines_total'),
                         'files_done': prog.get('files_done'),
                         'files_total': prog.get('files_total'),
                         'current_file': prog.get('current_file'),
                         'file_percent': prog.get('file_percent'),
+                        'file_lines_done': prog.get('file_lines_done'),
+                        'file_lines_total': prog.get('file_lines_total'),
+                        'expected_file_lines': prog.get('expected_file_lines') or prog.get('file_lines_total'),
                     }
                 }
                 yield f"data: {json.dumps(payload)}\n\n"
@@ -2494,6 +2507,8 @@ def api_jobs():
             if snap:
                 try: updated = float(snap.get('updated'))
                 except Exception: updated = None
+            # Determine if report is ready (done status and rows exist)
+            report_ready = (status == 'done' and bool(data.get('rows')))
             jobs_out.append({
                 'job_id': jid,
                 'token': token,
@@ -2507,6 +2522,7 @@ def api_jobs():
                 'progress_url': f"/job/{jid}/progress",
                 'sse_url': f"/stream/job/{jid}",
                 'status_url': f"/job/{jid}/status",
+                'report_ready': report_ready,
             })
     jobs_out.sort(key=lambda j: (j.get('status')!='running', j.get('job_id')))
     return Response(json.dumps({'jobs': jobs_out, 'count': len(jobs_out)}), mimetype='application/json')

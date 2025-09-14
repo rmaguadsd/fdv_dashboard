@@ -27,6 +27,7 @@
   <div class="small" style="margin-top:4px;">
     <span id="overall_total_lines" class="mono"></span>
     <span id="current_file_total_lines" class="mono" style="margin-left:12px;"></span>
+    <span id="expected_lines_info" class="mono" style="margin-left:12px;color:#444;"></span>
   </div>
   <div class="small" id="currwrap" style="margin-top:6px;">
     <strong>Current file:</strong>
@@ -119,22 +120,145 @@
       const percent = Math.max(0, Math.min(100, Number(p.percent || 0)));
       const lines = Number(p.lines || 0);
       const linesTotal = Number(p.lines_total || 0);
+  const expectedOverall = Number(p.expected_overall_lines || linesTotal || 0);
       const fileLinesDone = Number(p.file_lines_done || 0);
       const fileLinesTotal = Number(p.file_lines_total || 0);
+  const expectedFile = Number(p.expected_file_lines || fileLinesTotal || 0);
       const filePercent = Math.max(0, Math.min(100, Number(p.file_percent || 0)));
       const filesDone = p.files_done || 0;
       const filesTotal = p.files_total || 0;
       const curr = p.current_file || '';
       document.getElementById('fill').style.width = percent.toFixed(1) + '%';
       const totalLineStr = linesTotal ? ` / ${linesTotal.toLocaleString()} lines` : '';
-      const fileLinesTxt = fileLinesTotal > 0 ? `file ${fileLinesDone.toLocaleString()} / ${fileLinesTotal.toLocaleString()} lines (${filePercent.toFixed(1)}%)` : `file ${fileLinesDone.toLocaleString()} lines`;
+      // Build unified progress line per requested format:
+      // 100.0% — overall CUR / TOTAL lines — files X/Y | file A / B lines (P%)
       let overallTxt = '';
-      if (linesTotal > 0) overallTxt = `${percent.toFixed(1)}% — overall ${lines.toLocaleString()} / ${linesTotal.toLocaleString()} lines — files ${filesDone}/${filesTotal}`; else overallTxt = `${percent.toFixed(1)}% — ${lines.toLocaleString()} lines${totalLineStr} — files ${filesDone}/${filesTotal}`;
-      if (fileLinesTxt) overallTxt += ` | ${fileLinesTxt}`;
+      if (linesTotal > 0) {
+        overallTxt = `${percent.toFixed(1)}% — overall ${lines.toLocaleString()} / ${linesTotal.toLocaleString()} lines — files ${filesDone}/${filesTotal}`;
+      } else {
+        // Fallback when total unknown
+        overallTxt = `${percent.toFixed(1)}% — overall ${lines.toLocaleString()} lines — files ${filesDone}/${filesTotal}`;
+      }
+      if (fileLinesTotal > 0) {
+        overallTxt += ` | file ${fileLinesDone.toLocaleString()} / ${fileLinesTotal.toLocaleString()} lines (${filePercent.toFixed(1)}%)`;
+      } else {
+        overallTxt += ` | file ${fileLinesDone.toLocaleString()} lines`;
+      }
       document.getElementById('txt').textContent = overallTxt;
       const el = document.getElementById('curr');
       if (el){ const base = curr.replaceAll('\\\\','/'); const name = base.includes('/') ? base.split('/').pop() : base; el.textContent = name || '(preparing…)'; el.title = curr || ''; }
       const ep = document.getElementById('currpct'); if (ep) ep.textContent = filePercent ? `(${filePercent.toFixed(1)}%)` : '';
+
+      // Establish overall start time when first progress observed
+      try {
+        if ((percent > 0 || lines > 0) && startTimeMs == null) {
+          startTimeMs = Date.now();
+        }
+      } catch(_){ }
+
+      // Update separate total line indicators
+      try {
+        const ot = document.getElementById('overall_total_lines');
+        if (ot) {
+          if (linesTotal > 0) {
+            ot.textContent = `overall: ${lines.toLocaleString()} / ${linesTotal.toLocaleString()} lines (${percent.toFixed(1)}%)`;
+          } else if (lines > 0) {
+            ot.textContent = `overall: ${lines.toLocaleString()} lines`;
+          } else {
+            ot.textContent = '';
+          }
+        }
+        const cft = document.getElementById('current_file_total_lines');
+        if (cft) {
+          if (fileLinesTotal > 0) {
+            cft.textContent = `current file total: ${fileLinesDone.toLocaleString()} / ${fileLinesTotal.toLocaleString()} lines (${filePercent.toFixed(1)}%)`;
+          } else if (fileLinesDone > 0) {
+            cft.textContent = `current file: ${fileLinesDone.toLocaleString()} lines`;
+          } else {
+            cft.textContent = '';
+          }
+        }
+        const ei = document.getElementById('expected_lines_info');
+        if (ei) {
+          if (expectedOverall > 0 || expectedFile > 0) {
+            const parts = [];
+            if (expectedOverall > 0) parts.push(`expected overall: ${expectedOverall.toLocaleString()}`);
+            if (expectedFile > 0) parts.push(`expected file: ${expectedFile.toLocaleString()}`);
+            ei.textContent = parts.join(' | ');
+          } else {
+            ei.textContent = '';
+          }
+        }
+      } catch(_){ }
+
+      // Compute overall ETA
+      let overallEtaTxt = '';
+      try {
+        if (startTimeMs != null) {
+          const elapsedSec = (Date.now() - startTimeMs) / 1000.0;
+          let remainingSec = null;
+          if (linesTotal > 0 && lines > 0) {
+            const rate = lines / elapsedSec;
+            if (rate > 0) remainingSec = (linesTotal - lines) / rate;
+          } else if (percent > 0) {
+            const rateP = percent / elapsedSec;
+            if (rateP > 0) remainingSec = (100 - percent) / rateP;
+          }
+          if (remainingSec != null) {
+            if (lastEtaSeconds != null) remainingSec = 0.5 * remainingSec + 0.5 * lastEtaSeconds;
+            lastEtaSeconds = remainingSec;
+            overallEtaTxt = 'overall ETA ' + fmtEta(remainingSec);
+          }
+        }
+      } catch(_){ }
+
+      // Per-file ETA handling
+      try {
+        const baseCurr = curr || '';
+        if (baseCurr && baseCurr !== currentFilePath) {
+          currentFilePath = baseCurr;
+            currentFileStartTimeMs = Date.now();
+          currentFileStartLines = fileLinesDone;
+          currentFileStartBytes = Number(p.file_bytes_done || 0);
+          lastFileEtaSeconds = null;
+        }
+        let fileEtaTxt = '';
+        if (currentFileStartTimeMs != null && filePercent > 0 && (fileLinesTotal > 0 || Number(p.file_bytes_total||0) > 0)) {
+          const elapsedFileSec = (Date.now() - currentFileStartTimeMs) / 1000.0;
+          let remainingFileSec = null;
+          if (fileLinesTotal > 0 && fileLinesDone > currentFileStartLines) {
+            const processed = fileLinesDone - currentFileStartLines;
+            const rate = processed / elapsedFileSec;
+            if (rate > 0) remainingFileSec = (fileLinesTotal - fileLinesDone) / rate;
+          } else {
+            const fbTotal = Number(p.file_bytes_total || 0);
+            const fbDone = Number(p.file_bytes_done || 0);
+            if (fbTotal > 0 && fbDone > currentFileStartBytes) {
+              const processedB = fbDone - currentFileStartBytes;
+              const rateB = processedB / elapsedFileSec;
+              if (rateB > 0) remainingFileSec = (fbTotal - fbDone) / rateB;
+            }
+          }
+          if (remainingFileSec != null) {
+            if (lastFileEtaSeconds != null) remainingFileSec = 0.5 * remainingFileSec + 0.5 * lastFileEtaSeconds;
+            lastFileEtaSeconds = remainingFileSec;
+            fileEtaTxt = 'file ETA ' + fmtEta(remainingFileSec);
+          }
+        }
+        fileEtaDisplay = fileEtaTxt;
+      } catch(_){ }
+
+      // Update unified ETA line
+      try {
+        const etaEl = document.getElementById('eta');
+        if (etaEl) {
+          const parts = [];
+          if (overallEtaTxt) parts.push(overallEtaTxt);
+          if (fileEtaDisplay) parts.push(fileEtaDisplay);
+          etaEl.textContent = parts.join(' | ');
+        }
+      } catch(_){ }
+
       if (st === 'done') {
         const limParam = encodeURIComponent(limitRaw);
         const limPart = `&limit=${limParam}`;
@@ -150,111 +274,7 @@
         if (!res.ok) throw new Error('status ' + res.status);
         const data = await res.json();
         applyProgressData(data);
-  // Update separate total line indicators (retained from polling path)
-  try {
-    const ot = document.getElementById('overall_total_lines');
-    if (ot) {
-      if (linesTotal > 0) ot.textContent = `overall total lines: ${linesTotal.toLocaleString()}`;
-      else ot.textContent = '';
-    }
-    const cft = document.getElementById('current_file_total_lines');
-    if (cft) {
-      if (fileLinesTotal > 0) cft.textContent = `current file total lines: ${fileLinesTotal.toLocaleString()}`;
-      else cft.textContent = '';
-    }
-  } catch (e3) { /* ignore */ }
-  // Establish start time once progress moves
-  if ((percent > 0 || lines > 0) && startTimeMs == null) {
-    startTimeMs = Date.now();
-  }
-  // Compute overall ETA using lines if total known, else percent
-  let overallEtaTxt = '';
-  if (startTimeMs != null) {
-    const elapsedSec = (Date.now() - startTimeMs) / 1000.0;
-    let remainingSec = null;
-    if (linesTotal > 0 && lines > 0) {
-      const rate = lines / elapsedSec; // lines per second
-      if (rate > 0) remainingSec = (linesTotal - lines) / rate;
-    } else if (percent > 0) {
-      const rateP = percent / elapsedSec; // percent per second
-      if (rateP > 0) remainingSec = (100 - percent) / rateP;
-    }
-    if (remainingSec != null) {
-      // Simple smoothing: blend with previous ETA if available
-      if (lastEtaSeconds != null) {
-        remainingSec = 0.5 * remainingSec + 0.5 * lastEtaSeconds;
-      }
-      lastEtaSeconds = remainingSec;
-  overallEtaTxt = 'overall ETA ' + fmtEta(remainingSec);
-    }
-  }
-  document.getElementById('txt').textContent = overallTxt;
-  // (per-file ETA combined later after its computation)
-        // Update current file line explicitly (with basename + tooltip)
-        try {
-          const el = document.getElementById('curr');
-          if (el) {
-            const base = curr.replaceAll('\\\\','/');
-            const name = base.includes('/') ? base.split('/').pop() : base;
-            el.textContent = name || '(preparing…)';
-            el.title = curr || '';
-            // Detect file change to reset per-file ETA baseline
-            if (curr && curr !== currentFilePath) {
-              currentFilePath = curr;
-              currentFileStartTimeMs = Date.now();
-              currentFileStartLines = fileLinesDone;
-              currentFileStartBytes = Number(p.file_bytes_done || 0);
-              lastFileEtaSeconds = null;
-            }
-          }
-          const ep = document.getElementById('currpct');
-          if (ep) {
-            ep.textContent = filePercent ? `(${filePercent.toFixed(1)}%)` : '';
-            // Remove byte debug attributes since we now only surface line metrics
-            ep.removeAttribute('data-file-bytes-done');
-            ep.removeAttribute('data-file-bytes-total');
-          }
-          // Compute per-file ETA
-          try {
-            let fileEtaTxt = '';
-            if (currentFileStartTimeMs != null && filePercent > 0 && (fileLinesTotal > 0 || Number(p.file_bytes_total||0) > 0)) {
-              const elapsedFileSec = (Date.now() - currentFileStartTimeMs) / 1000.0;
-              let remainingFileSec = null;
-              if (fileLinesTotal > 0 && fileLinesDone > currentFileStartLines) {
-                const processed = fileLinesDone - currentFileStartLines;
-                const rate = processed / elapsedFileSec; // lines/sec
-                if (rate > 0) remainingFileSec = (fileLinesTotal - fileLinesDone) / rate;
-              } else {
-                const fbTotal = Number(p.file_bytes_total || 0);
-                const fbDone = Number(p.file_bytes_done || 0);
-                if (fbTotal > 0 && fbDone > currentFileStartBytes) {
-                  const processedB = fbDone - currentFileStartBytes;
-                  const rateB = processedB / elapsedFileSec; // bytes/sec
-                  if (rateB > 0) remainingFileSec = (fbTotal - fbDone) / rateB;
-                }
-              }
-              if (remainingFileSec != null) {
-                if (lastFileEtaSeconds != null) {
-                  remainingFileSec = 0.5 * remainingFileSec + 0.5 * lastFileEtaSeconds;
-                }
-                lastFileEtaSeconds = remainingFileSec;
-                fileEtaTxt = 'file ETA ' + fmtEta(remainingFileSec);
-              }
-            }
-            fileEtaDisplay = fileEtaTxt;
-          } catch (e2) { /* ignore */ }
-        } catch (e) { /* noop */ }
-        // Update unified ETA line (overall + per-file if present)
-        try {
-          const etaEl = document.getElementById('eta');
-          if (etaEl) {
-            const parts = [];
-            if (overallEtaTxt) parts.push(overallEtaTxt);
-            if (fileEtaDisplay) parts.push(fileEtaDisplay);
-            etaEl.textContent = parts.join(' | ');
-          }
-        } catch (_) { /* ignore */ }
-        return; // early exit after applying data
+        return; // all progress/ETA handled inside applyProgressData now
       } catch (e) {
         // transient errors are okay; keep polling
       }
