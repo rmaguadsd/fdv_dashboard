@@ -2476,6 +2476,49 @@ def stream_job(job_id: str):
             time.sleep(0.25)
     return Response(gen(), mimetype='text/event-stream')
 
+@app.route('/api/jobs')
+def api_jobs():
+    """Return JSON list of active jobs (recent in-memory only)."""
+    jobs_out = []
+    now = time.time()
+    with JOBS_LOCK:
+        for jid, rec in JOBS.items():
+            token = rec.get('token')  # type: ignore[arg-type]
+            if not token:
+                continue
+            data = CACHE.get(token) or {}
+            prog = data.get('progress', {}) or {}
+            status = data.get('status','unknown')
+            snap = SNAPSHOTS.get(token) if 'SNAPSHOTS' in globals() else None
+            updated = None
+            if snap:
+                try: updated = float(snap.get('updated'))
+                except Exception: updated = None
+            jobs_out.append({
+                'job_id': jid,
+                'token': token,
+                'status': status,
+                'percent': prog.get('percent'),
+                'files_done': prog.get('files_done'),
+                'files_total': prog.get('files_total'),
+                'lines': prog.get('lines'),
+                'updated_secs_ago': (None if updated is None else round(now - updated,2)),
+                'report_url': f"/job/{jid}/report",
+                'progress_url': f"/job/{jid}/progress",
+                'sse_url': f"/stream/job/{jid}",
+                'status_url': f"/job/{jid}/status",
+            })
+    jobs_out.sort(key=lambda j: (j.get('status')!='running', j.get('job_id')))
+    return Response(json.dumps({'jobs': jobs_out, 'count': len(jobs_out)}), mimetype='application/json')
+
+@app.route('/jobs')
+def jobs_page():
+    """HTML page listing active jobs with auto-refresh."""
+    # Build data once; template also has JS to refresh via /api/jobs
+    with JOBS_LOCK:
+        current_jobs = list(JOBS.keys())
+    return render_template('fdv2_jobs.html', job_ids=current_jobs)
+
 @app.route('/persist/report2/<token>')
 def report2_persist(token: str):
     """Serve a previously saved persistent HTML snapshot for Report v2 main page."""
