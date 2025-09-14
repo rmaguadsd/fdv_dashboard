@@ -1542,6 +1542,10 @@ CACHE: Dict[str, Dict] = {}
 JOBS: Dict[str, Dict[str, object]] = {}
 JOBS_LOCK = threading.Lock()
 
+# Fast snapshot caches for progress page / table so clients can render instantly
+SNAPSHOTS: Dict[str, Dict[str, object]] = {}  # token -> {'fdvtable_html': str, 'updated': float, 'limit_key': str}
+SNAP_LOCK = threading.Lock()
+
 def _create_job_id(token: str, limit_raw: str) -> str:
     for _ in range(5):
         jid = secrets.token_urlsafe(8).replace('-', '').replace('_', '')[:10]
@@ -1679,6 +1683,7 @@ def _start_parse_job(token: str, files: List[Path], used_dir: str | None, limit_
                 progress['file_percent'] = 0.0
                 last_lineno = {'n': 0}
 
+                last_snapshot_time = {'t': 0.0}
                 def _cb(lineno: int, pct: float) -> None:
                     last_lineno['n'] = lineno
                     # Estimate bytes processed in this file using pct and file_size
@@ -1715,8 +1720,31 @@ def _start_parse_job(token: str, files: List[Path], used_dir: str | None, limit_
                         else:
                             CACHE[token]['progress'] = progress
                     except Exception:
-                        # If cache was mutated concurrently, skip this tick
                         pass
+                    # Throttled partial stats snapshot for fast table refresh (every ~1.2s)
+                    now = time.time()
+                    if now - last_snapshot_time['t'] > 1.2:
+                        last_snapshot_time['t'] = now
+                        try:
+                            # Build small subset stats (limit/passfail mode per current limit_raw)
+                            lr = (CACHE.get(token, {}).get('limit_raw') or '').strip().lower()
+                            pf_mode = (lr in ('', 'none', 'default'))
+                            limit_val = 1e9 if pf_mode else float(lr)
+                            # Light computation: only if we have some rows
+                            if all_rows:
+                                stats_small = stats_by_fdv_with_splits(all_rows[-5000:], limit=limit_val, passfail_mode=pf_mode)  # last 5000 rows window
+                            else:
+                                stats_small = []
+                            table_html = ''
+                            try:
+                                table_html = render_template('fdv2_report_table.html', token=token, stats=stats_small, used_dir=used_dir, limit=(None if pf_mode else limit_val))
+                            except Exception:
+                                table_html = ''
+                            if table_html:
+                                with SNAP_LOCK:
+                                    SNAPSHOTS[token] = {'fdvtable_html': table_html, 'updated': now, 'limit_key': lr or 'none'}
+                        except Exception:
+                            pass
 
                 try:
                     if process_file is not None:
@@ -2395,6 +2423,14 @@ def report_status_fdvtable(token: str):
             limit_for_stats = 1e9
             limit_template = None
             passfail_mode = True
+    # Serve cached snapshot if still fresh (<3s) and limit matches
+    lr_key = (lim_raw.strip().lower() or 'none')
+    with SNAP_LOCK:
+        snap = SNAPSHOTS.get(token)
+        if snap and (time.time() - float(snap.get('updated', 0))) < 3.0 and snap.get('limit_key') == lr_key:
+            html_cached = snap.get('fdvtable_html') or ''
+            if html_cached:
+                return Response(html_cached, mimetype='text/html')
     rows = data.get('rows', []) or []
     try:
         stats = stats_by_fdv_with_splits(rows, limit=limit_for_stats, passfail_mode=passfail_mode) if rows else []
@@ -2402,9 +2438,43 @@ def report_status_fdvtable(token: str):
         stats = []
     try:
         html = render_template('fdv2_report_table.html', token=token, stats=stats, used_dir=data.get('dir'), limit=limit_template)
+        # Cache full build
+        with SNAP_LOCK:
+            SNAPSHOTS[token] = {'fdvtable_html': html, 'updated': time.time(), 'limit_key': lr_key}
         return Response(html, mimetype='text/html')
     except Exception as e:
         return Response(f"<div class='small'>Error building table: {e}</div>", mimetype='text/html', status=500)
+
+@app.route('/stream/job/<job_id>')
+def stream_job(job_id: str):
+    token = _resolve_job_token(job_id)
+    if not token:
+        return Response('not found', status=404)
+    def gen():
+        last_sent = 0.0
+        while True:
+            data = CACHE.get(token) or {}
+            prog = data.get('progress', {})
+            status = data.get('status','unknown')
+            now = time.time()
+            if now - last_sent >= 1.0:
+                last_sent = now
+                payload = {
+                    'status': status,
+                    'progress': {
+                        'percent': prog.get('percent'),
+                        'lines': prog.get('lines'),
+                        'files_done': prog.get('files_done'),
+                        'files_total': prog.get('files_total'),
+                        'current_file': prog.get('current_file'),
+                        'file_percent': prog.get('file_percent'),
+                    }
+                }
+                yield f"data: {json.dumps(payload)}\n\n"
+            if status in ('done','error'):
+                break
+            time.sleep(0.25)
+    return Response(gen(), mimetype='text/event-stream')
 
 @app.route('/persist/report2/<token>')
 def report2_persist(token: str):
