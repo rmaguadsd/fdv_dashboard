@@ -1563,6 +1563,55 @@ def _resolve_job_token(job_id: str) -> str | None:
         rec = JOBS.get(job_id)
         return rec.get('token') if rec else None
 
+def _comments_path(token: str) -> Path:
+    base = _persist_base_dir() / 'report2' / token
+    try:
+        base.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        pass
+    return base / 'comments.json'
+
+def _load_comments(token: str) -> Dict[str, str]:
+    p = _comments_path(token)
+    try:
+        if p.exists():
+            return json.loads(p.read_text(encoding='utf-8'))
+    except Exception:
+        pass
+    return {}
+
+def _save_comments(token: str, data: Dict[str, str]) -> None:
+    try:
+        p = _comments_path(token)
+        p.write_text(json.dumps(data, ensure_ascii=False, indent=0), encoding='utf-8')
+    except Exception:
+        pass
+
+# Reuse same mechanism for dispositions (comment column) to distinguish logically if needed later
+def _dispositions_path(token: str) -> Path:
+    base = _persist_base_dir() / 'report2' / token
+    try:
+        base.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        pass
+    return base / 'dispositions.json'
+
+def _load_dispositions(token: str) -> Dict[str, str]:
+    p = _dispositions_path(token)
+    try:
+        if p.exists():
+            return json.loads(p.read_text(encoding='utf-8'))
+    except Exception:
+        pass
+    return {}
+
+def _save_dispositions(token: str, data: Dict[str, str]) -> None:
+    try:
+        p = _dispositions_path(token)
+        p.write_text(json.dumps(data, ensure_ascii=False, indent=0), encoding='utf-8')
+    except Exception:
+        pass
+
 
 def _list_files(paths: List[Path]) -> List[Path]:
     """Return all files under the given paths, searching subdirectories recursively.
@@ -2022,12 +2071,32 @@ def _start_parse_job(token: str, files: List[Path], used_dir: str | None, limit_
                     seen.add(f)
                     fdv_order.append(f)
             CACHE[token].update({'rows': all_rows, 'stats': stats, 'fdv_order': fdv_order, 'status': 'done', 'limit_raw': limit_raw})
+            # Mark job end time
+            try:
+                with JOBS_LOCK:
+                    for jid, rec in JOBS.items():
+                        if rec.get('token') == token:
+                            if 'ended_at' not in rec:
+                                rec['ended_at'] = time.time()
+                            break
+            except Exception:
+                pass
         except Exception as e:
             try:
                 if token in CACHE:
                     CACHE[token].update({'status': 'error', 'error': str(e)})
                 else:
                     CACHE[token] = {'status': 'error', 'error': str(e), 'progress': {}, 'rows': [], 'dir': used_dir}
+                # Mark job end time (error)
+                try:
+                    with JOBS_LOCK:
+                        for jid, rec in JOBS.items():
+                            if rec.get('token') == token:
+                                if 'ended_at' not in rec:
+                                    rec['ended_at'] = time.time()
+                                break
+                except Exception:
+                    pass
             except Exception:
                 pass
 
@@ -2178,7 +2247,20 @@ def report_home():
                         break
         except Exception:
             pass
-        html = render_template('fdv2_report.html', token=tok, job_id=job_id_for_token, stats=stats, used_dir=data.get('dir'), fdv_order=data.get('fdv_order', []), limit=limit_template, persist_url=persist_url, limit_raw_string=lim_raw, limit_source=limit_source)
+        # Load comments (cached in memory if present, else from disk)
+        try:
+            if 'comments' not in data:
+                data['comments'] = _load_comments(tok)
+        except Exception:
+            pass
+        comments_map = data.get('comments', {}) or {}
+        try:
+            if 'dispositions' not in data:
+                data['dispositions'] = _load_dispositions(tok)
+        except Exception:
+            pass
+        dispositions_map = data.get('dispositions', {}) or {}
+        html = render_template('fdv2_report.html', token=tok, job_id=job_id_for_token, stats=stats, used_dir=data.get('dir'), fdv_order=data.get('fdv_order', []), limit=limit_template, persist_url=persist_url, limit_raw_string=lim_raw, limit_source=limit_source, comments=comments_map, dispositions=dispositions_map)
         try:
             _persist_write('report2', tok, html)
         except Exception:
@@ -2188,7 +2270,7 @@ def report_home():
         app.logger.info("report_home GET (no token) limit_raw='%s' source=%s passfail_mode=%s effective_limit=%s", lim_raw, limit_source, passfail_mode, (None if passfail_mode else limit_for_stats))
     except Exception:
         pass
-    return render_template('fdv2_report.html', token='', job_id=None, stats=[], used_dir=None, fdv_order=[], limit=None, limit_raw_string=lim_raw, limit_source=limit_source)
+    return render_template('fdv2_report.html', token='', job_id=None, stats=[], used_dir=None, fdv_order=[], limit=None, limit_raw_string=lim_raw, limit_source=limit_source, comments={}, dispositions={})
 
 
 @app.route('/status/<token>')
@@ -2509,6 +2591,13 @@ def api_jobs():
                 except Exception: updated = None
             # Determine if report is ready (done status and rows exist)
             report_ready = (status == 'done' and bool(data.get('rows')))
+            created_at = rec.get('created_at') if isinstance(rec.get('created_at'), (int,float)) else None
+            ended_at = rec.get('ended_at') if isinstance(rec.get('ended_at'), (int,float)) else None
+            def _fmt(ts):
+                try:
+                    return time.strftime('%H:%M:%S', time.localtime(ts)) if ts else None
+                except Exception:
+                    return None
             jobs_out.append({
                 'job_id': jid,
                 'token': token,
@@ -2518,6 +2607,11 @@ def api_jobs():
                 'files_total': prog.get('files_total'),
                 'lines': prog.get('lines'),
                 'updated_secs_ago': (None if updated is None else round(now - updated,2)),
+                'created_at': created_at,
+                'created_hms': _fmt(created_at) if created_at else None,
+                'ended_at': ended_at,
+                'ended_hms': _fmt(ended_at) if ended_at else None,
+                'duration_secs': (round((ended_at - created_at),2) if (created_at and ended_at) else (round(now-created_at,2) if created_at and status=='running' else None)),
                 'report_url': f"/job/{jid}/report",
                 'progress_url': f"/job/{jid}/progress",
                 'sse_url': f"/stream/job/{jid}",
@@ -2526,6 +2620,83 @@ def api_jobs():
             })
     jobs_out.sort(key=lambda j: (j.get('status')!='running', j.get('job_id')))
     return Response(json.dumps({'jobs': jobs_out, 'count': len(jobs_out)}), mimetype='application/json')
+
+@app.route('/api/comments/<token>', methods=['GET'])
+def api_comments_get(token: str):
+    data = CACHE.get(token)
+    if data and 'comments' in data:
+        comments = data.get('comments', {}) or {}
+    else:
+        comments = _load_comments(token)
+        if data is not None:
+            data['comments'] = comments
+    return Response(json.dumps({'token': token, 'comments': comments}), mimetype='application/json')
+
+@app.route('/api/comments/<token>', methods=['POST'])
+def api_comments_update(token: str):
+    if token not in CACHE:
+        return Response(json.dumps({'error': 'unknown token'}), status=404, mimetype='application/json')
+    try:
+        payload = request.get_json(force=True, silent=True) or {}
+    except Exception:
+        payload = {}
+    key = (payload.get('key') or '').strip()
+    val = (payload.get('value') or '').strip()
+    if not key:
+        return Response(json.dumps({'error': 'missing key'}), status=400, mimetype='application/json')
+    # Update in-memory map
+    data = CACHE.get(token)
+    if data is None:
+        return Response(json.dumps({'error': 'session missing'}), status=404, mimetype='application/json')
+    comments = data.setdefault('comments', {})
+    if val:
+        comments[key] = val
+    else:
+        # Empty value => delete
+        comments.pop(key, None)
+    # Persist to disk async (best effort)
+    try:
+        _save_comments(token, comments)
+    except Exception:
+        pass
+    return Response(json.dumps({'ok': True, 'key': key, 'value': comments.get(key,'')}), mimetype='application/json')
+
+@app.route('/api/dispositions/<token>', methods=['GET'])
+def api_dispositions_get(token: str):
+    data = CACHE.get(token)
+    if data and 'dispositions' in data:
+        disp = data.get('dispositions', {}) or {}
+    else:
+        disp = _load_dispositions(token)
+        if data is not None:
+            data['dispositions'] = disp
+    return Response(json.dumps({'token': token, 'dispositions': disp}), mimetype='application/json')
+
+@app.route('/api/dispositions/<token>', methods=['POST'])
+def api_dispositions_update(token: str):
+    if token not in CACHE:
+        return Response(json.dumps({'error': 'unknown token'}), status=404, mimetype='application/json')
+    try:
+        payload = request.get_json(force=True, silent=True) or {}
+    except Exception:
+        payload = {}
+    key = (payload.get('key') or '').strip()
+    val = (payload.get('value') or '').strip()
+    if not key:
+        return Response(json.dumps({'error': 'missing key'}), status=400, mimetype='application/json')
+    data = CACHE.get(token)
+    if data is None:
+        return Response(json.dumps({'error': 'session missing'}), status=404, mimetype='application/json')
+    disp = data.setdefault('dispositions', {})
+    if val:
+        disp[key] = val
+    else:
+        disp.pop(key, None)
+    try:
+        _save_dispositions(token, disp)
+    except Exception:
+        pass
+    return Response(json.dumps({'ok': True, 'key': key, 'value': disp.get(key,'')}), mimetype='application/json')
 
 @app.route('/jobs')
 def jobs_page():
@@ -5410,12 +5581,32 @@ def _start_parse_job(token: str, files: List[Path], used_dir: str | None) -> Non
                     seen.add(f)
                     fdv_order.append(f)
             CACHE[token].update({'rows': all_rows, 'stats': stats, 'fdv_order': fdv_order, 'status': 'done'})
+            # Mark job end time
+            try:
+                with JOBS_LOCK:
+                    for jid, rec in JOBS.items():
+                        if rec.get('token') == token:
+                            if 'ended_at' not in rec:
+                                rec['ended_at'] = time.time()
+                            break
+            except Exception:
+                pass
         except Exception as e:
             try:
                 if token in CACHE:
                     CACHE[token].update({'status': 'error', 'error': str(e)})
                 else:
                     CACHE[token] = {'status': 'error', 'error': str(e), 'progress': {}, 'rows': [], 'dir': used_dir}
+                # Mark job end time (error)
+                try:
+                    with JOBS_LOCK:
+                        for jid, rec in JOBS.items():
+                            if rec.get('token') == token:
+                                if 'ended_at' not in rec:
+                                    rec['ended_at'] = time.time()
+                                break
+                except Exception:
+                    pass
             except Exception:
                 pass
 

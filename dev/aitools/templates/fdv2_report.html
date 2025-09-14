@@ -19,6 +19,11 @@
   .comments-cell { white-space: nowrap; font-size: 11px; max-width: 560px; overflow: hidden; text-overflow: ellipsis; }
   /* Borderless Disposition edit box */
   .disp-input { border: none; outline: none; background: transparent; width: 98%; font: inherit; padding: 0 2px; }
+  .disp-wrapper { display:flex; align-items:center; gap:4px; }
+  .disp-badge { font-size:10px; padding:2px 4px; border-radius:3px; background:#eee; color:#555; display:none; }
+  .disp-badge.saving { background:#ffe8b3; color:#885500; display:inline-block; }
+  .disp-badge.saved { background:#d9f5d9; color:#186c18; display:inline-block; }
+  .disp-badge.error { background:#f8d0d0; color:#a00; display:inline-block; }
   </style>
 </head>
 <body>
@@ -180,7 +185,10 @@
           <td>{{ r['median'] }}</td>
           <td>
             {% set key = r['fdv_file'] ~ '|' ~ r['pr'] ~ '|' ~ r['vcc'] ~ '|' ~ r['tm'] ~ '|' ~ r['temp'] %}
-            <input type="text" class="disp-input" data-key="{{ key }}" value="{{ (dispositions or {}).get(key, '') }}" onchange="return onDispositionChange(this, '{{ token }}');" oninput="return onDispositionChange(this, '{{ token }}');" />
+            <div class="disp-wrapper">
+              <input type="text" class="disp-input" data-key="{{ key }}" value="{{ (dispositions or {}).get(key, '') }}" onchange="return onDispositionChange(this, '{{ token }}');" oninput="return onDispositionChange(this, '{{ token }}');" />
+              <span class="disp-badge" data-badge-for="{{ key }}"></span>
+            </div>
           </td>
           <td>{{ r.get('testtime_label','') }}</td>
           <td>{{ r.get('test_start','') }}</td>
@@ -276,6 +284,64 @@
       return false;
     } catch (e) { return false; }
   }
+
+  const _dispTimers = new Map();
+  function _setBadge(key, state){
+    try {
+      const badge = document.querySelector(`.disp-badge[data-badge-for="${CSS.escape(key)}"]`);
+      if(!badge) return;
+      badge.classList.remove('saving','saved','error');
+      if(!state){ badge.style.display='none'; return; }
+      badge.classList.add(state);
+      if(state==='saving') badge.textContent='…';
+      else if(state==='saved') badge.textContent='Saved';
+      else if(state==='error') badge.textContent='Err';
+      badge.style.display='inline-block';
+    } catch(e) {}
+  }
+  function onDispositionChange(el, token){
+    try {
+      if(!token) return true;
+      const key = el.getAttribute('data-key');
+      if(!key) return true;
+      const value = (el.value||'').trim();
+      _setBadge(key,'saving');
+      if(_dispTimers.has(key)) clearTimeout(_dispTimers.get(key));
+      const handle = setTimeout(async ()=>{
+        try {
+          const res = await fetch(`/api/dispositions/${token}`, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({key, value})});
+          if(res.ok){
+            _setBadge(key,'saved');
+            setTimeout(()=>{ _setBadge(key,null); }, 2000);
+          } else {
+            console.warn('Disposition save HTTP', res.status);
+            _setBadge(key,'error');
+            setTimeout(()=>{ _setBadge(key,null); }, 4000);
+          }
+        } catch(e){
+          console.warn('Disposition save error', e);
+          _setBadge(key,'error');
+          setTimeout(()=>{ _setBadge(key,null); }, 4000);
+        }
+      }, 400);
+      _dispTimers.set(key, handle);
+    } catch(e){ console.error(e); }
+    return true;
+  }
+
+  async function saveComment(el, token){
+    try {
+      if(!token) return;
+      const key = el.getAttribute('data-comment-key');
+      if(!key) return;
+      const value = (el.value||'').trim();
+      const res = await fetch(`/api/comments/${token}`, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({key, value})});
+      if(!res.ok){ console.warn('comment save failed', res.status); return; }
+      // Optionally provide quick visual feedback
+      el.style.backgroundColor = '#eefbea';
+      setTimeout(()=>{ el.style.backgroundColor=''; }, 500);
+    } catch(e){ console.error(e); }
+  }
   function applyLimitAndReload() {
     try {
       const inp = document.getElementById('limitTop');
@@ -355,20 +421,7 @@
       return true;
     } catch (e) { return true; }
   }
-  function onDispositionChange(inp, token) {
-    try {
-      const key = inp.getAttribute('data-key') || '';
-      const val = inp.value || '';
-      fetch(`/fdv/${token}/disposition`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ key: key, value: val })
-      }).then(r => r.json()).then(j => {
-        // optional: indicate saved
-      }).catch(_e => {});
-    } catch (e) {}
-    return false;
-  }
+  /* Removed legacy onDispositionChange variant that posted to /fdv/... */
   // Initialize state
   syncAnalyzeGetState();
   // Restore saved limit to input and hidden field

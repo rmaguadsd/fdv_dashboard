@@ -26,12 +26,14 @@
         <th>%</th>
         <th>Files</th>
         <th>Lines</th>
+        <th>Start</th>
+        <th>End</th>
         <th>Updated (s ago)</th>
         <th>Links</th>
       </tr>
     </thead>
     <tbody id="jobsBody">
-      <tr><td colspan="7" class="small">Loading…</td></tr>
+      <tr><td colspan="9" class="small">Loading…</td></tr>
     </tbody>
   </table>
 <script>
@@ -42,7 +44,7 @@ async function refreshJobs(){
     const data = await res.json();
     const body = document.getElementById('jobsBody');
     const jobs = data.jobs || [];
-    if(!jobs.length){ body.innerHTML = '<tr><td colspan="7" class="small">No jobs yet.</td></tr>'; return; }
+  if(!jobs.length){ body.innerHTML = '<tr><td colspan="9" class="small">No jobs yet.</td></tr>'; return; }
     let html='';
     for(const j of jobs){
       const cls = 'status-'+(j.status||'unknown');
@@ -59,6 +61,8 @@ async function refreshJobs(){
         `<td>${pct}</td>`+
         `<td>${files}</td>`+
         `<td>${j.lines||''}</td>`+
+        `<td>${j.created_hms||''}</td>`+
+        `<td>${j.ended_hms||''}</td>`+
         `<td>${upd}</td>`+
           `<td class="small">${progressLink} | ${reportLink} | <a href="${j.status_url}" target="_blank">json</a></td>`+
         `</tr>`;
