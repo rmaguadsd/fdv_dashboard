@@ -26,7 +26,7 @@ import json
 # Headless matplotlib
 os.environ.setdefault("MPLBACKEND", "Agg")
 
-from flask import Flask, render_template, request, redirect, url_for, flash, Response, send_file
+from flask import Flask, render_template, request, redirect, url_for, flash, Response, send_file, jsonify
 
 # Ensure local aitools is importable
 _HERE = Path(__file__).parent
@@ -758,6 +758,8 @@ def stats_by_fdv_with_splits(rows: List[Dict[str, str]], *, limit: float = 0.0, 
     pagemap_counts: Dict[Tuple[str, str, str, str, str], Dict[str, int]] = defaultdict(dict)
     # Track ignored (dut, site) per key due to invalid fuseid
     ignored_by_key: Dict[Tuple[str, str, str, str, str], List[Tuple[str, str]]] = defaultdict(list)
+    # Track invalid/ignored units with raw (possibly invalid) fuseid for later display in unit_info
+    invalid_units_by_key: Dict[Tuple[str, str, str, str, str], List[Tuple[str, str, str]]] = defaultdict(list)
     # Track all DUT IDs observed (regardless of fuseid validity) to enable fallback Unit Count
     dut_ids_all_by_key: Dict[Tuple[str, str, str, str, str], set] = defaultdict(set)
     # Track valid fuseids (for primary Unit Count)
@@ -814,6 +816,7 @@ def stats_by_fdv_with_splits(rows: List[Dict[str, str]], *, limit: float = 0.0, 
                 site = _extract_site_from_filename(fdv)
                 if dut:
                     ignored_by_key[key].append((dut, site))
+                    invalid_units_by_key[key].append((dut, site, fid or ''))
             except Exception:
                 pass
             continue  # skip invalid fuseid rows from numeric stats
@@ -971,6 +974,29 @@ def stats_by_fdv_with_splits(rows: List[Dict[str, str]], *, limit: float = 0.0, 
             vf = valid_map[d]
             lbl = f"DUT{d}{('@' + site_label) if site_label else ''}:{vf}"
             valid_items.append(lbl)
+        # Build unit listing with explicit category labels:
+        #   VALID: <site>:<dut>:<fuseid>, ... | INVALID: <site>:<dut>:<raw_fuseid>, ...
+        # Always include a site token; if extraction fails, use 'xx'.
+        def _norm_site(val: str | None) -> str:
+            v = (val or '').strip()
+            return v if v else 'xx'
+        site_file = site_label  # site extracted from filename once per fdv_file
+        valid_units: list[str] = []
+        for d in sorted(valid_map.keys(), key=lambda s: int(s) if s.isdigit() else 9999):
+            vf = valid_map[d]
+            valid_units.append(f"{_norm_site(site_file)}:{d}:{vf}")
+        invalid_units_render: list[str] = []
+        inv_list = invalid_units_by_key.get(key, [])
+        if inv_list:
+            for (d_i, s_i, raw_fid) in sorted(inv_list, key=lambda t: int(t[0]) if t[0].isdigit() else 9999):
+                shown_fid = (raw_fid or '-')
+                invalid_units_render.append(f"{_norm_site(site_file or s_i)}:{d_i}:{shown_fid}")
+        unit_info_parts: list[str] = []
+        if valid_units:
+            unit_info_parts.append("VALID: " + ", ".join(valid_units))
+        if invalid_units_render:
+            unit_info_parts.append("INVALID: " + ", ".join(invalid_units_render))
+        unit_info_str = " | ".join(unit_info_parts)
         base_comment = ("VALID: " + ", ".join(valid_items)) if valid_items else ''
         ig_comment = ("IGNORED (invalid FUSEID): " + ", ".join(sorted(ignored_parts))) if ignored_parts else ''
         comments = " | ".join([c for c in (base_comment, ig_comment) if c])
@@ -1000,6 +1026,7 @@ def stats_by_fdv_with_splits(rows: List[Dict[str, str]], *, limit: float = 0.0, 
             'stdev': (f"{(_stats.stdev(vals) if n>=2 else 0.0):.6g}" if n else ''),
             'median': (f"{_stats.median(vals):.6g}" if n else ''),
             'pf_mode': pf_mode,
+            'unit_info': unit_info_str,
         })
     try:
         _tok_rows = sum(1 for r in out if r.get('pf_mode') == 'token')
@@ -1541,6 +1568,33 @@ CACHE: Dict[str, Dict] = {}
 # Job indirection: expose stable job ids separate from internal parse tokens
 JOBS: Dict[str, Dict[str, object]] = {}
 JOBS_LOCK = threading.Lock()
+JOB_NAMES_LOCK = threading.Lock()
+
+def _job_names_path() -> Path:
+    p = _persist_base_dir() / 'report2' / 'job_names.json'
+    try:
+        p.parent.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        pass
+    return p
+
+def _load_job_names() -> Dict[str, str]:
+    p = _job_names_path()
+    try:
+        if p.exists():
+            return json.loads(p.read_text(encoding='utf-8') or '{}')
+    except Exception:
+        pass
+    return {}
+
+def _save_job_names(d: Dict[str, str]) -> None:
+    p = _job_names_path()
+    try:
+        p.write_text(json.dumps(d, indent=2, sort_keys=True), encoding='utf-8')
+    except Exception:
+        pass
+
+JOB_NAMES: Dict[str, str] = _load_job_names()
 
 # Fast snapshot caches for progress page / table so clients can render instantly
 SNAPSHOTS: Dict[str, Dict[str, object]] = {}  # token -> {'fdvtable_html': str, 'updated': float, 'limit_key': str}
@@ -1551,11 +1605,11 @@ def _create_job_id(token: str, limit_raw: str) -> str:
         jid = secrets.token_urlsafe(8).replace('-', '').replace('_', '')[:10]
         with JOBS_LOCK:
             if jid not in JOBS:
-                JOBS[jid] = {'token': token, 'created_at': time.time(), 'limit_raw': limit_raw or ''}
+                JOBS[jid] = {'token': token, 'created_at': time.time(), 'limit_raw': limit_raw or '', 'name': ''}
                 return jid
     fallback = token[:10]
     with JOBS_LOCK:
-        JOBS.setdefault(fallback, {'token': token, 'created_at': time.time(), 'limit_raw': limit_raw or ''})
+        JOBS.setdefault(fallback, {'token': token, 'created_at': time.time(), 'limit_raw': limit_raw or '', 'name': ''})
     return fallback
 
 def _resolve_job_token(job_id: str) -> str | None:
@@ -2161,10 +2215,33 @@ def report_home():
                 return redirect(url_for('report_home'))
             # Capture user-provided RBER limit (blank or 'none' => pass/fail-from-logs mode)
             lim_raw = (request.form.get('limit') or '').strip()
+            user_jobname = (request.form.get('jobname') or '').strip()
             token = uuid.uuid4().hex
             CACHE[token] = {'status': 'queued', 'progress': {'files_total': len(file_list), 'files_done': 0, 'percent': 0.0, 'lines': 0}, 'dir': used_dir}
             _start_parse_job(token, file_list, used_dir, lim_raw)
             job_id = _create_job_id(token, lim_raw)
+            # Assign job name (user provided or derive default)
+            try:
+                if user_jobname:
+                    derived = user_jobname
+                else:
+                    derived = ''
+                    if used_dir:
+                        derived = Path(used_dir).name
+                    if not derived:
+                        bases = [p.name for p in file_list[:3]]
+                        if bases:
+                            derived = ','.join(bases)
+                    if len(derived) > 60:
+                        derived = derived[:57] + '...'
+                    if not derived:
+                        derived = 'job'
+                with JOB_NAMES_LOCK:
+                    if job_id not in JOB_NAMES or not JOB_NAMES.get(job_id):
+                        JOB_NAMES[job_id] = derived
+                        _save_job_names(JOB_NAMES)
+            except Exception:
+                pass
             return render_template('fdv2_progress.html', token=token, job_id=job_id, limit_raw=lim_raw)
         except Exception as e:
             flash(f"Failed to start parsing: {e}")
@@ -2180,6 +2257,7 @@ def report_home():
                 return redirect(url_for('report_home'))
             used_dir = str(dp)
             lim_raw = (request.args.get('limit') or '').strip()
+            user_jobname = (request.args.get('jobname') or '').strip()
             file_list = _list_files([dp])
             if not file_list:
                 flash('No files found to parse in the directory.')
@@ -2188,6 +2266,27 @@ def report_home():
             CACHE[token] = {'status': 'queued', 'progress': {'files_total': len(file_list), 'files_done': 0, 'percent': 0.0, 'lines': 0}, 'dir': used_dir}
             _start_parse_job(token, file_list, used_dir, lim_raw)
             job_id = _create_job_id(token, lim_raw)
+            try:
+                if user_jobname:
+                    derived = user_jobname
+                else:
+                    derived = ''
+                    if used_dir:
+                        derived = Path(used_dir).name
+                    if not derived:
+                        bases = [p.name for p in file_list[:3]]
+                        if bases:
+                            derived = ','.join(bases)
+                    if len(derived) > 60:
+                        derived = derived[:57] + '...'
+                    if not derived:
+                        derived = 'job'
+                with JOB_NAMES_LOCK:
+                    if job_id not in JOB_NAMES or not JOB_NAMES.get(job_id):
+                        JOB_NAMES[job_id] = derived
+                        _save_job_names(JOB_NAMES)
+            except Exception:
+                pass
             return render_template('fdv2_progress.html', token=token, job_id=job_id, limit_raw=lim_raw)
         except Exception as e:
             flash(f"Failed to start parsing: {e}")
@@ -2332,6 +2431,10 @@ def api_launch():
         lim_raw = (request.form.get('limit') or '').strip()
     except Exception:
         lim_raw = ''
+    try:
+        user_jobname = (request.form.get('jobname') or '').strip()
+    except Exception:
+        user_jobname = ''
     dirpath = (request.form.get('dirpath') or '').strip()
     used_dir: str | None = None
     file_list: List[Path] = []
@@ -2362,6 +2465,29 @@ def api_launch():
         CACHE[token] = {'status': 'queued', 'progress': {'files_total': len(file_list), 'files_done': 0, 'percent': 0.0, 'lines': 0}, 'dir': used_dir}
         _start_parse_job(token, file_list, used_dir, lim_raw)
         job_id = _create_job_id(token, lim_raw)
+        # Derive a default short job name from directory or files
+        try:
+            if user_jobname:
+                default_name = user_jobname
+            else:
+                default_name = ''
+                if used_dir:
+                    default_name = Path(used_dir).name
+                if not default_name:
+                    bases = [p.name for p in file_list[:3]]
+                    if bases:
+                        default_name = ','.join(bases)
+                if len(default_name) > 60:
+                    default_name = default_name[:57] + '...'
+                if not default_name:
+                    default_name = 'job'
+            with JOB_NAMES_LOCK:
+                # Only set if user hasn't already provided one (future-proof if API extends)
+                if job_id not in JOB_NAMES or not JOB_NAMES.get(job_id):
+                    JOB_NAMES[job_id] = default_name
+                    _save_job_names(JOB_NAMES)
+        except Exception:
+            pass
         base = request.host_url.rstrip('/')
         payload = {
             'job_id': job_id,
@@ -2598,6 +2724,8 @@ def api_jobs():
                     return time.strftime('%H:%M:%S', time.localtime(ts)) if ts else None
                 except Exception:
                     return None
+            with JOB_NAMES_LOCK:
+                job_name = JOB_NAMES.get(jid, str(rec.get('name','')))
             jobs_out.append({
                 'job_id': jid,
                 'token': token,
@@ -2617,9 +2745,29 @@ def api_jobs():
                 'sse_url': f"/stream/job/{jid}",
                 'status_url': f"/job/{jid}/status",
                 'report_ready': report_ready,
+                'name': job_name,
             })
     jobs_out.sort(key=lambda j: (j.get('status')!='running', j.get('job_id')))
     return Response(json.dumps({'jobs': jobs_out, 'count': len(jobs_out)}), mimetype='application/json')
+
+@app.route('/api/job/<job_id>/name', methods=['POST'])
+def api_job_set_name(job_id: str):
+    try:
+        payload = request.get_json(force=True, silent=True) or {}
+    except Exception:
+        payload = {}
+    name = (payload.get('name') or '').strip()
+    if len(name) > 120:
+        return jsonify({'ok': False, 'error': 'name too long'}), 400
+    with JOBS_LOCK:
+        if job_id not in JOBS:
+            return jsonify({'ok': False, 'error': 'unknown job id'}), 404
+    with JOB_NAMES_LOCK:
+        JOB_NAMES[job_id] = name
+        _save_job_names(JOB_NAMES)
+    with JOBS_LOCK:
+        JOBS[job_id]['name'] = name
+    return jsonify({'ok': True, 'name': name})
 
 @app.route('/api/comments/<token>', methods=['GET'])
 def api_comments_get(token: str):

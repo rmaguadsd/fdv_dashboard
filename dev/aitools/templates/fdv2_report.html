@@ -62,10 +62,13 @@
   <input type="text" name="dirpath" id="dirpath" size="60" placeholder="C:\\\\path\\\\to\\\\folder (leave empty to upload files)" value="{{ used_dir or request.args.get('dirpath', '') }}" oninput="syncAnalyzeGetState();" />
     <span>or</span>
     <input type="file" name="dirfiles" id="dirfiles" multiple onchange="syncAnalyzeGetState();" />
-    <input type="hidden" name="limit" id="limitHidden" />
-  <button type="submit" id="anSubmit">Analyze</button>
-  <a href="#" id="anGet" class="small" onclick="return analyzeByGet();" title="Analyze a directory path using GET (will not include selected files)">Analyze directory (GET)</a>
-  </form>
+      <label style="margin-left:12px;">Job Name:</label>
+      <input type="text" name="jobname" id="jobname" size="24" maxlength="120" placeholder="(optional)" title="Optional job name; blank uses folder or first files" />
+      <input type="hidden" name="limit" id="limitHidden" />
+    <button type="submit" id="anSubmit">Analyze</button>
+    <a href="#" id="anGet" class="small" onclick="return analyzeByGet();" title="Analyze a directory path using GET (will not include selected files)">Analyze directory (GET)</a>
+    </form>
+    <div class="small" style="margin:-4px 0 10px 0; color:#555;">If Job Name left blank it will auto-derive from directory or first files.</div>
 
   <div class="small" style="margin:6px 0 12px 0;">
     <a id="selfTestLink" href="/selftest/resolve" target="_blank" rel="noopener">Self-test: filename resolver</a>
@@ -199,7 +202,7 @@
           <td>{{ r.get('testtime_label','') }}</td>
           <td>{{ r.get('test_start','') }}</td>
           <td>{{ r.get('test_end','') }}</td>
-          <td><span class="comments-cell">{{ r.get('comments','') }}</span></td>
+          <td><span class="comments-cell">{{ r.get('unit_info','') }}</span></td>
         </tr>
         {% endfor %}
       </tbody>
@@ -427,7 +430,9 @@
       if (!path) { alert('Enter a directory path first.'); return false; }
       const base = "{{ url_for('report_home') }}";
       const lim = (document.getElementById('limitTop')?.value || '').trim();
-      const url = base + '?dirpath=' + encodeURIComponent(path) + '&limit=' + encodeURIComponent(lim);
+  const jn = (document.getElementById('jobname')?.value || '').trim();
+  let url = base + '?dirpath=' + encodeURIComponent(path) + '&limit=' + encodeURIComponent(lim);
+  if (jn) { url += '&jobname=' + encodeURIComponent(jn); }
       // Navigate in the same tab
       window.location.href = url;
       return false;

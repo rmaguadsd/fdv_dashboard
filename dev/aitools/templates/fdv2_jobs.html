@@ -13,6 +13,21 @@
     .status-done { color:#064; }
     .status-error { color:#b00; font-weight:600; }
     .mono { font-family: Consolas, monospace; }
+  th.job-name-col, td.job-name-cell { width:660px; min-width:660px; max-width:660px; }
+  th.job-id-col, td.job-id { width:80px; min-width:80px; max-width:80px; }
+  th.updated-col, td.updated-col { width:70px; min-width:70px; max-width:70px; text-align:right; }
+  th.links-col, td.links-col { width:120px; min-width:120px; max-width:120px; }
+  th.status-col, td.status-col { width:70px; min-width:70px; max-width:70px; text-align:center; }
+  th.pct-col, td.pct-col { width:55px; min-width:55px; max-width:55px; text-align:right; }
+  th.files-col, td.files-col { width:70px; min-width:70px; max-width:70px; text-align:center; }
+  th.lines-col, td.lines-col { width:70px; min-width:70px; max-width:70px; text-align:right; }
+  th.start-col, td.start-col { width:70px; min-width:70px; max-width:70px; text-align:right; }
+  th.end-col, td.end-col { width:70px; min-width:70px; max-width:70px; text-align:right; }
+  .job-name-cell { outline:none; background:transparent; cursor:text; }
+  .job-name-cell:focus { background:#f0f6ff; box-shadow:0 0 0 1px #bcd inset; }
+  .job-name-cell:hover { background:#f8f8f8; }
+  .job-name-cell.saving { background:#fff6dd !important; }
+  .job-name-cell.saved { background:#e9f9e9 !important; transition: background .6s ease; }
   </style>
 </head>
 <body>
@@ -21,30 +36,36 @@
   <table id="jobsTbl" style="margin-top:10px;">
     <thead>
       <tr>
-        <th>Job ID</th>
-        <th>Status</th>
-        <th>%</th>
-        <th>Files</th>
-        <th>Lines</th>
-        <th>Start</th>
-        <th>End</th>
-        <th>Updated (s ago)</th>
-        <th>Links</th>
+  <th class="job-id-col">Job ID</th>
+  <th class="job-name-col">Job Name</th>
+  <th class="status-col">Status</th>
+  <th class="pct-col">%</th>
+  <th class="files-col">Files</th>
+  <th class="lines-col">Lines</th>
+  <th class="start-col">Start</th>
+  <th class="end-col">End</th>
+  <th class="updated-col">Updated (s)</th>
+  <th class="links-col">Links</th>
       </tr>
     </thead>
     <tbody id="jobsBody">
-      <tr><td colspan="9" class="small">Loading…</td></tr>
+  <tr><td colspan="10" class="small">Loading…</td></tr>
     </tbody>
   </table>
 <script>
+window.JOB_NAME_EDIT_ACTIVE = false;
 async function refreshJobs(){
+  if(window.JOB_NAME_EDIT_ACTIVE){
+    setTimeout(refreshJobs, 2000);
+    return;
+  }
   try{
     const res = await fetch('/api/jobs',{cache:'no-store'});
     if(!res.ok) throw new Error('status '+res.status);
     const data = await res.json();
     const body = document.getElementById('jobsBody');
     const jobs = data.jobs || [];
-  if(!jobs.length){ body.innerHTML = '<tr><td colspan="9" class="small">No jobs yet.</td></tr>'; return; }
+  if(!jobs.length){ body.innerHTML = '<tr><td colspan="10" class="small">No jobs yet.</td></tr>'; return; }
     let html='';
     for(const j of jobs){
       const cls = 'status-'+(j.status||'unknown');
@@ -55,23 +76,82 @@ async function refreshJobs(){
         const progressLink = (j.status === 'done' || j.status === 'error')
           ? `<span style="color:#999;cursor:not-allowed;" title="Parsing finished">progress</span>`
           : `<a href="${j.progress_url}" target="_blank">progress</a>`;
+      const nameVal = (j.name||'');
+      const nameId = `name_${j.job_id}`;
       html += `<tr>`+
-        `<td class="mono">${j.job_id}</td>`+
-        `<td class="${cls}">${j.status}</td>`+
-        `<td>${pct}</td>`+
-        `<td>${files}</td>`+
-        `<td>${j.lines||''}</td>`+
-        `<td>${j.created_hms||''}</td>`+
-        `<td>${j.ended_hms||''}</td>`+
-        `<td>${upd}</td>`+
-          `<td class="small">${progressLink} | ${reportLink} | <a href="${j.status_url}" target="_blank">json</a></td>`+
+  `<td class="mono job-id">${j.job_id}</td>`+
+  `<td class="job-name-cell" id="${nameId}" contenteditable="true" data-job="${j.job_id}" data-last="${nameVal.replace(/"/g,'&quot;')}" style="min-width:660px;min-height:18px;padding:2px;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${nameVal.replace(/</g,'&lt;')}</td>`+
+  `<td class="${cls} status-col">${j.status}</td>`+
+  `<td class="pct-col">${pct}</td>`+
+  `<td class="files-col">${files}</td>`+
+  `<td class="lines-col">${j.lines||''}</td>`+
+  `<td class="start-col">${j.created_hms||''}</td>`+
+  `<td class="end-col">${j.ended_hms||''}</td>`+
+  `<td class="updated-col">${upd}</td>`+
+          `<td class="small links-col">${progressLink} | ${reportLink} | <a href="${j.status_url}" target="_blank">json</a></td>`+
         `</tr>`;
     }
     body.innerHTML = html;
+    attachNameEditors();
   }catch(e){ /* ignore transient errors */ }
   setTimeout(refreshJobs, 2000);
 }
 refreshJobs();
+
+// Debounced job name saving logic (full-cell editable)
+const _jobNameTimers = {};
+function attachNameEditors(){
+  const editable = document.querySelectorAll('td.job-name-cell[contenteditable]');
+  for(const el of editable){
+    if(el._hasHandler) continue;
+    el._hasHandler = true;
+    el.addEventListener('focus', ()=>{ window.JOB_NAME_EDIT_ACTIVE = true; });
+    el.addEventListener('blur', ()=>{ setTimeout(()=>{ window.JOB_NAME_EDIT_ACTIVE = false; }, 50); });
+    el.addEventListener('input', ()=>{
+      const job = el.getAttribute('data-job');
+      el.classList.add('saving');
+      if(_jobNameTimers[job]) clearTimeout(_jobNameTimers[job]);
+      const txt = el.textContent || '';
+      _jobNameTimers[job] = setTimeout(()=>{ saveJobName(job, txt, el); }, 700);
+    });
+    el.addEventListener('blur', ()=>{
+      const job = el.getAttribute('data-job');
+      const txt = el.textContent || '';
+      const last = el.getAttribute('data-last') || '';
+      if(txt !== last){
+        if(_jobNameTimers[job]) clearTimeout(_jobNameTimers[job]);
+        saveJobName(job, txt, el);
+      }
+    });
+  }
+}
+async function saveJobName(jobId, val, el){
+  try{
+    const res = await fetch(`/api/job/${jobId}/name`,{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({name: val})
+    });
+    if(!res.ok){
+      el.classList.remove('saving');
+      el.classList.add('error');
+      return;
+    }
+    const js = await res.json();
+    if(js.ok){
+      el.setAttribute('data-last', val);
+      el.classList.remove('saving');
+      el.classList.add('saved');
+      setTimeout(()=>el.classList.remove('saved'), 1600);
+    }else{
+      el.classList.remove('saving');
+      el.classList.add('error');
+    }
+  }catch(e){
+    el.classList.remove('saving');
+    el.classList.add('error');
+  }
+}
 </script>
 </body>
 </html>
