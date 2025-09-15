@@ -70,6 +70,106 @@ def _load_comments(token: str) -> Dict[str,str]:
 def _save_comments(token: str, data: Dict[str,str]):
 	_save_json_helper(_comments_path(token), data)
 
+# ---------------- Job Persistence (registry + snapshots) ----------------
+_REGISTRY_FILE = _PERSIST_BASE / 'jobs_registry.json'
+_JOB_REGISTRY: Dict[str, Dict] = {}
+
+def _load_job_registry() -> Dict[str, Dict]:
+	try:
+		if _REGISTRY_FILE.exists():
+			with open(_REGISTRY_FILE, 'r', encoding='utf-8') as f:
+				data = json.load(f) or {}
+			if isinstance(data, dict):
+				return data.get('jobs', data) if isinstance(data.get('jobs'), dict) else data
+	except Exception:
+		pass
+	return {}
+
+def _save_job_registry():
+	try:
+		_PERSIST_BASE.mkdir(parents=True, exist_ok=True)
+		tmp = _REGISTRY_FILE.with_suffix('.tmp')
+		with open(tmp, 'w', encoding='utf-8') as f:
+			json.dump({'jobs': _JOB_REGISTRY}, f, indent=2, sort_keys=True)
+		os.replace(tmp, _REGISTRY_FILE)
+	except Exception:
+		pass
+
+def _snapshot_path(token: str) -> Path:
+	return _persist_dir(token) / 'snapshot.json'
+
+def _save_snapshot(token: str, cache_entry: Dict):
+	try:
+		snap = {
+			'status': cache_entry.get('status'),
+			'rows': cache_entry.get('rows') or [],
+			'stats': cache_entry.get('stats') or [],
+			'fdv_order': cache_entry.get('fdv_order') or [],
+			'dir': cache_entry.get('dir'),
+			'limit': cache_entry.get('limit'),
+			'passfail_mode': cache_entry.get('passfail_mode'),
+			'dispositions': cache_entry.get('dispositions') or {},
+			'comments': cache_entry.get('comments') or {},
+		}
+		p = _snapshot_path(token)
+		tmp = p.with_suffix('.tmp')
+		with open(tmp, 'w', encoding='utf-8') as f:
+			json.dump(snap, f)
+		os.replace(tmp, p)
+	except Exception:
+		pass
+
+def _load_snapshot(token: str) -> Dict:
+	try:
+		p = _snapshot_path(token)
+		if p.exists():
+			with open(p, 'r', encoding='utf-8') as f:
+				return json.load(f) or {}
+	except Exception:
+		pass
+	return {}
+
+def _rehydrate_jobs():
+	global _JOB_REGISTRY
+	try:
+		_JOB_REGISTRY = _load_job_registry()
+	except Exception:
+		_JOB_REGISTRY = {}
+	for jid, meta in list(_JOB_REGISTRY.items()):
+		status = meta.get('status')
+		if status in {'deleted'}:
+			continue
+		token = meta.get('token')
+		if not token:
+			continue
+		snap = _load_snapshot(token) if status == 'done' else {}
+		cache_entry = {
+			'status': snap.get('status', status or 'done'),
+			'rows': snap.get('rows', []),
+			'stats': snap.get('stats', []),
+			'fdv_order': snap.get('fdv_order', []),
+			'dir': snap.get('dir'),
+			'limit': snap.get('limit'),
+			'passfail_mode': snap.get('passfail_mode'),
+			'dispositions': snap.get('dispositions', {}),
+			'comments': snap.get('comments', {}),
+			'progress': {'percent': 100.0} if status == 'done' else {'percent': 0.0},
+		}
+		CACHE.setdefault(token, cache_entry)
+		with JOBS_LOCK:
+			JOBS.setdefault(jid, {
+				'token': token,
+				'created_at': meta.get('created_at'),
+				'ended_at': meta.get('ended_at'),
+				'status': cache_entry.get('status','done'),
+				'name': meta.get('name',''),
+			})
+
+try:
+	_rehydrate_jobs()
+except Exception:
+	pass
+
 def _resolve_job_token(job_id: str) -> str | None:
 	try:
 		with JOBS_LOCK:
@@ -90,6 +190,22 @@ def _list_files(root: Path) -> List[Path]:
 			if fp.is_file():
 				out.append(fp)
 	return out
+
+def _interpret_limit_mode(raw: str | None) -> tuple[bool, float | None]:
+	"""Return (passfail_mode, numeric_limit).
+	passfail_mode True means use PASS/FAIL tokens from log, ignoring numeric threshold.
+	Accept synonyms: '', 'none', 'default', 'passfail'.
+	If numeric parse fails, fallback to passfail mode.
+	"""
+	if raw is None:
+		return True, None
+	s = raw.strip().lower()
+	if s in ('', 'none', 'default', 'passfail', 'pf'):
+		return True, None
+	try:
+		return False, float(raw)  # numeric threshold mode
+	except Exception:
+		return True, None
 
 def _start_job(token: str, files: List[Path], used_dir: str, *, passfail_mode: bool, limit: float | None, job_id: str | None = None) -> None:
 	def job():
@@ -116,6 +232,9 @@ def _start_job(token: str, files: List[Path], used_dir: str, *, passfail_mode: b
 		progress['lines_total'] = total_lines
 		processed_lines = 0
 		rows: List[Dict[str,str]] = []
+		# For overall ETA smoothing (store recent value)
+		eta_last = None  # type: ignore
+		job_start_time = time.time()
 		for idx, fp in enumerate(files, start=1):
 			# Support pause: spin while _pause_flag set (allow cooperative delete)
 			while CACHE.get(token, {}).get('_pause_flag'):
@@ -220,6 +339,27 @@ def _start_job(token: str, files: List[Path], used_dir: str, *, passfail_mode: b
 			rows.extend(recs)
 			progress['files_done'] = idx
 			progress['lines'] = processed_lines
+			# Update overall ETA each iteration (based on lines processed vs total)
+			try:
+				if total_lines > 0 and processed_lines > 0 and processed_lines <= total_lines:
+					elapsed = time.time() - job_start_time
+					frac = processed_lines / float(total_lines)
+					if 0 < frac < 1.0 and elapsed > 0:
+						rem = elapsed * (1.0 - frac) / frac
+						if eta_last is not None:
+							rem = 0.5 * rem + 0.5 * eta_last
+						eta_last = rem
+						# Store both top-level and inside progress for client consumption
+						eta_int = int(rem)
+						if eta_int == 0 and rem > 0:
+							eta_int = 1  # avoid misleading 0s when fractional second remains
+						CACHE[token]['eta_overall_secs'] = eta_int
+						try:
+							CACHE[token]['progress']['eta_overall_secs'] = eta_int
+						except Exception:
+							pass
+			except Exception:
+				pass
 			try:
 				if total_lines > 0:
 					progress['percent'] = round((processed_lines / total_lines) * 100.0, 2)
@@ -255,6 +395,16 @@ def _start_job(token: str, files: List[Path], used_dir: str, *, passfail_mode: b
 					rec['status'] = 'done'
 					# Record end time for UI (jobs page needs ended_hms)
 					rec['ended_at'] = time.time()
+					# Persist registry + snapshot
+					meta = _JOB_REGISTRY.get(job_id)
+					if meta is not None:
+						meta['status'] = 'done'
+						meta['ended_at'] = rec.get('ended_at')
+						_save_job_registry()
+					try:
+						_save_snapshot(token, CACHE.get(token, {}))
+					except Exception:
+						pass
 	threading.Thread(target=job, daemon=True).start()
 
 @app.route('/', methods=['GET','POST'])
@@ -263,19 +413,12 @@ def home():
 		dirpath = (request.form.get('dirpath') or '').strip()
 		user_jobname = (request.form.get('jobname') or '').strip()
 		limit_raw = (request.form.get('limit') or '').strip()
-		limit_lower = limit_raw.lower()
-		passfail_mode = (limit_lower == 'none')
+		passfail_mode, limit_val = _interpret_limit_mode(limit_raw)
 		try:
-			print(f"[home POST] limit_raw='{limit_raw}' passfail_mode={passfail_mode}")
+			print(f"[home POST] limit_raw='{limit_raw}' passfail_mode={passfail_mode} limit_val={limit_val}")
 		except Exception:
 			pass
-		if passfail_mode:
-			limit_val: float | None = None
-		else:
-			try:
-				limit_val = float(limit_raw)
-			except Exception:
-				limit_val = None
+		# limit_val already determined by helper
 		try:
 			if dirpath:
 				root = Path(dirpath)
@@ -331,6 +474,18 @@ def home():
 				base_name2 = base_name
 			with JOBS_LOCK:
 				JOBS[job_id]['name'] = base_name2
+				# Persist registry entry
+				_JOB_REGISTRY[job_id] = {
+					'job_id': job_id,
+					'token': token,
+					'name': base_name2,
+					'status': 'queued',
+					'created_at': JOBS[job_id]['created_at'],
+					'ended_at': None,
+					'limit': limit_val,
+					'passfail_mode': passfail_mode,
+				}
+				_save_job_registry()
 			_start_job(token, files, used_dir, passfail_mode=passfail_mode, limit=limit_val, job_id=job_id)
 			return render_template('fdv2_progress.html', token=token, job_id=job_id)
 		except Exception as e:
@@ -339,19 +494,11 @@ def home():
 	tok = (request.args.get('token') or '').strip()
 	limit_param_present = 'limit' in request.args  # distinguish missing vs blank
 	limit_q = (request.args.get('limit') or '').strip()
-	limit_q_lower = limit_q.lower()
-	passfail_mode = (limit_q_lower == 'none')
+	passfail_mode, limit_val = _interpret_limit_mode(limit_q)
 	try:
-		print(f"[home GET] token={tok} limit_param_present={limit_param_present} limit_q='{limit_q}' passfail_mode={passfail_mode}")
+		print(f"[home GET] token={tok} limit_param_present={limit_param_present} limit_q='{limit_q}' passfail_mode={passfail_mode} limit_val={limit_val}")
 	except Exception:
 		pass
-	if passfail_mode:
-		limit_val = None
-	else:
-		try:
-			limit_val = float(limit_q) if limit_q else None
-		except Exception:
-			limit_val = None
 
 	if tok and tok in CACHE:
 		d = CACHE[tok]
@@ -380,7 +527,11 @@ def home():
 		stats = d.get('stats', [])
 		if rows and ((d.get('passfail_mode') != passfail_mode) or (d.get('limit') != limit_val)):
 			stats = stats_by_fdv_with_splits(rows, limit=(limit_val if not passfail_mode else 1e9), passfail_mode=passfail_mode)
-			d.update(stats=stats, passfail_mode=passfail_mode, limit=limit_val)
+			if passfail_mode:
+				# In pass/fail mode we store limit=None to avoid future confusion
+				d.update(stats=stats, passfail_mode=True, limit=None)
+			else:
+				d.update(stats=stats, passfail_mode=False, limit=limit_val)
 		# Load dispositions/comments for updated view
 		disp = d.get('dispositions'); comm = d.get('comments')
 		if disp is None: disp = _load_dispositions(tok); d['dispositions'] = disp
@@ -423,9 +574,11 @@ def job_status(job_id: str):
 	if not token:
 		return Response(json.dumps({'status':'missing'}), mimetype='application/json', status=404)
 	d = CACHE.get(token) or {}
+	prog = d.get('progress', {}) or {}
 	out = {
 		'status': d.get('status','unknown'),
-		'progress': d.get('progress', {}),
+		'progress': prog,
+		'eta_overall_secs': (prog.get('eta_overall_secs') if isinstance(prog.get('eta_overall_secs'), (int,float)) else d.get('eta_overall_secs')),
 		'error': d.get('error')
 	}
 	return Response(json.dumps(out), mimetype='application/json')
@@ -567,7 +720,10 @@ def tests_sample(token: str):
 		blk_txt = '' if r.get('blk') is None else str(r.get('blk'))
 		return f"<tr><td>{r.get('testname','')}</td><td>{r.get('DUT','')}</td><td>{r.get('plane','')}</td><td>{r.get('plane_addr','')}</td><td>{blk_txt}</td><td>{wl_txt}</td><td>{float(r.get('RBER',0.0)):.3e}</td><td>{r.get('pagetype','')}</td><td>{r.get('line_number','')}</td></tr>"
 	rows_html = ''.join(fmt(r) for r in head)
-	html = ("<!doctype html><html><head><meta charset='utf-8'><title>FDV sample</title>" "<style>body{font-family:Arial;margin:16px;}table{border-collapse:collapse;}th,td{border:1px solid #ccc;padding:4px 6px;font-size:13px;}th{background:#f7f7f7;}</style></head><body>" + "<table><thead><tr><th>testname</th><th>DUT</th><th>plane</th><th>plane_addr</th><th>blk</th><th>WL</th><th>RBER</th><th>pagetype</th><th>line #</th></tr></thead><tbody>" + rows_html + "</tbody></table></body></html>")
+	html = ("<!doctype html><html><head><meta charset='utf-8'><title>FDV sample</title>"
+	"<style>body{font-family:Arial;margin:16px;}table{border-collapse:collapse;}th,td{border:1px solid #ccc;padding:4px 6px;font-size:13px;}th{background:#f7f7f7;}</style></head><body>"
+	+ "<table><thead><tr><th>testname</th><th>DUT</th><th>plane</th><th>plane_addr</th><th>blk</th><th>WL</th><th>RBER</th><th>pagetype</th><th>line #</th></tr></thead><tbody>"
+	+ rows_html + "</tbody></table></body></html>")
 	return Response(html, mimetype='text/html')
 
 @app.route('/fdv/<token>/rawline')
@@ -593,14 +749,21 @@ def fails(token: str):
 	fdvsel = (request.args.get('fdv') or '').strip()
 	if not fdvsel:
 		return Response('missing fdv selection', status=400)
-	limit = request.args.get('limit')
-	passfail_mode = (limit in (None, ''))
-	try:
-		limit_f = float(limit) if not passfail_mode else None
-	except Exception:
+	# Determine mode: blank or 'default' => pass/fail-from-logs
+	raw_limit = request.args.get('limit')
+	raw_limit = None if raw_limit is None else raw_limit.strip()
+	passfail_mode = (raw_limit in (None, '', 'default', 'none'))
+	if passfail_mode:
 		limit_f = None
+	else:
+		try:
+			limit_f = float(raw_limit)
+		except Exception:
+			limit_f = None
 	fdv, pr, vcc, tm, temp = _parse_fdv_selector(fdvsel)
-	failing = []
+	# Build grouped failing rows using same criteria as stats fail_n.
+	# We'll rely on raw line PASS/FAIL tokens (passfail_mode) OR threshold comparison.
+	failing: List[Dict[str,str]] = []
 	for r in rows:
 		key = _get_split_tuple(r)
 		if (fdv and key[0] != fdv) or (pr and key[1] != pr) or (vcc and key[2] != vcc) or (tm and key[3] != tm) or (temp and key[4] != temp):
@@ -610,27 +773,137 @@ def fails(token: str):
 		rv = _get_rber(r)
 		if rv is None:
 			continue
-		if (limit_f is not None and rv >= limit_f) or (passfail_mode and 'FAIL' in (r.get('raw_line','').upper())):
+		raw_u = (r.get('raw_line','') or '').upper()
+		is_fail = False
+		if passfail_mode:
+			# Require explicit FAIL token (bounded) in raw line.
+			if 'FAIL' in raw_u:
+				# Avoid counting PASS lines containing substrings; refine with simple regex boundary when cheap.
+				try:
+					import re as _re
+					if _re.search(r'(?<![A-Z0-9_])FAIL(?![A-Z0-9_])', raw_u):
+						is_fail = True
+					else:
+						is_fail = False
+				except Exception:
+					is_fail = True
+		else:
+			if limit_f is not None and rv >= limit_f:
+				is_fail = True
+		if is_fail:
 			failing.append(r)
-	rows_html = []
+	# Build HTML with raw line highlight
 	def esc(s: str) -> str:
 		return (s or '').replace('&','&amp;').replace('<','&lt;').replace('>','&gt;')
-	for r in failing[:5000]:
-		idx = r.get('_idx') or ''
-		rows_html.append('<tr>'
+	# Precompute shading parameters for threshold mode
+	max_fail_rber = None
+	if not passfail_mode and limit_f is not None and failing:
+		try:
+			vals = [(_get_rber(r) or 0.0) for r in failing if _get_rber(r) is not None]
+			if vals:
+				max_fail_rber = max(vals)
+		except Exception:
+			max_fail_rber = None
+	def _shade_style(rv: float | None) -> str:
+		if passfail_mode or limit_f is None or rv is None:
+			return ''
+		try:
+			if max_fail_rber is None or max_fail_rber <= limit_f:
+				frac = 1.0
+			else:
+				frac = (rv - limit_f) / (max_fail_rber - limit_f) if rv >= limit_f else 0.0
+			if frac < 0: frac = 0.0
+			if frac > 1: frac = 1.0
+			# Interpolate from light yellow (#fff9cc) to strong red (#ff2a00)
+			# Simple linear interpolation in RGB space
+			import math as _m
+			c1 = (255, 249, 204)
+			c2 = (255, 42, 0)
+			r = int(c1[0] + (c2[0]-c1[0])*frac)
+			g = int(c1[1] + (c2[1]-c1[1])*frac)
+			b = int(c1[2] + (c2[2]-c1[2])*frac)
+			# Adjust text color for contrast if very red
+			fg = '#000'
+			if frac > 0.55:
+				fg = '#fff'
+			return f"style=\"background:rgb({r},{g},{b});color:{fg};\""
+		except Exception:
+			return ''
+	rows_html: List[str] = []
+	for r in failing[:10000]:
+		idx = r.get('_idx') or ''  # retained in case future linking needed
+		raw_line = r.get('raw_line','') or ''
+		raw_disp = esc(raw_line)
+		# Highlight FAIL token or numeric threshold exceedance
+		if passfail_mode:
+			try:
+				import re as _re2
+				raw_disp = _re2.sub(r'(?i)(?<![A-Z0-9_])(FAIL)(?![A-Z0-9_])', r'<span class="failtok">\1</span>', raw_disp)
+			except Exception:
+				pass
+		else:
+			# Highlight RBER value if present and exceeding limit
+			if limit_f is not None:
+				try:
+					import re as _re3
+					pat = r'(RBER\s*[:=]\s*)([0-9.eE\-+]+)'
+					def _hl(m):
+						try:
+							val = float(m.group(2))
+							if val >= limit_f: return m.group(1) + '<span class="failtok">' + m.group(2) + '</span>'
+						except Exception: pass
+						return m.group(0)
+					raw_disp = _re3.sub(_hl, raw_disp)
+				except Exception:
+					pass
+		rv_cell = _get_rber(r)
+		shade_attr = _shade_style(rv_cell)
+		rows_html.append(
+			'<tr>'
 			f"<td>{esc(r.get('testname') or derive_testname((r.get('tname','') or '').strip()) or '')}</td>"
 			f"<td>{esc(r.get('dut_id','') or '')}</td>"
 			f"<td>{esc(r.get('fuseid','') or '')}</td>"
-			f"<td>{_get_rber(r) if _get_rber(r) is not None else ''}</td>"
+			f"<td {shade_attr}>{(rv_cell if rv_cell is not None else '')}</td>"
 			f"<td>{esc(r.get('line_number',''))}</td>"
-			f"<td><a href='/fdv/{token}/rawline?idx={idx}' target='_blank'>raw</a></td>" '</tr>')
+			f"<td class='rl'>{raw_disp}</td>"
+			'</tr>'
+		)
+	consistency_note = ''
+	# Attempt to fetch corresponding stats fail_n to compare
+	try:
+		stats_for_group = [s for s in (d.get('stats') or []) if s.get('fdv_file','') == fdv and s.get('pr','') == pr and s.get('vcc','') == vcc and s.get('tm','') == tm and s.get('temp','') == temp]
+		if stats_for_group:
+			fail_n_val = None
+			try:
+				fail_n_val = int(stats_for_group[0].get('fail_n', stats_for_group[0].get('fail','0')))
+			except Exception: fail_n_val = None
+			if fail_n_val is not None and fail_n_val != len(failing):
+				consistency_note = f"<div style='color:#b00;font-weight:600'>Warning: displayed failing rows ({len(failing)}) != fail count in stats ({fail_n_val}).</div>"
+		elif len(failing) == 0:
+			consistency_note = '<div style="color:#555">No failing rows matched this selection.</div>'
+	except Exception:
+		pass
+	legend_html = ''
+	if not passfail_mode and limit_f is not None and max_fail_rber is not None:
+		legend_html = (
+			"<div style='margin:6px 0 10px 0;font-size:11px;'>"
+			f"<span style='display:inline-block;width:14px;height:14px;vertical-align:middle;background:#fff9cc;border:1px solid #ccc;margin-right:4px;'></span> at limit {limit_f:.3g} "
+			"&rarr; "
+			f"<span style='display:inline-block;width:14px;height:14px;vertical-align:middle;background:#ff2a00;border:1px solid #ccc;margin-right:4px;'></span> max {max_fail_rber:.3g}"
+			" (RBER scale)"
+			"</div>"
+		)
 	html = (
 		"<!doctype html><html><head><meta charset='utf-8'><title>Fail Rows</title>"
-		"<style>body{font-family:Arial;margin:16px;}table{border-collapse:collapse;}th,td{border:1px solid #ccc;padding:4px 6px;font-size:13px;}th{background:#f7f7f7;} .num{font-family:Consolas,monospace;}</style></head><body>"
-		f"<h3>Fail rows for {esc(fdvsel)}</h3><div>Total failing rows: {len(failing)}</div>"
+		"<style>body{font-family:Arial;margin:16px;}table{border-collapse:collapse;width:100%;}th,td{border:1px solid #ccc;padding:4px 6px;font-size:12px;vertical-align:top;}th{background:#f7f7f7;} .failtok{background:#ff4444;color:#fff;padding:0 2px;border-radius:2px;} td.rl{white-space:pre-wrap;word-break:break-word;font-family:Consolas,monospace;font-size:11px;} .mono{font-family:Consolas,monospace;}</style></head><body>"
+		f"<h3>Fail rows for {esc(fdvsel)}</h3>"
+		f"<div>Total failing rows displayed: {len(failing)}</div>"
 		+ ("<div>Mode: PASS/FAIL from logs.</div>" if passfail_mode else (f"<div>Threshold (limit) = {limit_f:.6g}</div>" if limit_f is not None else ""))
-		+ "<table><thead><tr><th>testname</th><th>DUT</th><th>FUSEID</th><th>RBER</th><th>line #</th><th>raw</th></tr></thead><tbody>"
-		+ ''.join(rows_html) + "</tbody></table></body></html>"
+		+ legend_html
+		+ consistency_note
+		+ "<table><thead><tr><th>testname</th><th>DUT</th><th>FUSEID</th><th>RBER</th><th>line #</th><th>raw line</th></tr></thead><tbody>"
+		+ ''.join(rows_html) + "</tbody></table>"
+		+ "</body></html>"
 	)
 	return Response(html, mimetype='text/html')
 
@@ -657,6 +930,22 @@ def api_jobs():
 			status = 'paused'
 		now = time.time()
 		updated_secs = int(now - created_at) if (prog.get('percent') is not None and created_at) else None
+		# Server-side ETA (seconds) based on line progress for stability
+		eta_secs = None
+		if status == 'running':
+			try:
+				lines_total = prog.get('lines_total') or 0
+				lines_done = prog.get('lines') or 0
+				if created_at and lines_total and lines_done > 0 and lines_done <= lines_total:
+					frac = lines_done / float(lines_total)
+					if 0 < frac < 1.0:
+						elapsed = now - created_at
+						if elapsed > 0:
+							remaining = elapsed * (1.0 - frac) / frac
+							eta_secs = int(remaining)
+			except Exception:
+				eta_secs = None
+		eta_overall = data.get('eta_overall_secs') if isinstance(data.get('eta_overall_secs'), (int,float)) else None
 		jobs_out.append({
 			'job_id': jid,
 			'token': tok,
@@ -665,7 +954,10 @@ def api_jobs():
 			'files_done': prog.get('files_done'),
 			'files_total': prog.get('files_total'),
 			'lines': prog.get('lines'),
+			'lines_total': prog.get('lines_total'),
 			'updated_secs_ago': updated_secs,
+			'eta_secs': eta_secs,
+			'eta_overall_secs': int(eta_overall) if eta_overall is not None else None,
 			'created_at': created_at,
 			'created_hms': _fmt(created_at) if created_at else None,
 			'ended_at': ended_at,
@@ -699,6 +991,10 @@ def api_job_set_name(job_id: str):
 		if job_id not in JOBS:
 			return jsonify({'ok': False, 'error': 'unknown job id'}), 404
 		JOBS[job_id]['name'] = name
+		meta = _JOB_REGISTRY.get(job_id)
+		if meta is not None:
+			meta['name'] = name
+			_save_job_registry()
 	return jsonify({'ok': True, 'name': name})
 
 def _resolve_cache_by_job(job_id: str):
@@ -747,6 +1043,12 @@ def api_job_delete(job_id: str):
 	with JOBS_LOCK:
 		if job_id in JOBS:
 			del JOBS[job_id]
+		meta = _JOB_REGISTRY.get(job_id)
+		if meta is not None:
+			meta['status'] = 'deleted'
+			if not meta.get('ended_at'):
+				meta['ended_at'] = time.time()
+			_save_job_registry()
 	return jsonify({'ok': True, 'status': 'deleted'})
 
 @app.route('/jobs')
@@ -768,8 +1070,7 @@ def report_status_fdvtable(token: str):
 		return '<div class="small">No session.</div>'
 	# Support dynamic limit override via query (?limit=... or limit=none)
 	limit_q = (request.args.get('limit') or '').strip()
-	limit_lower = limit_q.lower()
-	passfail_mode_req = (limit_lower in ('', 'none', 'default'))
+	passfail_mode_req, numeric_limit = _interpret_limit_mode(limit_q)
 	rows = d.get('rows', []) or []
 	# Determine if we must recompute stats for this view
 	stats_cached = d.get('stats') or []
@@ -779,25 +1080,17 @@ def report_status_fdvtable(token: str):
 		if not d.get('passfail_mode'):
 			need_recompute = True
 	else:
-		# Threshold mode requested. Parse limit and compare with cached.
-		try:
-			limit_val = float(limit_q)
-		except Exception:
-			limit_val = d.get('limit')  # fallback
+		limit_val = numeric_limit
 		if d.get('passfail_mode') or (limit_val is not None and limit_val != d.get('limit')):
 			need_recompute = True
 	if need_recompute and rows:
 		try:
 			if passfail_mode_req:
 				stats_cached = stats_by_fdv_with_splits(rows, limit=1e9, passfail_mode=True)
-				# Do not overwrite stored non-passfail stats permanently unless job originally passfail
+				# Update cache to reflect mode switch cleanly
+				d.update(passfail_mode=True, limit=None, stats=stats_cached)
 			else:
 				stats_cached = stats_by_fdv_with_splits(rows, limit=limit_val if limit_q else d.get('limit'), passfail_mode=False)
-			# Update cache so subsequent calls faster
-			if passfail_mode_req:
-				# Preserve original limit; just mark transient view
-				pass
-			else:
 				d.update(limit=limit_val, passfail_mode=False, stats=stats_cached)
 		except Exception:
 			pass
@@ -839,7 +1132,7 @@ def report_status_fdvtable(token: str):
 			f"<td>{r.get('valid_fuseid_count','')}</td>"
 			f"<td>{count}</td>"
 			f"<td>{r.get('pass_n', r.get('pass',''))}</td>"
-			f"<td>{failn}</td>"
+			f"<td>{(f'<a href=/fdv/{token}/fails?fdv={r.get('fdv_file','')}|{r.get('pr','')}|{r.get('vcc','')}|{r.get('tm','')}|{r.get('temp','')}{'' if (d.get('passfail_mode') or d.get('limit') is None) else f'&limit={d.get('limit')}'} target=_blank rel=noopener>{failn}</a>' if (failn>0 and token) else failn)}</td>"
 			f"<td class='{cls}'>{pct:.1f}%</td>"
 			f"<td>{r.get('vector','')}</td>"
 			f"<td>{r.get('min','')}</td>"

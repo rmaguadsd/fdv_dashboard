@@ -17,7 +17,7 @@
   th.job-name-col, td.job-name-cell { width:416px; min-width:416px; max-width:416px; }
   td.links-col { white-space:nowrap; }
   th.job-id-col, td.job-id { width:80px; min-width:80px; max-width:80px; }
-  th.updated-col, td.updated-col { width:70px; min-width:70px; max-width:70px; text-align:right; }
+  th.eta-col, td.eta-col { width:70px; min-width:70px; max-width:70px; text-align:right; }
   th.links-col, td.links-col { width:120px; min-width:120px; max-width:120px; }
   th.status-col, td.status-col { width:70px; min-width:70px; max-width:70px; text-align:center; }
   th.pct-col, td.pct-col { width:55px; min-width:55px; max-width:55px; text-align:right; }
@@ -46,7 +46,7 @@
   <th class="lines-col">Lines</th>
   <th class="start-col">Start</th>
   <th class="end-col">End</th>
-  <th class="updated-col">Updated (s)</th>
+  <th class="eta-col">ETA</th>
   <th class="links-col">Links</th>
       </tr>
     </thead>
@@ -73,7 +73,14 @@ async function refreshJobs(){
       const cls = 'status-'+(j.status||'unknown');
       const pct = (j.percent!=null)? (Number(j.percent).toFixed(1)+'%') : '';
       const files = (j.files_done!=null)? `${j.files_done}/${j.files_total||''}` : '';
-      const upd = (j.updated_secs_ago!=null)? j.updated_secs_ago : '';
+      // Use server-provided overall ETA
+      let etaTxt='';
+      const s = (typeof j.eta_overall_secs==='number') ? j.eta_overall_secs : (typeof j.eta_secs==='number'? j.eta_secs : null);
+      if(s!=null && s>0){
+        if(s < 120) etaTxt = Math.round(s)+'s';
+        else if(s < 7200) etaTxt = Math.round(s/60)+'m';
+        else etaTxt = Math.round(s/3600)+'h';
+      }
         const reportLink = j.report_ready ? `<a href="${j.report_url}" target="_blank">report</a>` : `<span style="color:#999;cursor:not-allowed;" title="Report not ready yet">report</span>`;
         const progressLink = (j.status === 'done' || j.status === 'error')
           ? `<span style="color:#999;cursor:not-allowed;" title="Parsing finished">progress</span>`
@@ -89,7 +96,7 @@ async function refreshJobs(){
   `<td class="lines-col">${j.lines||''}</td>`+
   `<td class="start-col">${j.created_hms||''}</td>`+
   `<td class="end-col">${j.ended_hms||''}</td>`+
-  `<td class="updated-col">${upd}</td>`+
+  `<td class="eta-col">${etaTxt}</td>`+
           (()=>{
             let controls = [];
             const canPause = (j.status === 'running');

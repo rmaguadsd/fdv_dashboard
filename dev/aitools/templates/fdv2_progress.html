@@ -117,6 +117,15 @@
     function applyProgressData(data){
       const st = data.status || 'unknown';
       const p = data.progress || {};
+      // Prefer server-provided overall ETA if available (seconds)
+      let serverEta = null;
+      try {
+        if (p.eta_overall_secs != null && isFinite(p.eta_overall_secs) && Number(p.eta_overall_secs) > 0) {
+          serverEta = Number(p.eta_overall_secs);
+        } else if (data.eta_overall_secs != null && isFinite(data.eta_overall_secs) && Number(data.eta_overall_secs) > 0) {
+          serverEta = Number(data.eta_overall_secs);
+        }
+      } catch(_){}
       const percent = Math.max(0, Math.min(100, Number(p.percent || 0)));
       const lines = Number(p.lines || 0);
       const linesTotal = Number(p.lines_total || 0);
@@ -194,7 +203,13 @@
       // Compute overall ETA
       let overallEtaTxt = '';
       try {
-        if (startTimeMs != null) {
+        if (serverEta != null) {
+          // Light smoothing client-side too, using last server ETA
+          let rem = serverEta;
+          if (lastEtaSeconds != null) rem = 0.5 * rem + 0.5 * lastEtaSeconds;
+          lastEtaSeconds = rem;
+          overallEtaTxt = 'overall ETA ' + fmtEta(rem);
+        } else if (startTimeMs != null) {
           const elapsedSec = (Date.now() - startTimeMs) / 1000.0;
           let remainingSec = null;
           if (linesTotal > 0 && lines > 0) {
@@ -274,7 +289,11 @@
         if (!res.ok) throw new Error('status ' + res.status);
         const data = await res.json();
         applyProgressData(data);
-        return; // all progress/ETA handled inside applyProgressData now
+        // If not finished, schedule next poll
+        if (!(data && (data.status === 'done' || data.status === 'error'))) {
+          setTimeout(poll, 800);
+        }
+        return;
       } catch (e) {
         // transient errors are okay; keep polling
       }
