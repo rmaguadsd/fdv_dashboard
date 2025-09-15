@@ -32,7 +32,7 @@
   .disp-badge.error { background:#f8d0d0; color:#a00; display:inline-block; }
   </style>
 </head>
-<body>
+<body data-session-token="{{ token }}">
   {% with messages = get_flashed_messages() %}
     {% if messages %}
       <div class="flash">{{ messages|join(' — ') }}</div>
@@ -312,6 +312,15 @@
   }
   function onDispositionChange(el, token){
     try {
+      // Fallback sequence for token: explicit arg -> body data attribute -> /fdv/<token>(/...) path
+      if(!token){ try { token = document.body.getAttribute('data-session-token') || ''; } catch(e) {}
+      }
+      if(!token){
+        try {
+          const m = window.location.pathname.match(/\/fdv\/([^\/\?]+)/); // handles /fdv/<token>, /fdv/<token>/tests, etc.
+          if(m) token = m[1];
+        } catch(e) {}
+      }
       if(!token) return true;
       const key = el.getAttribute('data-key');
       if(!key) return true;
@@ -320,8 +329,10 @@
       if(_dispTimers.has(key)) clearTimeout(_dispTimers.get(key));
       const handle = setTimeout(async ()=>{
         try {
+          console.debug('Disposition save attempt', {token, key, len:value.length});
           const res = await fetch(`/api/dispositions/${token}`, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({key, value})});
           if(res.ok){
+            console.debug('Disposition save success', {token, key});
             _setBadge(key,'saved');
             setTimeout(()=>{ _setBadge(key,null); }, 2000);
           } else {
@@ -387,19 +398,6 @@
   // Initial font adjustment
   (function initDispFonts(){ try { document.querySelectorAll('.disp-textarea').forEach(t=>adjustDispFont(t)); } catch(e) {} })();
 
-  async function saveComment(el, token){
-    try {
-      if(!token) return;
-      const key = el.getAttribute('data-comment-key');
-      if(!key) return;
-      const value = (el.value||'').trim();
-      const res = await fetch(`/api/comments/${token}`, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({key, value})});
-      if(!res.ok){ console.warn('comment save failed', res.status); return; }
-      // Optionally provide quick visual feedback
-      el.style.backgroundColor = '#eefbea';
-      setTimeout(()=>{ el.style.backgroundColor=''; }, 500);
-    } catch(e){ console.error(e); }
-  }
   function applyLimitAndReload() {
     try {
       const inp = document.getElementById('limitTop');

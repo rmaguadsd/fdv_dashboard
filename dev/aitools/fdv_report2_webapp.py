@@ -1948,6 +1948,29 @@ def _save_job_names(d: Dict[str, str]) -> None:
         pass
 
 JOB_NAMES: Dict[str, str] = _load_job_names()
+try:
+    _JOB_NAMES_PATH = _job_names_path()
+    JOB_NAMES_MTIME: float | None = (_JOB_NAMES_PATH.stat().st_mtime if _JOB_NAMES_PATH.exists() else None)
+except Exception:
+    JOB_NAMES_MTIME = None  # type: ignore
+
+def _maybe_reload_job_names() -> None:
+    """Reload job names file if it changed on disk (multi-process safety)."""
+    global JOB_NAMES_MTIME
+    try:
+        p = _job_names_path()
+        if not p.exists():
+            return
+        mt = p.stat().st_mtime
+        if JOB_NAMES_MTIME is None or mt > JOB_NAMES_MTIME:
+            data = _load_job_names()
+            with JOB_NAMES_LOCK:
+                # merge new entries / updates
+                for k, v in data.items():
+                    JOB_NAMES[k] = v
+            JOB_NAMES_MTIME = mt
+    except Exception:
+        pass
 
 # Fast snapshot caches for progress page / table so clients can render instantly
 SNAPSHOTS: Dict[str, Dict[str, object]] = {}  # token -> {'fdvtable_html': str, 'updated': float, 'limit_key': str}
@@ -2630,6 +2653,11 @@ def report_home():
                 with JOB_NAMES_LOCK:
                     if job_id not in JOB_NAMES or not JOB_NAMES.get(job_id):
                         JOB_NAMES[job_id] = derived
+                        try:
+                            with JOBS_LOCK:
+                                JOBS.get(job_id, {})['name'] = derived
+                        except Exception:
+                            pass
                         _save_job_names(JOB_NAMES)
             except Exception:
                 pass
@@ -2675,6 +2703,11 @@ def report_home():
                 with JOB_NAMES_LOCK:
                     if job_id not in JOB_NAMES or not JOB_NAMES.get(job_id):
                         JOB_NAMES[job_id] = derived
+                        try:
+                            with JOBS_LOCK:
+                                JOBS.get(job_id, {})['name'] = derived
+                        except Exception:
+                            pass
                         _save_job_names(JOB_NAMES)
             except Exception:
                 pass
@@ -2876,6 +2909,11 @@ def api_launch():
                 # Only set if user hasn't already provided one (future-proof if API extends)
                 if job_id not in JOB_NAMES or not JOB_NAMES.get(job_id):
                     JOB_NAMES[job_id] = default_name
+                    try:
+                        with JOBS_LOCK:
+                            JOBS.get(job_id, {})['name'] = default_name
+                    except Exception:
+                        pass
                     _save_job_names(JOB_NAMES)
         except Exception:
             pass
@@ -3115,6 +3153,7 @@ def api_jobs():
                     return time.strftime('%H:%M:%S', time.localtime(ts)) if ts else None
                 except Exception:
                     return None
+            _maybe_reload_job_names()
             with JOB_NAMES_LOCK:
                 job_name = JOB_NAMES.get(jid, str(rec.get('name','')))
             jobs_out.append({
@@ -3156,6 +3195,12 @@ def api_job_set_name(job_id: str):
     with JOB_NAMES_LOCK:
         JOB_NAMES[job_id] = name
         _save_job_names(JOB_NAMES)
+        try:
+            p = _job_names_path()
+            global JOB_NAMES_MTIME
+            JOB_NAMES_MTIME = p.stat().st_mtime if p.exists() else JOB_NAMES_MTIME
+        except Exception:
+            pass
     with JOBS_LOCK:
         JOBS[job_id]['name'] = name
     return jsonify({'ok': True, 'name': name})
@@ -3171,10 +3216,17 @@ def api_comments_get(token: str):
             data['comments'] = comments
     return Response(json.dumps({'token': token, 'comments': comments}), mimetype='application/json')
 
+# Backward-compatible singular alias (user attempted /api/comment/...)
+@app.route('/api/comment/<token>', methods=['GET'])
+def api_comment_get_alias(token: str):
+    return api_comments_get(token)
+
+@app.route('/api/comment/<token>', methods=['POST'])
+def api_comment_post_alias(token: str):
+    return api_comments_update(token)
+
 @app.route('/api/comments/<token>', methods=['POST'])
 def api_comments_update(token: str):
-    if token not in CACHE:
-        return Response(json.dumps({'error': 'unknown token'}), status=404, mimetype='application/json')
     try:
         payload = request.get_json(force=True, silent=True) or {}
     except Exception:
@@ -3183,10 +3235,13 @@ def api_comments_update(token: str):
     val = (payload.get('value') or '').strip()
     if not key:
         return Response(json.dumps({'error': 'missing key'}), status=400, mimetype='application/json')
-    # Update in-memory map
+    # Ensure a session container exists (allow comment editing even after restart)
     data = CACHE.get(token)
     if data is None:
-        return Response(json.dumps({'error': 'session missing'}), status=404, mimetype='application/json')
+        # Attempt to load existing comments from disk to preserve previously saved values
+        existing = _load_comments(token)
+        data = {'status': 'comments-only', 'comments': existing}
+        CACHE[token] = data  # minimal ephemeral session
     comments = data.setdefault('comments', {})
     if val:
         comments[key] = val
@@ -3213,8 +3268,14 @@ def api_dispositions_get(token: str):
 
 @app.route('/api/dispositions/<token>', methods=['POST'])
 def api_dispositions_update(token: str):
+    # Allow saving even if original session rows evicted or server restarted.
+    # If token not present create minimal ephemeral container seeded from disk.
     if token not in CACHE:
-        return Response(json.dumps({'error': 'unknown token'}), status=404, mimetype='application/json')
+        try:
+            existing = _load_dispositions(token)
+        except Exception:
+            existing = {}
+        CACHE[token] = {'status': 'dispositions-only', 'dispositions': existing}
     try:
         payload = request.get_json(force=True, silent=True) or {}
     except Exception:
@@ -3224,9 +3285,11 @@ def api_dispositions_update(token: str):
     if not key:
         return Response(json.dumps({'error': 'missing key'}), status=400, mimetype='application/json')
     data = CACHE.get(token)
-    if data is None:
-        return Response(json.dumps({'error': 'session missing'}), status=404, mimetype='application/json')
     disp = data.setdefault('dispositions', {})
+    try:
+        app.logger.info('disposition save token=%s key=%s len=%d', token, key, len(val))
+    except Exception:
+        pass
     if val:
         disp[key] = val
     else:

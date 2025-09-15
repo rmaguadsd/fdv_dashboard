@@ -9,6 +9,8 @@ from pathlib import Path
 from typing import Dict, List
 from flask import Flask, Response, flash, redirect, render_template, request, url_for
 from flask import Flask, Response, flash, redirect, render_template, request, url_for, jsonify
+from pathlib import Path as _Path
+import threading as _threading
 from fdv_report2_webapp import (
 	stats_by_fdv_with_splits, stats_by_testname_selected, _parse_fdv_selector,
 	_get_split_tuple, _extract_wl_or_page, _get_rber, derive_testname,
@@ -26,6 +28,47 @@ CACHE: Dict[str, Dict] = {}
 # Minimal jobs registry for listing similar to full app
 JOBS: Dict[str, Dict] = {}
 JOBS_LOCK = threading.Lock()
+
+_PERSIST_BASE = Path(os.environ.get('FDV_PERSIST_BASE', str(Path.home() / '.fdv_persist')))
+
+def _persist_dir(token: str) -> Path:
+	p = _PERSIST_BASE / token
+	p.mkdir(parents=True, exist_ok=True)
+	return p
+
+def _load_json_helper(p: Path) -> Dict[str,str]:
+	try:
+		with open(p,'r',encoding='utf-8') as f:
+			return json.load(f) or {}
+	except Exception:
+		return {}
+
+def _save_json_helper(p: Path, data: Dict[str,str]):
+	try:
+		tmp = p.with_suffix('.tmp')
+		with open(tmp,'w',encoding='utf-8') as f:
+			json.dump(data,f,indent=2,sort_keys=True)
+		os.replace(tmp,p)
+	except Exception:
+		pass
+
+def _dispositions_path(token: str) -> Path:
+	return _persist_dir(token) / 'dispositions.json'
+
+def _comments_path(token: str) -> Path:
+	return _persist_dir(token) / 'comments.json'
+
+def _load_dispositions(token: str) -> Dict[str,str]:
+	return _load_json_helper(_dispositions_path(token))
+
+def _save_dispositions(token: str, data: Dict[str,str]):
+	_save_json_helper(_dispositions_path(token), data)
+
+def _load_comments(token: str) -> Dict[str,str]:
+	return _load_json_helper(_comments_path(token))
+
+def _save_comments(token: str, data: Dict[str,str]):
+	_save_json_helper(_comments_path(token), data)
 
 def _resolve_job_token(job_id: str) -> str | None:
 	try:
@@ -192,6 +235,7 @@ def _start_job(token: str, files: List[Path], used_dir: str, *, passfail_mode: b
 def home():
 	if request.method == 'POST':
 		dirpath = (request.form.get('dirpath') or '').strip()
+		user_jobname = (request.form.get('jobname') or '').strip()
 		limit_raw = (request.form.get('limit') or '').strip()
 		limit_lower = limit_raw.lower()
 		passfail_mode = (limit_lower == 'none')
@@ -234,26 +278,33 @@ def home():
 			CACHE[token] = {'status':'queued','progress':{'files_total':len(files),'files_done':0},'dir':used_dir, 'limit': limit_val, 'passfail_mode': passfail_mode}
 			# Create a pseudo job_id for UI parity with full app
 			job_id = uuid.uuid4().hex[:10]
-			# Derive simple job name (folder basename or first up to 3 files)
-			if dirpath:
-				base_name = Path(dirpath).name
+			# Derive simple job name from user override else folder/files
+			if user_jobname:
+				base_name = user_jobname.strip()
 			else:
-				base_name = ','.join([p.name for p in files[:3]]) if files else 'job'
-			if len(base_name) > 60:
-				base_name = base_name[:57] + '...'
+				if dirpath:
+					base_name = Path(dirpath).name
+				else:
+					base_name = ','.join([p.name for p in files[:3]]) if files else 'job'
+			if len(base_name) > 120:
+				base_name = base_name[:117] + '...'
 			with JOBS_LOCK:
 				JOBS[job_id] = {'token': token, 'created_at': time.time(), 'status': 'queued', 'name': base_name}
 			# Name derivation for upload path (used_dir variable) ensure consistent naming
+			# Second pass naming (keep user provided if any)
 			try:
-				base_name2 = Path(used_dir).name if used_dir else ''
-				if not base_name2:
-					base_name2 = ','.join([p.name for p in files[:3]]) if files else 'job'
-				if len(base_name2) > 60:
-					base_name2 = base_name2[:57] + '...'
+				if not user_jobname:
+					base_name2 = Path(used_dir).name if used_dir else ''
+					if not base_name2:
+						base_name2 = ','.join([p.name for p in files[:3]]) if files else 'job'
+					if len(base_name2) > 120:
+						base_name2 = base_name2[:117] + '...'
+				else:
+					base_name2 = base_name
 			except Exception:
 				base_name2 = base_name
 			with JOBS_LOCK:
-				JOBS[job_id] = {'token': token, 'created_at': time.time(), 'status': 'queued', 'name': base_name2}
+				JOBS[job_id]['name'] = base_name2
 			_start_job(token, files, used_dir, passfail_mode=passfail_mode, limit=limit_val, job_id=job_id)
 			return render_template('fdv2_progress.html', token=token, job_id=job_id)
 		except Exception as e:
@@ -275,6 +326,7 @@ def home():
 			limit_val = float(limit_q) if limit_q else None
 		except Exception:
 			limit_val = None
+
 	if tok and tok in CACHE:
 		d = CACHE[tok]
 		# attempt to find job id for this token to show job links like full app
@@ -293,16 +345,52 @@ def home():
 			stored_limit = d.get('limit')
 			rows = d.get('rows', [])
 			stats = d.get('stats', [])
-			return render_template('fdv2_report.html', token=tok, job_id=job_id_for_token, stats=stats, used_dir=d.get('dir'), fdv_order=d.get('fdv_order', []), limit=(None if stored_passfail else stored_limit))
+			# Load dispositions/comments on demand
+			disp = d.get('dispositions'); comm = d.get('comments')
+			if disp is None: disp = _load_dispositions(tok); d['dispositions'] = disp
+			if comm is None: comm = _load_comments(tok); d['comments'] = comm
+			return render_template('fdv2_report.html', token=tok, job_id=job_id_for_token, stats=stats, used_dir=d.get('dir'), fdv_order=d.get('fdv_order', []), limit=(None if stored_passfail else stored_limit), dispositions=disp, comments=comm)
 		# limit param present: consider recompute
 		rows = d.get('rows', [])
 		stats = d.get('stats', [])
 		if rows and ((d.get('passfail_mode') != passfail_mode) or (d.get('limit') != limit_val)):
 			stats = stats_by_fdv_with_splits(rows, limit=(limit_val if not passfail_mode else 1e9), passfail_mode=passfail_mode)
 			d.update(stats=stats, passfail_mode=passfail_mode, limit=limit_val)
-		return render_template('fdv2_report.html', token=tok, job_id=job_id_for_token, stats=stats, used_dir=d.get('dir'), fdv_order=d.get('fdv_order', []), limit=(None if passfail_mode else limit_val))
+		# Load dispositions/comments for updated view
+		disp = d.get('dispositions'); comm = d.get('comments')
+		if disp is None: disp = _load_dispositions(tok); d['dispositions'] = disp
+		if comm is None: comm = _load_comments(tok); d['comments'] = comm
+		return render_template('fdv2_report.html', token=tok, job_id=job_id_for_token, stats=stats, used_dir=d.get('dir'), fdv_order=d.get('fdv_order', []), limit=(None if passfail_mode else limit_val), dispositions=disp, comments=comm)
 	# No token provided or token not found: render empty report shell
-	return render_template('fdv2_report.html', token='', job_id=None, stats=[], used_dir=None, fdv_order=[], limit=(None if passfail_mode else limit_val))
+	return render_template('fdv2_report.html', token='', job_id=None, stats=[], used_dir=None, fdv_order=[], limit=(None if passfail_mode else limit_val), dispositions={}, comments={})
+
+@app.route('/api/dispositions/<token>', methods=['POST'])
+def api_dispositions_update(token: str):
+    d = CACHE.get(token)
+    if d is None:
+        # create minimal container so UI can still work after restart
+        d = CACHE.setdefault(token, {'status':'dispositions-only'})
+    disp = d.setdefault('dispositions', _load_dispositions(token))
+    try:
+        payload = request.get_json(force=True, silent=True) or {}
+    except Exception:
+        payload = {}
+    key = (payload.get('key') or '').strip(); val = (payload.get('value') or '').strip()
+    if not key:
+        return Response(json.dumps({'error':'missing key'}), mimetype='application/json', status=400)
+    if val: disp[key] = val
+    else: disp.pop(key, None)
+    try: _save_dispositions(token, disp)
+    except Exception: pass
+    return Response(json.dumps({'ok':True,'key':key,'value':disp.get(key,'')}), mimetype='application/json')
+
+@app.route('/api/dispositions/<token>', methods=['GET'])
+def api_dispositions_get(token: str):
+    d = CACHE.get(token)
+    disp = (d.get('dispositions') if d else None) or _load_dispositions(token)
+    if d is not None:
+        d['dispositions'] = disp
+    return Response(json.dumps({'token':token,'dispositions':disp}), mimetype='application/json')
 
 @app.route('/job/<job_id>/status')
 def job_status(job_id: str):
@@ -554,6 +642,21 @@ def api_jobs():
 				'name': rec.get('name', '')
 			})
 	return jsonify({'jobs': jobs_out, 'count': len(jobs_out)})
+
+@app.route('/api/job/<job_id>/name', methods=['POST'])
+def api_job_set_name(job_id: str):
+	try:
+		payload = request.get_json(force=True, silent=True) or {}
+	except Exception:
+		payload = {}
+	name = (payload.get('name') or '').strip()
+	if len(name) > 120:
+		return jsonify({'ok': False, 'error': 'name too long'}), 400
+	with JOBS_LOCK:
+		if job_id not in JOBS:
+			return jsonify({'ok': False, 'error': 'unknown job id'}), 404
+		JOBS[job_id]['name'] = name
+	return jsonify({'ok': True, 'name': name})
 
 @app.route('/jobs')
 def jobs_page():
