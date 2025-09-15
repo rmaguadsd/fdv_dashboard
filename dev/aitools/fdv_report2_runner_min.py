@@ -212,6 +212,19 @@ def _start_job(token: str, files: List[Path], used_dir: str, *, passfail_mode: b
 					progress['percent'] = round((processed_lines / total_lines) * 100.0, 2)
 			except Exception:
 				pass
+			# Incremental stats update so partial report can render progressively.
+			try:
+				if rows:
+					# Compute quick stats on current accumulated rows (cheap subset aggregation)
+					current_stats = stats_by_fdv_with_splits(rows, limit=(limit if not passfail_mode else 1e9), passfail_mode=passfail_mode)
+					seen_i, order_i = set(), []
+					for _s in current_stats:
+						_f = _s.get('fdv_file','')
+						if _f and _f not in seen_i:
+							seen_i.add(_f); order_i.append(_f)
+					CACHE[token].update(rows=rows[:], stats=current_stats, fdv_order=order_i)
+			except Exception:
+				pass
 		for i, r in enumerate(rows):
 			r.setdefault('_idx', i)
 		stats = stats_by_fdv_with_splits(rows, limit=(limit if not passfail_mode else 1e9), passfail_mode=passfail_mode)
@@ -412,6 +425,17 @@ def job_progress(job_id: str):
 		return redirect(url_for('home'))
 	# Reuse progress template similar to full app
 	return render_template('fdv2_progress.html', token=token, job_id=job_id, limit_raw='')
+
+@app.route('/api/partial/<token>')
+def api_partial(token: str):
+	d = CACHE.get(token)
+	if not d:
+		return Response(json.dumps({'error':'unknown token'}), mimetype='application/json', status=404)
+	stats = d.get('stats', []) or []
+	dispositions = d.get('dispositions', {}) or {}
+	comments = d.get('comments', {}) or {}
+	progress = d.get('progress', {})
+	return Response(json.dumps({'token':token,'stats':stats,'dispositions':dispositions,'comments':comments,'progress':progress,'status':d.get('status')}), mimetype='application/json')
 
 @app.route('/job/<job_id>/report')
 def job_report(job_id: str):
@@ -676,24 +700,98 @@ def report_status_fdvtable(token: str):
 	d = CACHE.get(token)
 	if not d:
 		return '<div class="small">No session.</div>'
-	stats = d.get('stats') or []
+	# Support dynamic limit override via query (?limit=... or limit=none)
+	limit_q = (request.args.get('limit') or '').strip()
+	limit_lower = limit_q.lower()
+	passfail_mode_req = (limit_lower in ('', 'none', 'default'))
+	rows = d.get('rows', []) or []
+	# Determine if we must recompute stats for this view
+	stats_cached = d.get('stats') or []
+	need_recompute = False
+	if passfail_mode_req:
+		# Want PASS/FAIL from logs; recompute only if cached not already passfail_mode
+		if not d.get('passfail_mode'):
+			need_recompute = True
+	else:
+		# Threshold mode requested. Parse limit and compare with cached.
+		try:
+			limit_val = float(limit_q)
+		except Exception:
+			limit_val = d.get('limit')  # fallback
+		if d.get('passfail_mode') or (limit_val is not None and limit_val != d.get('limit')):
+			need_recompute = True
+	if need_recompute and rows:
+		try:
+			if passfail_mode_req:
+				stats_cached = stats_by_fdv_with_splits(rows, limit=1e9, passfail_mode=True)
+				# Do not overwrite stored non-passfail stats permanently unless job originally passfail
+			else:
+				stats_cached = stats_by_fdv_with_splits(rows, limit=limit_val if limit_q else d.get('limit'), passfail_mode=False)
+			# Update cache so subsequent calls faster
+			if passfail_mode_req:
+				# Preserve original limit; just mark transient view
+				pass
+			else:
+				d.update(limit=limit_val, passfail_mode=False, stats=stats_cached)
+		except Exception:
+			pass
+	stats = stats_cached
 	if not stats:
 		return '<div class="small">Collecting…</div>'
-	rows_html = []
-	for r in stats[:200]:
-		rows_html.append('<tr>'
-						 f"<td>{r.get('fdv_file','')}</td>"
-						 f"<td>{r.get('pr','')}</td>"
-						 f"<td>{r.get('vcc','')}</td>"
-						 f"<td>{r.get('tm','')}</td>"
-						 f"<td>{r.get('temp','')}</td>"
-						 f"<td>{r.get('count','')}</td>"
-						 f"<td>{r.get('pass_n', r.get('pass',''))}</td>"
-						 f"<td>{r.get('fail_n', r.get('fail',''))}</td>" '</tr>')
-	table = ('<table style="border-collapse:collapse;font-size:11px;">'
-			 '<thead><tr><th>FDV Test</th><th>PR</th><th>VCC</th><th>TM</th><th>Temp</th><th>Count</th><th>PASS</th><th>FAIL</th></tr></thead><tbody>'
-			 + ''.join(rows_html) + '</tbody></table>')
-	return table
+	# Build full column set mirroring final report (condensed styling)
+	headers = [
+		'FDV Test','PR','VCC','TM','Temp','Pagemap','Unit Count','Count','PASS','FAIL','% FAIL','Vector','Min','Max','Mean','Stdev','Median','Comment','testtime','Start','End','Unit Info'
+	]
+	rows_fragments = []
+	for r in stats[:400]:  # cap interim rows for performance
+		count_raw = r.get('count')
+		try:
+			count = int(count_raw) if count_raw not in (None, '') else 0
+		except Exception:
+			count = 0
+		fail_field = r.get('fail_n', r.get('fail',''))
+		try:
+			failn = int(fail_field) if fail_field not in (None,'') else 0
+		except Exception:
+			failn = 0
+		pct = (100.0 * failn / count) if count > 0 else 0.0
+		key = f"{r.get('fdv_file','')}|{r.get('pr','')}|{r.get('vcc','')}|{r.get('tm','')}|{r.get('temp','')}"
+		comment_val = (d.get('dispositions', {}) or {}).get(key,'')
+		cls = ''
+		if count>0:
+			if pct==0: cls='pct-ok'
+			elif pct<=25: cls='pct-warn'
+			else: cls='pct-bad'
+		rows_fragments.append(
+			'<tr>'
+			f"<td>{r.get('fdv_file','')}</td>"
+			f"<td>{r.get('pr','')}</td>"
+			f"<td>{r.get('vcc','')}</td>"
+			f"<td>{r.get('tm','')}</td>"
+			f"<td>{r.get('temp','')}</td>"
+			f"<td>{r.get('pagemap', r.get('product_type',''))}</td>"
+			f"<td>{r.get('valid_fuseid_count','')}</td>"
+			f"<td>{count}</td>"
+			f"<td>{r.get('pass_n', r.get('pass',''))}</td>"
+			f"<td>{failn}</td>"
+			f"<td class='{cls}'>{pct:.1f}%</td>"
+			f"<td>{r.get('vector','')}</td>"
+			f"<td>{r.get('min','')}</td>"
+			f"<td>{r.get('max','')}</td>"
+			f"<td>{r.get('mean','')}</td>"
+			f"<td>{r.get('stdev','')}</td>"
+			f"<td>{r.get('median','')}</td>"
+			f"<td style='max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;'>{comment_val}</td>"
+			f"<td>{r.get('testtime_label','')}</td>"
+			f"<td>{r.get('test_start','')}</td>"
+			f"<td>{r.get('test_end','')}</td>"
+			f"<td style='max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;'>{r.get('unit_info','')}</td>"
+			'</tr>'
+		)
+	# Inline minimal styles for % fail classes
+	style = "<style>.pct-ok{background:#e8f9e8;color:#167a16;font-weight:600}.pct-warn{background:#ffe6e6;color:#a11}.pct-bad{background:#ff4d4d;color:#fff;font-weight:700} table.partial{border-collapse:collapse;font-size:11px} table.partial th,table.partial td{border:1px solid #ccc;padding:2px 4px;}</style>"
+	head_html = '<tr>' + ''.join(f'<th>{h}</th>' for h in headers) + '</tr>'
+	return style + '<table class="partial">' + '<thead>' + head_html + '</thead><tbody>' + ''.join(rows_fragments) + '</tbody></table>'
 
 if __name__ == '__main__':
 	debug = os.environ.get('FDV_REPORT2_DEBUG','1').lower() not in {'0','false','no','off'}
