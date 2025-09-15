@@ -4,10 +4,11 @@ Rollback build: numeric RBER limit only; no variability/dispositions; skips MONI
 """
 from __future__ import annotations
 
-import json, os, tempfile, threading, uuid, re, datetime
+import json, os, tempfile, threading, uuid, re, datetime, time
 from pathlib import Path
 from typing import Dict, List
 from flask import Flask, Response, flash, redirect, render_template, request, url_for
+from flask import Flask, Response, flash, redirect, render_template, request, url_for, jsonify
 from fdv_report2_webapp import (
 	stats_by_fdv_with_splits, stats_by_testname_selected, _parse_fdv_selector,
 	_get_split_tuple, _extract_wl_or_page, _get_rber, derive_testname,
@@ -22,6 +23,19 @@ except Exception:  # pragma: no cover
 app = Flask(__name__)
 app.secret_key = os.environ.get('FDV_REPORT2_SECRET', 'dev-secret')
 CACHE: Dict[str, Dict] = {}
+# Minimal jobs registry for listing similar to full app
+JOBS: Dict[str, Dict] = {}
+JOBS_LOCK = threading.Lock()
+
+def _resolve_job_token(job_id: str) -> str | None:
+	try:
+		with JOBS_LOCK:
+			rec = JOBS.get(job_id)
+			if rec:
+				return rec.get('token')  # type: ignore[return-value]
+	except Exception:
+		pass
+	return None
 
 def _list_files(root: Path) -> List[Path]:
 	if root.is_file():
@@ -34,16 +48,37 @@ def _list_files(root: Path) -> List[Path]:
 				out.append(fp)
 	return out
 
-def _start_job(token: str, files: List[Path], used_dir: str, *, passfail_mode: bool, limit: float | None) -> None:
+def _start_job(token: str, files: List[Path], used_dir: str, *, passfail_mode: bool, limit: float | None, job_id: str | None = None) -> None:
 	def job():
-		progress = {"files_total": len(files), "files_done": 0, "current_file": ""}
+		progress = {"files_total": len(files), "files_done": 0, "current_file": "", "lines": 0, "lines_total": 0, "percent": 0.0}
 		CACHE[token].update(status='running', progress=progress, rows=[], dir=used_dir)
-		rows: List[Dict[str, str]] = []
+		if job_id:
+			with JOBS_LOCK:
+				rec = JOBS.get(job_id)
+				if rec:
+					rec['status'] = 'running'
+		# Pre-count total lines
+		total_lines = 0
+		line_counts: Dict[str,int] = {}
+		for fp in files:
+			cnt = 0
+			try:
+				with open(fp, 'r', encoding='utf-8', errors='ignore') as f:
+					for _ in f:
+						cnt += 1
+			except Exception:
+				cnt = 0
+			line_counts[str(fp)] = cnt
+			total_lines += cnt
+		progress['lines_total'] = total_lines
+		processed_lines = 0
+		rows: List[Dict[str,str]] = []
 		for idx, fp in enumerate(files, start=1):
 			progress['current_file'] = str(fp)
 			try:
 				if process_file is not None:
 					recs, _k, _m = process_file(fp, PREFIX_DEFAULT, IGNORE_VALUE_DEFAULT)  # type: ignore
+					processed_lines += line_counts.get(str(fp),0)
 				else:
 					recs = []
 					start_line = ''
@@ -52,17 +87,22 @@ def _start_job(token: str, files: List[Path], used_dir: str, *, passfail_mode: b
 					last_fdv_output = ''
 					with open(fp, 'r', encoding='utf-8', errors='replace') as f:
 						for i, line in enumerate(f, start=1):
+							processed_lines += 1
 							ls = line.lstrip()
+							# Capture explicit Test Start/End Date lines even if no FDV OUTPUT yet
+							ul = ls.upper()
+							if ul.startswith('TEST START DATE') and not start_line:
+								start_line = line.strip()
+							if ul.startswith('TEST END DATE'):
+								end_line = line.strip()
 							if ls.startswith('FDV OUTPUT'):
 								up = ls.upper()
 								if 'MONITOR' in up or 'SHMOO' in up:
 									continue
-								# Basic field extraction heuristics
 								entry = {'raw_line': line.rstrip('\n'), 'line_number': str(i), 'fdv_file': str(fp)}
 								m_fid = re.search(r'(K\d{1,6}_[0-9]+_[0-9]+_[0-9\-]+)', line, re.I)
 								if m_fid:
 									entry['fuseid'] = m_fid.group(1)
-								# Accept DUT:, DUT , or DUT= forms
 								m_dut = re.search(r'\bDUT\s*[:=]?\s*(\d+)\b', line, re.I)
 								if m_dut:
 									entry['dut_id'] = m_dut.group(1)
@@ -85,15 +125,12 @@ def _start_job(token: str, files: List[Path], used_dir: str, *, passfail_mode: b
 								if not first_fdv_output:
 									first_fdv_output = line.strip()
 								last_fdv_output = line.strip()
-							# Heuristic capture of test start/end markers
 							upline = line.upper()
 							if not start_line and ('TEST START' in upline or 'BEGIN TEST' in upline):
 								start_line = line.strip()
 							if ('TEST END' in upline or 'END TEST' in upline or 'TEST COMPLETE' in upline):
 								end_line = line.strip()
-					# Attach start/end once (first record) so stats function can pick them up
 					if recs:
-						# Fallback to first/last FDV OUTPUT lines if markers absent
 						if not start_line and first_fdv_output:
 							start_line = first_fdv_output
 						if not end_line and last_fdv_output:
@@ -102,7 +139,6 @@ def _start_job(token: str, files: List[Path], used_dir: str, *, passfail_mode: b
 							recs[0].setdefault('test_start', start_line)
 						if end_line:
 							recs[0].setdefault('test_end', end_line)
-					# If still missing, use file timestamps
 					if recs and ('test_start' not in recs[0] or 'test_end' not in recs[0]):
 						try:
 							stat = fp.stat()
@@ -111,15 +147,20 @@ def _start_job(token: str, files: List[Path], used_dir: str, *, passfail_mode: b
 							recs[0].setdefault('test_end', ft)
 						except Exception:
 							pass
+				for r in recs:
+					r.setdefault('fdv_file', str(fp))
 			except Exception:
 				recs = []
-			for r in recs:
-				r.setdefault('fdv_file', str(fp))
 			rows.extend(recs)
 			progress['files_done'] = idx
+			progress['lines'] = processed_lines
+			try:
+				if total_lines > 0:
+					progress['percent'] = round((processed_lines / total_lines) * 100.0, 2)
+			except Exception:
+				pass
 		for i, r in enumerate(rows):
 			r.setdefault('_idx', i)
-		# When passfail_mode True, send a dummy large limit (unused) and rely solely on token classification.
 		stats = stats_by_fdv_with_splits(rows, limit=(limit if not passfail_mode else 1e9), passfail_mode=passfail_mode)
 		seen, order = set(), []
 		for s in stats:
@@ -127,6 +168,14 @@ def _start_job(token: str, files: List[Path], used_dir: str, *, passfail_mode: b
 			if f and f not in seen:
 				seen.add(f); order.append(f)
 		CACHE[token].update(status='done', rows=rows, stats=stats, fdv_order=order)
+		progress['percent'] = 100.0
+		if job_id:
+			with JOBS_LOCK:
+				rec = JOBS.get(job_id)
+				if rec:
+					rec['status'] = 'done'
+					# Record end time for UI (jobs page needs ended_hms)
+					rec['ended_at'] = time.time()
 	threading.Thread(target=job, daemon=True).start()
 
 @app.route('/', methods=['GET','POST'])
@@ -173,8 +222,30 @@ def home():
 				return redirect(url_for('home'))
 			token = uuid.uuid4().hex
 			CACHE[token] = {'status':'queued','progress':{'files_total':len(files),'files_done':0},'dir':used_dir, 'limit': limit_val, 'passfail_mode': passfail_mode}
-			_start_job(token, files, used_dir, passfail_mode=passfail_mode, limit=limit_val)
-			return render_template('fdv2_progress.html', token=token)
+			# Create a pseudo job_id for UI parity with full app
+			job_id = uuid.uuid4().hex[:10]
+			# Derive simple job name (folder basename or first up to 3 files)
+			if dirpath:
+				base_name = Path(dirpath).name
+			else:
+				base_name = ','.join([p.name for p in files[:3]]) if files else 'job'
+			if len(base_name) > 60:
+				base_name = base_name[:57] + '...'
+			with JOBS_LOCK:
+				JOBS[job_id] = {'token': token, 'created_at': time.time(), 'status': 'queued', 'name': base_name}
+			# Name derivation for upload path (used_dir variable) ensure consistent naming
+			try:
+				base_name2 = Path(used_dir).name if used_dir else ''
+				if not base_name2:
+					base_name2 = ','.join([p.name for p in files[:3]]) if files else 'job'
+				if len(base_name2) > 60:
+					base_name2 = base_name2[:57] + '...'
+			except Exception:
+				base_name2 = base_name
+			with JOBS_LOCK:
+				JOBS[job_id] = {'token': token, 'created_at': time.time(), 'status': 'queued', 'name': base_name2}
+			_start_job(token, files, used_dir, passfail_mode=passfail_mode, limit=limit_val, job_id=job_id)
+			return render_template('fdv2_progress.html', token=token, job_id=job_id)
 		except Exception as e:
 			flash(f'Failed: {e}')
 			return redirect(url_for('home'))
@@ -196,22 +267,63 @@ def home():
 			limit_val = None
 	if tok and tok in CACHE:
 		d = CACHE[tok]
+		# attempt to find job id for this token to show job links like full app
+		job_id_for_token = None
+		try:
+			with JOBS_LOCK:
+				for _jid, _rec in JOBS.items():
+					if _rec.get('token') == tok:
+						job_id_for_token = _jid
+						break
+		except Exception:
+			pass
 		# If no limit param supplied in query, keep stored values (user didn't request change)
 		if not limit_param_present:
 			stored_passfail = d.get('passfail_mode')
 			stored_limit = d.get('limit')
 			rows = d.get('rows', [])
 			stats = d.get('stats', [])
-			return render_template('fdv2_report.html', token=tok, stats=stats, used_dir=d.get('dir'), fdv_order=d.get('fdv_order', []), limit=(None if stored_passfail else stored_limit))
+			return render_template('fdv2_report.html', token=tok, job_id=job_id_for_token, stats=stats, used_dir=d.get('dir'), fdv_order=d.get('fdv_order', []), limit=(None if stored_passfail else stored_limit))
 		# limit param present: consider recompute
 		rows = d.get('rows', [])
 		stats = d.get('stats', [])
 		if rows and ((d.get('passfail_mode') != passfail_mode) or (d.get('limit') != limit_val)):
 			stats = stats_by_fdv_with_splits(rows, limit=(limit_val if not passfail_mode else 1e9), passfail_mode=passfail_mode)
 			d.update(stats=stats, passfail_mode=passfail_mode, limit=limit_val)
-		return render_template('fdv2_report.html', token=tok, stats=stats, used_dir=d.get('dir'), fdv_order=d.get('fdv_order', []), limit=(None if passfail_mode else limit_val))
-	# No active token/session: reflect current query (likely initial landing)
-	return render_template('fdv2_report.html', token='', stats=[], used_dir=None, fdv_order=[], limit=(None if passfail_mode else limit_val))
+		return render_template('fdv2_report.html', token=tok, job_id=job_id_for_token, stats=stats, used_dir=d.get('dir'), fdv_order=d.get('fdv_order', []), limit=(None if passfail_mode else limit_val))
+	# No token provided or token not found: render empty report shell
+	return render_template('fdv2_report.html', token='', job_id=None, stats=[], used_dir=None, fdv_order=[], limit=(None if passfail_mode else limit_val))
+
+@app.route('/job/<job_id>/status')
+def job_status(job_id: str):
+	token = _resolve_job_token(job_id)
+	if not token:
+		return Response(json.dumps({'status':'missing'}), mimetype='application/json', status=404)
+	d = CACHE.get(token) or {}
+	out = {
+		'status': d.get('status','unknown'),
+		'progress': d.get('progress', {}),
+		'error': d.get('error')
+	}
+	return Response(json.dumps(out), mimetype='application/json')
+
+@app.route('/job/<job_id>/progress')
+def job_progress(job_id: str):
+	token = _resolve_job_token(job_id)
+	if not token:
+		return redirect(url_for('home'))
+	# Reuse progress template similar to full app
+	return render_template('fdv2_progress.html', token=token, job_id=job_id, limit_raw='')
+
+@app.route('/job/<job_id>/report')
+def job_report(job_id: str):
+	token = _resolve_job_token(job_id)
+	if not token:
+		return redirect(url_for('home'))
+	lr = request.args.get('limit')
+	if lr:
+		return redirect(url_for('home', token=token, limit=lr))
+	return redirect(url_for('home', token=token))
 
 @app.route('/status/<token>')
 def status(token: str):
@@ -219,6 +331,42 @@ def status(token: str):
 	if not d:
 		return Response(json.dumps({'status':'missing'}), mimetype='application/json')
 	return Response(json.dumps({'status': d.get('status'), 'progress': d.get('progress', {}), 'error': d.get('error')}), mimetype='application/json')
+
+@app.route('/stream/job/<job_id>')
+def stream_job(job_id: str):
+	# Resolve job id to token
+	with JOBS_LOCK:
+		rec = JOBS.get(job_id)
+	if not rec:
+		return Response('not found', status=404)
+	token = rec.get('token')
+	if not token:
+		return Response('not found', status=404)
+	def gen():
+		last_sent = 0.0
+		while True:
+			data = CACHE.get(token) or {}
+			prog = data.get('progress', {}) or {}
+			st = data.get('status','unknown')
+			now = time.time()
+			if now - last_sent >= 1.0:
+				last_sent = now
+				payload = {
+					'status': st,
+					'progress': {
+						'percent': prog.get('percent'),
+						'lines': prog.get('lines'),
+						'lines_total': prog.get('lines_total'),
+						'files_done': prog.get('files_done'),
+						'files_total': prog.get('files_total'),
+						'current_file': prog.get('current_file'),
+					}
+				}
+				yield f"data: {json.dumps(payload)}\n\n"
+			if st in ('done','error'):
+				break
+			time.sleep(0.5)
+	return Response(gen(), mimetype='text/event-stream')
 
 @app.route('/fdv/<token>/tests', methods=['GET','POST'])
 def tests(token: str):
@@ -359,6 +507,49 @@ def fails(token: str):
 		+ ''.join(rows_html) + "</tbody></table></body></html>"
 	)
 	return Response(html, mimetype='text/html')
+
+@app.route('/api/jobs')
+def api_jobs():
+	jobs_out = []
+	with JOBS_LOCK:
+		for jid, rec in JOBS.items():
+			tok = rec.get('token')
+			data = CACHE.get(tok) or {}
+			prog = data.get('progress', {}) or {}
+			created_at = rec.get('created_at') if isinstance(rec.get('created_at'), (int, float)) else None
+			ended_at = rec.get('ended_at') if isinstance(rec.get('ended_at'), (int, float)) else None
+			def _fmt(ts):
+				try:
+					return time.strftime('%H:%M:%S', time.localtime(ts)) if ts else None
+				except Exception:
+					return None
+			status = data.get('status', 'unknown')
+			jobs_out.append({
+				'job_id': jid,
+				'token': tok,
+				'status': status,
+				'percent': prog.get('percent'),
+				'files_done': prog.get('files_done'),
+				'files_total': prog.get('files_total'),
+				'lines': prog.get('lines'),
+				'created_at': created_at,
+				'created_hms': _fmt(created_at) if created_at else None,
+				'ended_at': ended_at,
+				'ended_hms': _fmt(ended_at) if ended_at else None,
+				'duration_secs': (round((ended_at - created_at), 2) if (created_at and ended_at) else None),
+				'report_url': f"/job/{jid}/report",
+				'progress_url': f"/job/{jid}/progress",
+				'status_url': f"/job/{jid}/status",
+				'report_ready': status == 'done' and bool(data.get('rows')),
+				'name': rec.get('name', '')
+			})
+	return jsonify({'jobs': jobs_out, 'count': len(jobs_out)})
+
+@app.route('/jobs')
+def jobs_page():
+	with JOBS_LOCK:
+		ids = list(JOBS.keys())
+	return render_template('fdv2_jobs.html', job_ids=ids)
 
 # Compatibility endpoints for legacy template names
 app.add_url_rule('/', 'report_home', home, methods=['GET','POST'])

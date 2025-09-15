@@ -57,7 +57,7 @@
     </div>
   <p class="small">Input files → fdvtest report → click fdvtest → testname report → select testnames → plots</p>
 
-  <form class="up" method="post" enctype="multipart/form-data" target="_self" onsubmit="return onAnalyzeSubmit(event);">
+  <form class="up" method="post" action="{{ url_for('report_home') }}" enctype="multipart/form-data" target="_self" onsubmit="return onAnalyzeSubmit(event);">
   <label>Directory (recursively scanned):</label>
   <input type="text" name="dirpath" id="dirpath" size="60" placeholder="C:\\\\path\\\\to\\\\folder (leave empty to upload files)" value="{{ used_dir or request.args.get('dirpath', '') }}" oninput="syncAnalyzeGetState();" />
     <span>or</span>
@@ -141,6 +141,7 @@
           <th>PASS</th>
           <th>FAIL</th>
           <th>% FAIL</th>
+          <th>Vector</th>
           <th>Min</th>
           <th>Max</th>
           <th>Mean</th>
@@ -187,6 +188,7 @@
           <td {% if total > 0 %}class="{% if pct == 0 %}pct-ok{% elif pct <= 25 %}pct-warn{% else %}pct-bad{% endif %}"{% endif %}>
             {% if total > 0 %}{{ pct | round(1) }}%{% endif %}
           </td>
+          <td>{{ r.get('vector','') }}</td>
           <td>{{ r['min'] }}</td>
           <td>{{ r['max'] }}</td>
           <td>{{ r['mean'] }}</td>

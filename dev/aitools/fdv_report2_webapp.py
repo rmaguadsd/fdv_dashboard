@@ -65,6 +65,45 @@ def _persist_write(appname: str, token: str, html: str, filename: str = 'index.h
         pass
     return out
 
+# ---------------- Encoding helpers / diagnostics ----------------
+def _detect_file_encoding(fp: Path) -> str:
+    """Heuristic detect encoding. Returns 'utf-16' if a high fraction of NUL bytes present early, else 'utf-8'."""
+    try:
+        with open(fp, 'rb') as fb:
+            head = fb.read(4096)
+        if not head:
+            return 'utf-8'
+        # UTF-16 LE often shows 0x00 in every other byte for ASCII subset
+        nul_frac = head.count(b'\x00') / max(1, len(head))
+        if nul_frac > 0.10:  # threshold
+            return 'utf-16'
+        # BOM checks
+        if head.startswith(b'\xff\xfe') or head.startswith(b'\xfe\xff'):
+            return 'utf-16'
+    except Exception:
+        return 'utf-8'
+    return 'utf-8'
+
+def _convert_utf16_to_temp_utf8(fp: Path) -> Path | None:
+    """Convert a UTF-16 file to a temporary UTF-8 copy for downstream parser that only supports UTF-8.
+    Returns new temp file path or None if conversion failed.
+    """
+    try:
+        enc = 'utf-16'
+        with open(fp, 'r', encoding=enc, errors='strict') as f:
+            data = f.read()
+        import tempfile
+        tmp = Path(tempfile.gettempdir()) / f"fdv_utf8_{fp.name}"
+        with open(tmp, 'w', encoding='utf-8', errors='replace') as out:
+            out.write(data)
+        return tmp
+    except Exception as e:  # pragma: no cover
+        try:
+            print(f"[encoding] Failed to convert {fp} from UTF-16 -> UTF-8: {e}")
+        except Exception:
+            pass
+        return None
+
 # Try to use process_fdv for parsing; fall back to a minimal reader if missing
 try:
     import process_fdv as pfdv  # type: ignore
@@ -723,26 +762,70 @@ def stats_by_fdv_with_splits(rows: List[Dict[str, str]], *, limit: float = 0.0, 
             return None
         except Exception:
             return None
-    # Final global defensive filter: drop any row containing MONITOR or SHMOO in ANY string field
+    # Global MONITOR/SHMOO filter:
+    # Count MONITOR/SHMOO lines toward vector but drop from RBER stats.
+    # If a group has only MONITOR/SHMOO lines, we'll inject a synthetic row later so UI doesn't appear empty.
     try:
         _orig_len = len(rows)
         _filtered = []
         _skip = 0
+        _ms_lines_to_add: list[Tuple[Tuple[str,str,str,str,str], int]] = []
+        # Pre-map for start/end capture even if group only appears in filtered rows
+        _early_aux: Dict[Tuple[str,str,str,str,str], Tuple[str,str]] = {}
+        groups_seen_any: set[Tuple[str,str,str,str,str]] = set()
+        groups_seen_real: set[Tuple[str,str,str,str,str]] = set()
         for _r in rows:
-            bad = False
+            fdv_f = _first_nonempty_str(_r, ['fdv_file','fdv','file','filepath','filename'], '')
+            pr_f = _first_nonempty_str(_r, ['pr','PR'], '') or 'XX'
+            vcc_f = _first_nonempty_str(_r, ['vcc','VCC','vcc_mv'], '')
+            tm_f = _first_nonempty_str(_r, ['tm','TM'], '')
+            temp_f = _first_nonempty_str(_r, ['temp','TEMP','temperature'], '')
+            key_for_ms: Tuple[str,str,str,str,str] | None = (fdv_f, pr_f, vcc_f, tm_f, temp_f) if fdv_f else None
+            if key_for_ms:
+                groups_seen_any.add(key_for_ms)
+            # Early capture of test_start/test_end
+            try:
+                ts_early = (_r.get('test_start') or '').strip()
+                te_early = (_r.get('test_end') or '').strip()
+                if key_for_ms and (ts_early or te_early):
+                    prev = _early_aux.get(key_for_ms)
+                    if prev:
+                        # earliest start, latest end
+                        ts_prev, te_prev = prev
+                        if ts_early and (not ts_prev or ts_early < ts_prev):
+                            ts_prev = ts_early
+                        if te_early and (not te_prev or te_early > te_prev):
+                            te_prev = te_early
+                        _early_aux[key_for_ms] = (ts_prev, te_prev)
+                    else:
+                        _early_aux[key_for_ms] = (ts_early, te_early)
+            except Exception:
+                pass
+            # classify MONITOR/SHMOO
+            is_ms = False
             for _v in _r.values():
                 if isinstance(_v, str):
-                    _up = _v.upper()
-                    if 'MONITOR' in _up or 'SHMOO' in _up:
-                        bad = True
+                    _upv = _v.upper()
+                    if 'MONITOR' in _upv or 'SHMOO' in _upv:
+                        is_ms = True
                         break
-            if bad:
+            if is_ms:
                 _skip += 1
+                if key_for_ms:
+                    _ms_lines_to_add.append((key_for_ms,1))
                 continue
             _filtered.append(_r)
+            if key_for_ms:
+                groups_seen_real.add(key_for_ms)
         if _skip:
             try:
-                print(f"[stats_by_fdv_with_splits] globally filtered {_skip} MONITOR/SHMOO rows (of {_orig_len})")
+                print(f"[stats_by_fdv_with_splits] filtered {_skip} MONITOR/SHMOO rows (of {_orig_len}) while counting them")
+            except Exception:
+                pass
+        _placeholder_only = groups_seen_any - groups_seen_real
+        if _placeholder_only:
+            try:
+                print(f"[stats_by_fdv_with_splits] monitor-only groups detected: {len(_placeholder_only)}")
             except Exception:
                 pass
         rows = _filtered
@@ -750,6 +833,26 @@ def stats_by_fdv_with_splits(rows: List[Dict[str, str]], *, limit: float = 0.0, 
         pass
     from collections import defaultdict
     groups: Dict[Tuple[str, str, str, str, str], List[float]] = defaultdict(list)
+    # Track total FDV OUTPUT rows (including those later skipped for invalid/missing fuseid or no RBER) per key (vector metric)
+    vector_counts: Dict[Tuple[str, str, str, str, str], int] = defaultdict(int)
+    monitor_shmoo_counts: Dict[Tuple[str, str, str, str, str], int] = defaultdict(int)
+    # Pre-credit MONITOR/SHMOO lines discovered in global filter above and merge early start/end if not set later
+    try:
+        for _k,_inc in locals().get('_ms_lines_to_add', []):  # type: ignore[index]
+            monitor_shmoo_counts[_k] += _inc
+        # Seed aux_by_key with early start/end for groups not yet present
+        for _k, (_ts,_te) in locals().get('_early_aux', {}).items():  # type: ignore[index]
+            if _k not in aux_by_key:
+                aux_by_key[_k] = ('','','', _ts, _te)
+            else:
+                prev = aux_by_key[_k]
+                ts_prev, te_prev = prev[3], prev[4]
+                new_ts = _ts if (_ts and (not ts_prev or _ts < ts_prev)) else ts_prev
+                new_te = _te if (_te and (not te_prev or _te > te_prev)) else te_prev
+                if new_ts != ts_prev or new_te != te_prev:
+                    aux_by_key[_k] = (prev[0], prev[1], prev[2], new_ts, new_te)
+    except Exception:
+        pass
     planes_seen: Dict[Tuple[str, str, str, str, str], set] = defaultdict(set)
     testtime_by_key: Dict[Tuple[str, str, str, str, str], str] = {}
     # aux_by_key holds (fdvlistname, fdvtestrun, testtime_seconds, test_start, test_end)
@@ -775,6 +878,11 @@ def stats_by_fdv_with_splits(rows: List[Dict[str, str]], *, limit: float = 0.0, 
     if passfail_mode:
         pass_token_counts: Dict[Tuple[str, str, str, str, str], int] = defaultdict(int)
         fail_token_counts: Dict[Tuple[str, str, str, str, str], int] = defaultdict(int)
+    # Track earliest and latest raw_line (and their strings) per key for fallback start/end
+    earliest_raw_by_key: Dict[Tuple[str,str,str,str,str], str] = {}
+    latest_raw_by_key: Dict[Tuple[str,str,str,str,str], str] = {}
+    earliest_seen_order: Dict[Tuple[str,str,str,str,str], int] = {}
+    order_counter = 0
     for r in rows:
         # Skip PR monitor rows and obvious non-FDV tests
         if (r.get('tname','') or '').strip().upper() == 'PR':
@@ -799,7 +907,41 @@ def stats_by_fdv_with_splits(rows: List[Dict[str, str]], *, limit: float = 0.0, 
                 dut_ids_all_by_key[key].add(_dut_any)
         except Exception:
             pass
+        # Increment total FDV OUTPUT line count (vector base)
+        try:
+            vector_counts[key] += 1
+        except Exception:
+            pass
+        # Record earliest/latest raw_line for fallback timestamp population
+        try:
+            rl_fallback = (r.get('raw_line') or '').strip()
+            if rl_fallback:
+                order_counter += 1
+                if key not in earliest_raw_by_key:
+                    earliest_raw_by_key[key] = rl_fallback
+                    earliest_seen_order[key] = order_counter
+                # Always update latest
+                latest_raw_by_key[key] = rl_fallback
+        except Exception:
+            pass
         if not _is_valid_fuseid(fid):
+            # Ensure start/end captured before skipping
+            try:
+                ts_invalid = (r.get('test_start') or '').strip()
+                te_invalid = (r.get('test_end') or '').strip()
+                if ts_invalid or te_invalid:
+                    prev = aux_by_key.get(key)
+                    if prev:
+                        # earliest start, latest end
+                        prev_ts, prev_te = prev[3], prev[4]
+                        new_ts = ts_invalid if (ts_invalid and (not prev_ts or ts_invalid < prev_ts)) else prev_ts
+                        new_te = te_invalid if (te_invalid and (not prev_te or te_invalid > prev_te)) else prev_te
+                        if new_ts != prev_ts or new_te != prev_te:
+                            aux_by_key[key] = (prev[0], prev[1], prev[2], new_ts, new_te)
+                    else:
+                        aux_by_key[key] = ('','','', ts_invalid, te_invalid)
+            except Exception:
+                pass
             # Even if fuseid invalid, in passfail_mode we still want to capture PASS/FAIL tokens
             if passfail_mode:
                 try:
@@ -913,9 +1055,33 @@ def stats_by_fdv_with_splits(rows: List[Dict[str, str]], *, limit: float = 0.0, 
     out: List[Dict[str, str]] = []
     # Union of keys so that fdv tests with only invalid rows still show up
     all_keys = set(dut_fid_by_key.keys()) | set(ignored_by_key.keys()) | set(groups.keys())
+    # Fallback: if aux_by_key missing start/end for a key, attempt to derive from earliest/latest raw_line
+    import re as _re_dt_norm
+    _re_dt = _re_dt_norm.compile(r"(\d{4}_[0-1]?\d_[0-3]?\d)\s+([0-2]?\d:[0-5]?\d:[0-5]?\d)")
+    for _k in all_keys:
+        if _k not in aux_by_key:
+            aux_by_key[_k] = ('','','','', '')
+        prev = aux_by_key[_k]
+        ts_prev, te_prev = prev[3], prev[4]
+        changed = False
+        # Derive placeholder start/end from earliest/latest raw lines only if missing
+        if (not ts_prev) and earliest_raw_by_key.get(_k):
+            m = _re_dt.search(earliest_raw_by_key[_k])
+            if m:
+                ts_prev = f"{m.group(1)} {m.group(2)}"
+                changed = True
+        if (not te_prev) and latest_raw_by_key.get(_k):
+            m = _re_dt.search(latest_raw_by_key[_k])
+            if m:
+                te_prev = f"{m.group(1)} {m.group(2)}"
+                changed = True
+        if changed:
+            aux_by_key[_k] = (prev[0], prev[1], prev[2], ts_prev, te_prev)
     for key in sorted(all_keys, key=lambda k: (k[0], k[1]=="XX", k[1], k[2], k[3], k[4])):
         fdv, pr, vcc, tm, temp = key
-        vals = sorted(groups.get(key, []))
+        raw_vals = groups.get(key, [])
+        # Filter out None values defensively (minimal runner may emit None RBERs)
+        vals = sorted([x for x in raw_vals if x is not None])
         n = len(vals)
         import statistics as _stats
         pls = planes_seen.get(key, set())
@@ -937,8 +1103,13 @@ def stats_by_fdv_with_splits(rows: List[Dict[str, str]], *, limit: float = 0.0, 
             n_tokens = pt + ft
         else:
             if n:
-                pass_n = sum(1 for x in vals if x < limit)
-                fail_n = n - pass_n
+                if limit is None:
+                    # No numeric threshold supplied; treat all as fail (or neutral) => 0 passes.
+                    pass_n = 0
+                    fail_n = n
+                else:
+                    pass_n = sum(1 for x in vals if (x is not None and x < limit))
+                    fail_n = n - pass_n
             else:
                 pass_n = 0
                 fail_n = 0
@@ -1001,6 +1172,20 @@ def stats_by_fdv_with_splits(rows: List[Dict[str, str]], *, limit: float = 0.0, 
         ig_comment = ("IGNORED (invalid FUSEID): " + ", ".join(sorted(ignored_parts))) if ignored_parts else ''
         comments = " | ".join([c for c in (base_comment, ig_comment) if c])
         valid_count = len(valid_fuseids_set_by_key.get(key, set())) if valid_fuseids_set_by_key.get(key) else 0
+        # Updated semantics (2025-09-14, request):
+        #   VECTOR column must equal COUNT + number_of_MONITOR_or_SHMOO FDV OUTPUT lines.
+        #   COUNT = pass + fail (only real test evaluation lines)
+        #   VECTOR = (pass + fail) + monitor_shmoo
+        # Any previously considered "skipped" concept removed.
+        count_total = pass_n + fail_n
+        vector_total = count_total + monitor_shmoo_counts.get(key, 0)
+        # Safe fail percentage: if no PASS/FAIL lines at all, define as 0.0
+        fail_pct_val: float = 0.0
+        try:
+            if count_total > 0 and fail_n > 0:
+                fail_pct_val = (fail_n / count_total) * 100.0
+        except Exception:
+            fail_pct_val = 0.0
         out.append({
             'fdv_file': fdv,
             'pr': pr,
@@ -1013,13 +1198,16 @@ def stats_by_fdv_with_splits(rows: List[Dict[str, str]], *, limit: float = 0.0, 
             'pagemap': (sorted(pagemap_counts.get(key, {}).items(), key=lambda kv: (-kv[1], kv[0]))[0][0]
                         if pagemap_counts.get(key) else ''),
             'testtime_label': label,
-            'test_start': (aux_by_key.get(key, ('','','','',''))[3] if key in aux_by_key else ''),
-            'test_end': (aux_by_key.get(key, ('','','','',''))[4] if key in aux_by_key else ''),
-            'count': str(n_tokens),
+            # Ensure start/end fallback: if aux_by_key derived values blank, substitute label or '-'
+            'test_start': (lambda _v: (_v if _v else (label or '')))(aux_by_key.get(key, ('','','','',''))[3] if key in aux_by_key else ''),
+            'test_end': (lambda _v: (_v if _v else (label or '')))(aux_by_key.get(key, ('','','','',''))[4] if key in aux_by_key else ''),
+            'count': str(count_total),
+            'vector': str(vector_total),
             'pass': str(pass_n),
             'fail': str(fail_n),
             'pass_n': str(pass_n),
             'fail_n': str(fail_n),
+            'fail_pct': f"{fail_pct_val:.1f}",
             'min': (f"{vals[0]:.6g}" if n else ''),
             'max': (f"{vals[-1]:.6g}" if n else ''),
             'mean': (f"{(sum(vals)/n):.6g}" if n else ''),
@@ -1031,6 +1219,42 @@ def stats_by_fdv_with_splits(rows: List[Dict[str, str]], *, limit: float = 0.0, 
     try:
         _tok_rows = sum(1 for r in out if r.get('pf_mode') == 'token')
         print(f"[stats_by_fdv_with_splits] produced {len(out)} rows; token-mode rows={_tok_rows}; with unit info in {sum(1 for r in out if r.get('valid_fuseid_count') and r.get('valid_fuseid_count')!='0')} rows")
+    except Exception:
+        pass
+    # Inject synthetic rows for monitor-only groups absent from out
+    try:
+        for _k in locals().get('_placeholder_only', []):  # type: ignore[index]
+            if not any(r for r in out if (r.get('fdv_file'), r.get('pr'), r.get('vcc'), r.get('tm'), r.get('temp')) == _k):
+                fdv, pr, vcc, tm, temp = _k
+                ms_ct = monitor_shmoo_counts.get(_k, 0)
+                out.append({
+                    'fdv_file': fdv,
+                    'pr': pr,
+                    'vcc': vcc,
+                    'tm': tm,
+                    'temp': temp,
+                    'plane_op': '',
+                    'comments': 'MONITOR/SHMOO only',
+                    'valid_fuseid_count': '0',
+                    'pagemap': '',
+                    'testtime_label': '',
+                    'test_start': '',
+                    'test_end': '',
+                    'count': '0',
+                    'vector': str(ms_ct),
+                    'pass': '0',
+                    'fail': '0',
+                    'pass_n': '0',
+                    'fail_n': '0',
+                    'fail_pct': '0.0',
+                    'min': '',
+                    'max': '',
+                    'mean': '',
+                    'stdev': '',
+                    'median': '',
+                    'pf_mode': False,
+                    'unit_info': '',
+                })
     except Exception:
         pass
     return out
@@ -1705,18 +1929,17 @@ def _start_parse_job(token: str, files: List[Path], used_dir: str | None, limit_
     def job():
         try:
             # Allowed line prefixes per requirement; all other lines ignored early.
-            _ALLOWED_PREFIXES = (
+            _ALLOWED_PREFIXES_CS = (
                 'Test Start Date',
                 'Test End Date',
                 'ECHO: FUSEID',
                 'FDV OUTPUT',
             )
+            _ALLOWED_PREFIXES = tuple(p.upper() for p in _ALLOWED_PREFIXES_CS)
             def _allowed_line(s: str) -> bool:
                 ls = s.lstrip()
-                for p in _ALLOWED_PREFIXES:
-                    if ls.startswith(p):
-                        return True
-                return False
+                up = ls.upper()
+                return any(up.startswith(p) for p in _ALLOWED_PREFIXES)
             total_bytes = 0
             sizes: List[int] = []
             # Pre-count lines for accurate overall and per-file line progress/ETA
@@ -1875,22 +2098,41 @@ def _start_parse_job(token: str, files: List[Path], used_dir: str | None, limit_
                     else:
                         # Fallback: very slow path without structured parsing
                         r = []
-                        with open(fp, 'r', encoding='utf-8', errors='replace') as f:
-                            for i, line in enumerate(f, start=1):
-                                _ls = line.lstrip()
-                                if _ls.startswith('FDV OUTPUT'):
-                                    # Skip any FDV OUTPUT line that includes MONITOR or SHMOO (case-insensitive)
-                                    try:
-                                        import re as _re_mon
-                                        if _re_mon.search(r"\b(MONITOR|SHMOO)\b", _ls, _re_mon.IGNORECASE):
-                                            continue
-                                    except Exception:
-                                        _uu = _ls.upper()
-                                        if 'MONITOR' in _uu or 'SHMOO' in _uu:
-                                            continue
-                                    r.append({'raw_line': _ls.rstrip('\n'), 'line_number': str(i), 'fdv_file': str(fp)})
-                                if i % 100000 == 0:
-                                    _cb(i, 0.0)
+                        _candidate_fp = fp
+                        try:
+                            enc_guess = _detect_file_encoding(fp)
+                            if enc_guess == 'utf-16':
+                                try:
+                                    print(f"[encoding] Detected possible UTF-16 file: {fp}")
+                                except Exception:
+                                    pass
+                                tmp_conv = _convert_utf16_to_temp_utf8(fp)
+                                if tmp_conv and tmp_conv.exists():
+                                    _candidate_fp = tmp_conv
+                        except Exception:
+                            pass
+                        try:
+                            with open(_candidate_fp, 'r', encoding='utf-8', errors='replace') as f:
+                                for i, line in enumerate(f, start=1):
+                                    _ls = line.lstrip()
+                                    if _ls.startswith('FDV OUTPUT'):
+                                        # Skip any FDV OUTPUT line that includes MONITOR or SHMOO (case-insensitive)
+                                        try:
+                                            import re as _re_mon
+                                            if _re_mon.search(r"\b(MONITOR|SHMOO)\b", _ls, _re_mon.IGNORECASE):
+                                                continue
+                                        except Exception:
+                                            _uu = _ls.upper()
+                                            if 'MONITOR' in _uu or 'SHMOO' in _uu:
+                                                continue
+                                        r.append({'raw_line': _ls.rstrip('\n'), 'line_number': str(i), 'fdv_file': str(fp)})
+                                    if i % 100000 == 0:
+                                        _cb(i, 0.0)
+                        except Exception as e:  # pragma: no cover
+                            try:
+                                print(f"[fallback-parse] Failed reading {fp}: {e}")
+                            except Exception:
+                                pass
                 except Exception:
                     r = []
                 # Ensure fdv_file is set for all rows (some parsers may omit)
@@ -5301,18 +5543,17 @@ def _start_parse_job(token: str, files: List[Path], used_dir: str | None) -> Non
     def job():
         try:
             # Allowed line prefixes; all other lines ignored for performance.
-            _ALLOWED_PREFIXES = (
+            _ALLOWED_PREFIXES_CS = (
                 'Test Start Date',
                 'Test End Date',
                 'ECHO: FUSEID',
                 'FDV OUTPUT',
             )
+            _ALLOWED_PREFIXES = tuple(p.upper() for p in _ALLOWED_PREFIXES_CS)
             def _allowed_line(s: str) -> bool:
                 ls = s.lstrip()
-                for p in _ALLOWED_PREFIXES:
-                    if ls.startswith(p):
-                        return True
-                return False
+                up = ls.upper()
+                return any(up.startswith(p) for p in _ALLOWED_PREFIXES)
             total_bytes = 0
             sizes: List[int] = []
             # Pre-count lines so UI can show overall and per-file totals
@@ -5430,14 +5671,41 @@ def _start_parse_job(token: str, files: List[Path], used_dir: str | None) -> Non
                     else:
                         # Fallback: very slow path without structured parsing
                         r = []
-                        with open(fp, 'r', encoding='utf-8', errors='replace') as f:
-                            for i, line in enumerate(f, start=1):
-                                if not _allowed_line(line):
-                                    continue
-                                if line.lstrip().startswith('FDV OUTPUT'):
-                                    r.append({'raw_line': line.rstrip('\n'), 'line_number': str(i), 'fdv_file': str(fp)})
-                                if i % 100000 == 0:
-                                    _cb(i, 0.0)
+                        _candidate_fp = fp
+                        try:
+                            enc_guess = _detect_file_encoding(fp)
+                            if enc_guess == 'utf-16':
+                                try:
+                                    print(f"[encoding] Detected possible UTF-16 file: {fp}")
+                                except Exception:
+                                    pass
+                                tmp_conv = _convert_utf16_to_temp_utf8(fp)
+                                if tmp_conv and tmp_conv.exists():
+                                    _candidate_fp = tmp_conv
+                        except Exception:
+                            pass
+                        try:
+                            with open(_candidate_fp, 'r', encoding='utf-8', errors='replace') as f:
+                                for i, line in enumerate(f, start=1):
+                                    if not _allowed_line(line):
+                                        continue
+                                    ls = line.lstrip()
+                                    if ls.startswith('FDV OUTPUT'):
+                                        # Filter MONITOR/SHMOO lines here too
+                                        up = ls.upper()
+                                        if 'MONITOR' in up or 'SHMOO' in up:
+                                            continue
+                                        r.append({'raw_line': ls.rstrip('\n'), 'line_number': str(i), 'fdv_file': str(fp)})
+                                    # Also capture explicit test start/end lines into rows so timestamps not lost
+                                    elif ls.upper().startswith('TEST START DATE') or ls.upper().startswith('TEST END DATE'):
+                                        r.append({'raw_line': ls.rstrip('\n'), 'line_number': str(i), 'fdv_file': str(fp)})
+                                    if i % 100000 == 0:
+                                        _cb(i, 0.0)
+                        except Exception as e:
+                            try:
+                                print(f"[fallback-parse2] Failed reading {fp}: {e}")
+                            except Exception:
+                                pass
                 except Exception:
                     r = []
                 # Ensure fdv_file is set for all rows (some parsers may omit)
