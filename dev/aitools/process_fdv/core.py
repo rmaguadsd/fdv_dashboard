@@ -590,6 +590,66 @@ def process_file(
             })
     except Exception:
         pass
+    # ------------------------------------------------------------------
+    # NEW: propagate test time info onto every FDV OUTPUT row (for downstream aggregation)
+    # This mirrors older working behavior (see backup36 reference) so that
+    # stats_by_fdv_with_splits can always see start/end without needing markers.
+    try:  # pragma: no cover (integration path)
+        _tm_marker = None
+        for _m in markers:
+            if isinstance(_m, dict) and _m.get('type') == 'test_time':
+                _tm_marker = _m
+                break
+        if _tm_marker:
+            _s_raw = (_tm_marker.get('start_raw') or '').strip()
+            _e_raw = (_tm_marker.get('end_raw') or '').strip()
+            _ln_marker = (_tm_marker.get('list_name') or '').strip()
+            # Duration (seconds) if both ISO timestamps available
+            _dur_secs = ''
+            try:
+                _s_iso = (_tm_marker.get('start_iso') or '').strip()
+                _e_iso = (_tm_marker.get('end_iso') or '').strip()
+                if _s_iso and _e_iso:
+                    from datetime import datetime as _dt_calc
+                    _ds = _dt_calc.fromisoformat(_s_iso)
+                    _de = _dt_calc.fromisoformat(_e_iso)
+                    _dsec = int((_de - _ds).total_seconds())
+                    if _dsec < 0:
+                        _dsec = 0
+                    _dur_secs = str(_dsec)
+            except Exception:
+                _dur_secs = ''
+            # Clean list name similar to webapp logic (strip numeric prefix, tb_set_utility_)
+            if _ln_marker:
+                try:
+                    import re as _re_ln
+                    _ln_marker = _re_ln.sub(r"^\d+_", '', _ln_marker)
+                    _ln_marker = _re_ln.sub(r"(?i)^tb_set_utility_", '', _ln_marker)
+                except Exception:
+                    pass
+            # Determine fdvtest from last_fdv (base filename without extension)
+            try:
+                import os as _os_path
+                _fdvtest = short_fdv_name(last_fdv)
+                if _fdvtest.lower().endswith('.fdv'):
+                    _fdvtest = _fdvtest[:-4]
+            except Exception:
+                _fdvtest = ''
+            _label = ''
+            if _ln_marker or _fdvtest or _dur_secs:
+                _label = f"{_ln_marker}::{_fdvtest} = {_dur_secs}".strip()
+            # Attach to each row if not already present
+            for _r in rows:
+                if _s_raw and not _r.get('test_start'):
+                    _r['test_start'] = _s_raw
+                if _e_raw and not _r.get('test_end'):
+                    _r['test_end'] = _e_raw
+                if _dur_secs and not _r.get('testtime_seconds'):
+                    _r['testtime_seconds'] = _dur_secs
+                if _label and not _r.get('testtime_label'):
+                    _r['testtime_label'] = _label
+    except Exception:
+        pass
     return rows, kept_lines, markers
 
 

@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+# -*- coding: utf-8 -*-
 """
 Launch both FDV apps:
 - FDV Report v2 on port 5057

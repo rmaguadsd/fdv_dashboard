@@ -63,6 +63,45 @@ def _persist_write(appname: str, token: str, html: str, filename: str = 'index.h
         out.write_text(html, encoding='utf-8')
     except Exception:
         pass
+    # Fallback: propagate test_start/test_end from any original row if missing in aggregated row
+    try:
+        # Build earliest/ latest map per fdv/pr/vcc/tm/temp
+        time_map: Dict[Tuple[str,str,str,str,str], Tuple[str,str]] = {}
+        for _r in rows:
+            _fdv_o = (_r.get('fdv_file') or _r.get('fdv') or '').strip()
+            if not _fdv_o:
+                continue
+            _pr_o = (_r.get('pr') or 'XX').strip() or 'XX'
+            _vcc_o = (_r.get('vcc') or '').strip()
+            _tm_o = (_r.get('tm') or '').strip()
+            _temp_o = (_r.get('temp') or '').strip()
+            _ts_o = (_r.get('test_start') or '').strip()
+            _te_o = (_r.get('test_end') or '').strip()
+            if not (_ts_o or _te_o):
+                continue
+            k = (_fdv_o, _pr_o, _vcc_o, _tm_o, _temp_o)
+            prev = time_map.get(k)
+            if not prev:
+                time_map[k] = (_ts_o, _te_o)
+            else:
+                pts, pte = prev
+                if _ts_o and (not pts or _ts_o < pts):
+                    pts = _ts_o
+                if _te_o and (not pte or _te_o > pte):
+                    pte = _te_o
+                time_map[k] = (pts, pte)
+        if time_map:
+            for _agg in out:
+                if (not _agg.get('test_start')) or (not _agg.get('test_end')):
+                    k = (_agg.get('fdv_file',''), _agg.get('pr','XX'), _agg.get('vcc',''), _agg.get('tm',''), _agg.get('temp',''))
+                    if k in time_map:
+                        pts, pte = time_map[k]
+                        if not _agg.get('test_start') and pts:
+                            _agg['test_start'] = pts
+                        if not _agg.get('test_end') and pte:
+                            _agg['test_end'] = pte
+    except Exception:
+        pass
     return out
 
 # ---------------- Encoding helpers / diagnostics ----------------
@@ -268,7 +307,7 @@ def _scan_fuseid_and_pr_from_file(file_path: str) -> tuple[dict[str, str], dict[
     try:
         with open(file_path, 'r', encoding='utf-8', errors='replace') as f:
             dut_counter = 0
-            for line in f:
+            for line in f:  # Iterate through each line in the file
                 up_head = line.lstrip().upper()
                 if not (
                     up_head.startswith('FDV OUTPUT')
@@ -584,6 +623,61 @@ def _extract_plane_addr(r: Dict[str, str]) -> str:
                         return f"P{n}"
                 except Exception:
                     pass
+                # Inject synthetic marker rows per (pr,vcc,tm,temp) if time markers exist but no row carries them.
+                try:
+                    if (start_raw_str or end_raw_str) and not any(('test_start' in rr or 'test_end' in rr) for rr in r):
+                        import os as _os_syn2
+                        _fdv_short2 = _os_syn2.path.basename(str(fp))
+                        if _fdv_short2.lower().endswith('.fdv'):
+                            _fdv_short2 = _fdv_short2[:-4]
+                        combos2 = set()
+                        for _rr2 in r:
+                            combos2.add((_rr2.get('pr','XX') or 'XX', _rr2.get('vcc','') or '', _rr2.get('tm','') or '', _rr2.get('temp','') or ''))
+                        if not combos2:
+                            combos2.add(('XX','','',''))
+                        for (_pr2,_vcc2,_tm2,_temp2) in combos2:
+                            r.append({
+                                'fdv_file': _fdv_short2,
+                                'pr': _pr2,
+                                'vcc': _vcc2,
+                                'tm': _tm2,
+                                'temp': _temp2,
+                                'raw_line': '',
+                                'test_start': start_raw_str or '',
+                                'test_end': end_raw_str or '',
+                                'testtime_label': testtime_label or '',
+                                'testtime_seconds': (str(dur_secs) if (dur_secs is not None and dur_secs >= 0) else ''),
+                            })
+                except Exception:
+                    pass
+                # Inject synthetic rows (one per existing (pr,vcc,tm,temp) combo) carrying test_start/test_end if
+                # markers existed but NO existing row has those fields. Ensures downstream stats see time data.
+                try:
+                    if (start_raw_str or end_raw_str) and not any(('test_start' in rr or 'test_end' in rr) for rr in r):
+                        import os as _os_syn
+                        _fdv_short = _os_syn.path.basename(str(fp))
+                        if _fdv_short.lower().endswith('.fdv'):
+                            _fdv_short = _fdv_short[:-4]
+                        combos = set()
+                        for _rr in r:
+                            combos.add((_rr.get('pr','XX') or 'XX', _rr.get('vcc','') or '', _rr.get('tm','') or '', _rr.get('temp','') or ''))
+                        if not combos:
+                            combos.add(('XX','','',''))
+                        for (_pr_syn,_vcc_syn,_tm_syn,_temp_syn) in combos:
+                            r.append({
+                                'fdv_file': _fdv_short,
+                                'pr': _pr_syn,
+                                'vcc': _vcc_syn,
+                                'tm': _tm_syn,
+                                'temp': _temp_syn,
+                                'raw_line': '',
+                                'test_start': start_raw_str or '',
+                                'test_end': end_raw_str or '',
+                                'testtime_label': testtime_label or '',
+                                'testtime_seconds': (str(dur_secs) if (dur_secs is not None and dur_secs >= 0) else ''),
+                            })
+                except Exception:
+                    pass
     # From tname token
     tn = (r.get('tname', '') or '')
     if tn:
@@ -765,6 +859,24 @@ def stats_by_fdv_with_splits(rows: List[Dict[str, str]], *, limit: float = 0.0, 
     # Global MONITOR/SHMOO filter:
     # Count MONITOR/SHMOO lines toward vector but drop from RBER stats.
     # If a group has only MONITOR/SHMOO lines, we'll inject a synthetic row later so UI doesn't appear empty.
+    # Pre-compute fdv_output_counts on the full raw set (before filtering) for VECTOR semantics
+    from collections import defaultdict as _dd_pre
+    fdv_output_counts: Dict[Tuple[str,str,str,str,str], int] = _dd_pre(int)
+    for __r in rows:
+        try:
+            fdv_f0 = _first_nonempty_str(__r, ['fdv_file','fdv','file','filepath','filename'], '')
+            if not fdv_f0:
+                continue
+            pr_f0 = _first_nonempty_str(__r, ['pr','PR'], '') or 'XX'
+            vcc_f0 = _first_nonempty_str(__r, ['vcc','VCC','vcc_mv'], '')
+            tm_f0 = _first_nonempty_str(__r, ['tm','TM'], '')
+            temp_f0 = _first_nonempty_str(__r, ['temp','TEMP','temperature'], '')
+            key0 = (fdv_f0, pr_f0, vcc_f0, tm_f0, temp_f0)
+            rl0 = (__r.get('raw_line') or '').lstrip().upper()
+            if rl0.startswith('FDV OUTPUT'):
+                fdv_output_counts[key0] += 1
+        except Exception:
+            pass
     try:
         _orig_len = len(rows)
         _filtered = []
@@ -783,6 +895,7 @@ def stats_by_fdv_with_splits(rows: List[Dict[str, str]], *, limit: float = 0.0, 
             key_for_ms: Tuple[str,str,str,str,str] | None = (fdv_f, pr_f, vcc_f, tm_f, temp_f) if fdv_f else None
             if key_for_ms:
                 groups_seen_any.add(key_for_ms)
+            # NOTE: Raw FDV OUTPUT line counting now happens in the pre-pass above; do not increment here.
             # Early capture of test_start/test_end
             try:
                 ts_early = (_r.get('test_start') or '').strip()
@@ -833,8 +946,6 @@ def stats_by_fdv_with_splits(rows: List[Dict[str, str]], *, limit: float = 0.0, 
         pass
     from collections import defaultdict
     groups: Dict[Tuple[str, str, str, str, str], List[float]] = defaultdict(list)
-    # Track total FDV OUTPUT rows (including those later skipped for invalid/missing fuseid or no RBER) per key (vector metric)
-    vector_counts: Dict[Tuple[str, str, str, str, str], int] = defaultdict(int)
     monitor_shmoo_counts: Dict[Tuple[str, str, str, str, str], int] = defaultdict(int)
     # Pre-credit MONITOR/SHMOO lines discovered in global filter above and merge early start/end if not set later
     try:
@@ -905,11 +1016,6 @@ def stats_by_fdv_with_splits(rows: List[Dict[str, str]], *, limit: float = 0.0, 
             _dut_any = (r.get('dut_id') or '').strip()
             if _dut_any:
                 dut_ids_all_by_key[key].add(_dut_any)
-        except Exception:
-            pass
-        # Increment total FDV OUTPUT line count (vector base)
-        try:
-            vector_counts[key] += 1
         except Exception:
             pass
         # Record earliest/latest raw_line for fallback timestamp population
@@ -1115,10 +1221,31 @@ def stats_by_fdv_with_splits(rows: List[Dict[str, str]], *, limit: float = 0.0, 
                 fail_n = 0
             pf_mode = 'limit'
             n_tokens = n
-        # Synthesize label if missing
+        # Synthesize label if missing; also attempt to derive missing duration seconds from start/end
         label = testtime_by_key.get(key, '')
         if not label:
             ln, rn, secs, ts, te = aux_by_key.get(key, ('', '', '', '', ''))
+            # If duration seconds missing but we have start/end timestamps, compute it
+            if (not secs) and ts and te:
+                try:
+                    import re as _re_dt_calc
+                    _m_ts = _re_dt_calc.search(r"(\d{4})_(\d{1,2})_(\d{1,2})\s+([0-2]?\d:[0-5]?\d:[0-5]?\d)", ts)
+                    _m_te = _re_dt_calc.search(r"(\d{4})_(\d{1,2})_(\d{1,2})\s+([0-2]?\d:[0-5]?\d:[0-5]?\d)", te)
+                    if _m_ts and _m_te:
+                        from datetime import datetime as _dt_calc
+                        def _to_dt(_m):
+                            yyyy = int(_m.group(1)); mm = int(_m.group(2)); dd = int(_m.group(3))
+                            hh, mi, ss = [int(x) for x in _m.group(4).split(':')]
+                            return _dt_calc(yyyy, mm, dd, hh, mi, ss)
+                        _dts = _to_dt(_m_ts); _dte = _to_dt(_m_te)
+                        _dur = int((_dte - _dts).total_seconds())
+                        if _dur < 0: _dur = 0
+                        secs = str(_dur)
+                        # Write back into aux_by_key so later consumers see it
+                        prev_aux = aux_by_key.get(key, ('', '', '', ts, te))
+                        aux_by_key[key] = (prev_aux[0], prev_aux[1], secs, ts, te)
+                except Exception:
+                    pass
             # Use fdvtest (basename without extension) instead of run name for display
             import os as _os
             fdvtest = _os.path.basename(fdv)
@@ -1172,13 +1299,15 @@ def stats_by_fdv_with_splits(rows: List[Dict[str, str]], *, limit: float = 0.0, 
         ig_comment = ("IGNORED (invalid FUSEID): " + ", ".join(sorted(ignored_parts))) if ignored_parts else ''
         comments = " | ".join([c for c in (base_comment, ig_comment) if c])
         valid_count = len(valid_fuseids_set_by_key.get(key, set())) if valid_fuseids_set_by_key.get(key) else 0
-        # Updated semantics (2025-09-14, request):
-        #   VECTOR column must equal COUNT + number_of_MONITOR_or_SHMOO FDV OUTPUT lines.
-        #   COUNT = pass + fail (only real test evaluation lines)
-        #   VECTOR = (pass + fail) + monitor_shmoo
-        # Any previously considered "skipped" concept removed.
+        # Updated semantics (2025-09-14, user request revision):
+        #   VECTOR column = total number of raw lines beginning with 'FDV OUTPUT'
+        #   captured globally (fdv_output_counts) BEFORE filtering for validity,
+        #   regardless of PASS/FAIL classification.
+        #   Monitor/Shmoo lines are still detected and excluded from PASS/FAIL counts
+        #   but no longer added to VECTOR explicitly; their raw lines already count
+        #   if they start with 'FDV OUTPUT'.
         count_total = pass_n + fail_n
-        vector_total = count_total + monitor_shmoo_counts.get(key, 0)
+        vector_total = fdv_output_counts.get(key, 0)
         # Safe fail percentage: if no PASS/FAIL lines at all, define as 0.0
         fail_pct_val: float = 0.0
         try:
@@ -1198,9 +1327,9 @@ def stats_by_fdv_with_splits(rows: List[Dict[str, str]], *, limit: float = 0.0, 
             'pagemap': (sorted(pagemap_counts.get(key, {}).items(), key=lambda kv: (-kv[1], kv[0]))[0][0]
                         if pagemap_counts.get(key) else ''),
             'testtime_label': label,
-            # Ensure start/end fallback: if aux_by_key derived values blank, substitute label or '-'
-            'test_start': (lambda _v: (_v if _v else (label or '')))(aux_by_key.get(key, ('','','','',''))[3] if key in aux_by_key else ''),
-            'test_end': (lambda _v: (_v if _v else (label or '')))(aux_by_key.get(key, ('','','','',''))[4] if key in aux_by_key else ''),
+            # Preserve actual derived start/end (no label substitution) so blanks remain blanks
+            'test_start': (aux_by_key.get(key, ('','','','',''))[3] if key in aux_by_key else ''),
+            'test_end': (aux_by_key.get(key, ('','','','',''))[4] if key in aux_by_key else ''),
             'count': str(count_total),
             'vector': str(vector_total),
             'pass': str(pass_n),
@@ -2184,6 +2313,26 @@ def _start_parse_job(token: str, files: List[Path], used_dir: str | None, limit_
                 except Exception:
                     start_dt = start_dt or None
                     end_dt = end_dt or None
+                # Fallback: if no marker-derived raw strings, use file mtime as both start/end (better than blank)
+                if not start_raw_str and not end_raw_str:
+                    try:
+                        import time as _t
+                        _mt = fp.stat().st_mtime
+                        _lt = _t.localtime(_mt)
+                        start_raw_str = f"{_lt.tm_year:04d}_{_lt.tm_mon}_{_lt.tm_mday} {_lt.tm_hour:02d}:{_lt.tm_min:02d}:{_lt.tm_sec:02d}"
+                        end_raw_str = start_raw_str
+                    except Exception:
+                        pass
+                # Fallback: if neither raw start nor end captured, use file mtime once
+                if not start_raw_str and not end_raw_str:
+                    try:
+                        import time as _t2
+                        _mt2 = fp.stat().st_mtime
+                        _lt2 = _t2.localtime(_mt2)
+                        start_raw_str = f"{_lt2.tm_year:04d}_{_lt2.tm_mon}_{_lt2.tm_mday} {_lt2.tm_hour:02d}:{_lt2.tm_min:02d}:{_lt2.tm_sec:02d}"
+                        end_raw_str = start_raw_str
+                    except Exception:
+                        pass
                 # Build label string: <fdvlistname>::<fdvtest> = seconds
                 def _fmt_duration_secs(s_dt, e_dt) -> int:
                     try:

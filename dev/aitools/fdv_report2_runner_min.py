@@ -135,10 +135,20 @@ def _start_job(token: str, files: List[Path], used_dir: str, *, passfail_mode: b
 							start_line = first_fdv_output
 						if not end_line and last_fdv_output:
 							end_line = last_fdv_output
+						# Attach start/end to first record and propagate to all for downstream grouping
 						if start_line:
 							recs[0].setdefault('test_start', start_line)
 						if end_line:
 							recs[0].setdefault('test_end', end_line)
+						# Propagate to every record for consistency (some aggregators look at arbitrary row)
+						if ('test_start' in recs[0]) or ('test_end' in recs[0]):
+							_ts_val = recs[0].get('test_start','')
+							_te_val = recs[0].get('test_end','')
+							for _rr in recs:
+								if _ts_val and 'test_start' not in _rr:
+									_rr['test_start'] = _ts_val
+								if _te_val and 'test_end' not in _rr:
+									_rr['test_end'] = _te_val
 					if recs and ('test_start' not in recs[0] or 'test_end' not in recs[0]):
 						try:
 							stat = fp.stat()
