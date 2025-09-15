@@ -117,6 +117,19 @@ def _start_job(token: str, files: List[Path], used_dir: str, *, passfail_mode: b
 		processed_lines = 0
 		rows: List[Dict[str,str]] = []
 		for idx, fp in enumerate(files, start=1):
+			# Support pause: spin while _pause_flag set (allow cooperative delete)
+			while CACHE.get(token, {}).get('_pause_flag'):
+				CACHE[token]['status'] = 'paused'
+				if CACHE.get(token, {}).get('_stop_flag'):
+					CACHE[token]['status'] = 'deleted'
+					return
+				time.sleep(0.25)
+			# Ensure status returns to running after pause released (if not terminal)
+			if CACHE.get(token, {}).get('status') == 'paused' and not CACHE.get(token, {}).get('_pause_flag'):
+				CACHE[token]['status'] = 'running'
+			if CACHE.get(token, {}).get('_stop_flag'):
+				CACHE[token]['status'] = 'deleted'
+				return
 			progress['current_file'] = str(fp)
 			try:
 				if process_file is not None:
@@ -344,15 +357,14 @@ def home():
 		d = CACHE[tok]
 		# attempt to find job id for this token to show job links like full app
 		job_id_for_token = None
-		try:
-			with JOBS_LOCK:
-				for _jid, _rec in JOBS.items():
-					if _rec.get('token') == tok:
-						job_id_for_token = _jid
-						break
-		except Exception:
-			pass
-		# If no limit param supplied in query, keep stored values (user didn't request change)
+		with JOBS_LOCK:
+			for _jid, _rec in JOBS.items():
+				if _rec.get('token') == tok:
+					data = CACHE.get(tok) or {}
+					if data.get('status') == 'deleted':
+						continue
+					job_id_for_token = _jid
+					break
 		if not limit_param_present:
 			stored_passfail = d.get('passfail_mode')
 			stored_limit = d.get('limit')
@@ -437,58 +449,50 @@ def api_partial(token: str):
 	progress = d.get('progress', {})
 	return Response(json.dumps({'token':token,'stats':stats,'dispositions':dispositions,'comments':comments,'progress':progress,'status':d.get('status')}), mimetype='application/json')
 
-@app.route('/job/<job_id>/report')
-def job_report(job_id: str):
-	token = _resolve_job_token(job_id)
-	if not token:
-		return redirect(url_for('home'))
-	lr = request.args.get('limit')
-	if lr:
-		return redirect(url_for('home', token=token, limit=lr))
-	return redirect(url_for('home', token=token))
-
-@app.route('/status/<token>')
-def status(token: str):
+@app.route('/api/stats/<token>')
+def api_stats(token: str):
+	"""Return compact stats focused on vector/count/pass/fail for verification.
+	Includes fdv split fields plus pass/fail mode & limit stored.
+	"""
 	d = CACHE.get(token)
 	if not d:
-		return Response(json.dumps({'status':'missing'}), mimetype='application/json')
-	return Response(json.dumps({'status': d.get('status'), 'progress': d.get('progress', {}), 'error': d.get('error')}), mimetype='application/json')
+		return Response(json.dumps({'error': 'unknown token'}), mimetype='application/json', status=404)
+	rows = d.get('rows', []) or []
+	stats_cached = d.get('stats', []) or []
+	passfail_mode = d.get('passfail_mode')
+	limit = d.get('limit')
+	# Build minimal projection
+	out_list = []
+	for s in stats_cached:
+		out_list.append({
+			'fdv_file': s.get('fdv_file',''),
+			'pr': s.get('pr',''),
+			'vcc': s.get('vcc',''),
+			'tm': s.get('tm',''),
+			'temp': s.get('temp',''),
+			'vector': s.get('vector',''),
+			'count': s.get('count'),
+			'pass': s.get('pass_n', s.get('pass')),
+			'fail': s.get('fail_n', s.get('fail')),
+			'valid_fuseid_count': s.get('valid_fuseid_count'),
+		})
+	payload = {
+		'token': token,
+		'status': d.get('status'),
+		'passfail_mode': passfail_mode,
+		'limit': limit,
+		'vector_stats': out_list,
+		'row_count': len(rows)
+	}
+	return Response(json.dumps(payload), mimetype='application/json')
 
-@app.route('/stream/job/<job_id>')
-def stream_job(job_id: str):
-	# Resolve job id to token
-	with JOBS_LOCK:
-		rec = JOBS.get(job_id)
-	if not rec:
-		return Response('not found', status=404)
-	token = rec.get('token')
+@app.route('/job/<job_id>/report')
+def job_report(job_id: str):
+	# Render single job report (reuse main report template if available)
+	token = _resolve_job_token(job_id)
 	if not token:
-		return Response('not found', status=404)
-	def gen():
-		last_sent = 0.0
-		while True:
-			data = CACHE.get(token) or {}
-			prog = data.get('progress', {}) or {}
-			st = data.get('status','unknown')
-			now = time.time()
-			if now - last_sent >= 1.0:
-				last_sent = now
-				payload = {
-					'status': st,
-					'progress': {
-						'percent': prog.get('percent'),
-						'lines': prog.get('lines'),
-						'lines_total': prog.get('lines_total'),
-						'files_done': prog.get('files_done'),
-						'files_total': prog.get('files_total'),
-						'current_file': prog.get('current_file'),
-					}
-				}
-				yield f"data: {json.dumps(payload)}\n\n"
-			if st in ('done','error'):
-				break
-			time.sleep(0.5)
-	return Response(gen(), mimetype='text/event-stream')
+		return Response('unknown job', status=404)
+	return redirect(url_for('home', token=token))
 
 @app.route('/fdv/<token>/tests', methods=['GET','POST'])
 def tests(token: str):
@@ -633,39 +637,54 @@ def fails(token: str):
 @app.route('/api/jobs')
 def api_jobs():
 	jobs_out = []
+	def _fmt(ts):
+		try:
+			return time.strftime('%H:%M:%S', time.localtime(ts)) if ts else None
+		except Exception:
+			return None
 	with JOBS_LOCK:
-		for jid, rec in JOBS.items():
-			tok = rec.get('token')
-			data = CACHE.get(tok) or {}
-			prog = data.get('progress', {}) or {}
-			created_at = rec.get('created_at') if isinstance(rec.get('created_at'), (int, float)) else None
-			ended_at = rec.get('ended_at') if isinstance(rec.get('ended_at'), (int, float)) else None
-			def _fmt(ts):
-				try:
-					return time.strftime('%H:%M:%S', time.localtime(ts)) if ts else None
-				except Exception:
-					return None
-			status = data.get('status', 'unknown')
-			jobs_out.append({
-				'job_id': jid,
-				'token': tok,
-				'status': status,
-				'percent': prog.get('percent'),
-				'files_done': prog.get('files_done'),
-				'files_total': prog.get('files_total'),
-				'lines': prog.get('lines'),
-				'created_at': created_at,
-				'created_hms': _fmt(created_at) if created_at else None,
-				'ended_at': ended_at,
-				'ended_hms': _fmt(ended_at) if ended_at else None,
-				'duration_secs': (round((ended_at - created_at), 2) if (created_at and ended_at) else None),
-				'report_url': f"/job/{jid}/report",
-				'progress_url': f"/job/{jid}/progress",
-				'status_url': f"/job/{jid}/status",
-				'report_ready': status == 'done' and bool(data.get('rows')),
-				'name': rec.get('name', '')
-			})
+		items = list(JOBS.items())
+	for jid, rec in items:
+		tok = rec.get('token')
+		data = CACHE.get(tok) or {}
+		if data.get('status') == 'deleted':
+			continue
+		prog = data.get('progress', {}) or {}
+		created_at = rec.get('created_at') if isinstance(rec.get('created_at'), (int, float)) else None
+		ended_at = rec.get('ended_at') if isinstance(rec.get('ended_at'), (int, float)) else None
+		status = data.get('status', 'unknown')
+		if data.get('_pause_flag') and status not in {'done','error','deleted'}:
+			status = 'paused'
+		now = time.time()
+		updated_secs = int(now - created_at) if (prog.get('percent') is not None and created_at) else None
+		jobs_out.append({
+			'job_id': jid,
+			'token': tok,
+			'status': status,
+			'percent': prog.get('percent'),
+			'files_done': prog.get('files_done'),
+			'files_total': prog.get('files_total'),
+			'lines': prog.get('lines'),
+			'updated_secs_ago': updated_secs,
+			'created_at': created_at,
+			'created_hms': _fmt(created_at) if created_at else None,
+			'ended_at': ended_at,
+			'ended_hms': _fmt(ended_at) if ended_at else None,
+			'duration_secs': (round((ended_at - created_at), 2) if (created_at and ended_at) else None),
+			'report_url': f"/job/{jid}/report",
+			'progress_url': f"/job/{jid}/progress",
+			'status_url': f"/job/{jid}/status",
+			'report_ready': status == 'done' and bool(data.get('rows')),
+			'name': rec.get('name', '')
+		})
 	return jsonify({'jobs': jobs_out, 'count': len(jobs_out)})
+
+@app.route('/status/<token>', endpoint='report_status')
+def status(token: str):
+	d = CACHE.get(token)
+	if not d:
+		return Response(json.dumps({'error':'unknown token'}), mimetype='application/json', status=404)
+	return Response(json.dumps({'token': token, 'status': d.get('status'), 'progress': d.get('progress', {})}), mimetype='application/json')
 
 @app.route('/api/job/<job_id>/name', methods=['POST'])
 def api_job_set_name(job_id: str):
@@ -682,6 +701,54 @@ def api_job_set_name(job_id: str):
 		JOBS[job_id]['name'] = name
 	return jsonify({'ok': True, 'name': name})
 
+def _resolve_cache_by_job(job_id: str):
+	with JOBS_LOCK:
+		rec = JOBS.get(job_id)
+	if not rec:
+		return None, None
+	token = rec.get('token')
+	if not token:
+		return None, None
+	return token, CACHE.get(token)
+
+@app.route('/api/job/<job_id>/pause', methods=['POST'])
+def api_job_pause(job_id: str):
+	token, entry = _resolve_cache_by_job(job_id)
+	if not token:
+		return jsonify({'ok': False, 'error': 'unknown job'}), 404
+	if not entry or entry.get('status') not in {'running'}:
+		return jsonify({'ok': False, 'error': 'not running'}), 400
+	entry['_pause_flag'] = True
+	# Immediately reflect paused state for UI
+	entry['status'] = 'paused'
+	return jsonify({'ok': True, 'status': 'paused'})
+
+@app.route('/api/job/<job_id>/continue', methods=['POST'])
+def api_job_continue(job_id: str):
+	token, entry = _resolve_cache_by_job(job_id)
+	if not token:
+		return jsonify({'ok': False, 'error': 'unknown job'}), 404
+	if not entry or entry.get('status') not in {'paused'}:
+		# Allow continue if still flagged but loop not yet updated
+		if not (entry and entry.get('_pause_flag')):
+			return jsonify({'ok': False, 'error': 'not paused'}), 400
+	if entry:
+		entry['_pause_flag'] = False
+		entry['status'] = 'running'
+	return jsonify({'ok': True, 'status': entry.get('status') if entry else 'unknown'})
+
+@app.route('/api/job/<job_id>/delete', methods=['POST'])
+def api_job_delete(job_id: str):
+	token, entry = _resolve_cache_by_job(job_id)
+	if not token:
+		return jsonify({'ok': False, 'error': 'unknown job'}), 404
+	if entry:
+		entry['_stop_flag'] = True
+	with JOBS_LOCK:
+		if job_id in JOBS:
+			del JOBS[job_id]
+	return jsonify({'ok': True, 'status': 'deleted'})
+
 @app.route('/jobs')
 def jobs_page():
 	with JOBS_LOCK:
@@ -690,7 +757,6 @@ def jobs_page():
 
 # Compatibility endpoints for legacy template names
 app.add_url_rule('/', 'report_home', home, methods=['GET','POST'])
-app.add_url_rule('/status/<token>', 'report_status', status, methods=['GET'])
 app.add_url_rule('/fdv/<token>/tests', 'report_tests', tests, methods=['GET','POST'])
 app.add_url_rule('/fdv/<token>/tests/sample', 'report_tests_sample', tests_sample, methods=['GET'])
 app.add_url_rule('/fdv/<token>/rawline', 'report_rawline', rawline, methods=['GET'])
