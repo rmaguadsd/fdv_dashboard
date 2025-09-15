@@ -75,11 +75,15 @@ async function refreshJobs(){
       const files = (j.files_done!=null)? `${j.files_done}/${j.files_total||''}` : '';
       // Use server-provided overall ETA
       let etaTxt='';
-      const s = (typeof j.eta_overall_secs==='number') ? j.eta_overall_secs : (typeof j.eta_secs==='number'? j.eta_secs : null);
-      if(s!=null && s>0){
-        if(s < 120) etaTxt = Math.round(s)+'s';
-        else if(s < 7200) etaTxt = Math.round(s/60)+'m';
-        else etaTxt = Math.round(s/3600)+'h';
+      if(j.status === 'done'){
+        etaTxt = 'done';
+      } else {
+        const s = (typeof j.eta_overall_secs==='number') ? j.eta_overall_secs : (typeof j.eta_secs==='number'? j.eta_secs : null);
+        if(s!=null && s>0){
+          if(s < 120) etaTxt = Math.round(s)+'s';
+          else if(s < 7200) etaTxt = Math.round(s/60)+'m';
+          else etaTxt = Math.round(s/3600)+'h';
+        }
       }
         const reportLink = j.report_ready ? `<a href="${j.report_url}" target="_blank">report</a>` : `<span style="color:#999;cursor:not-allowed;" title="Report not ready yet">report</span>`;
         const progressLink = (j.status === 'done' || j.status === 'error')
