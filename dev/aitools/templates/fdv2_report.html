@@ -7,7 +7,7 @@
     body { font-family: Arial, sans-serif; margin: 16px; }
     .flash { color: #b00; margin: 8px 0; }
     table { border-collapse: collapse; width: 100%; }
-    th, td { border: 1px solid #ccc; padding: 6px 8px; font-size: 13px; }
+  th, td { border: 1px solid #ccc; padding: 2px 6px; font-size: 13px; line-height:1.05; }
     th { background: #f5f5f5; position: sticky; top: 0; }
     form.up { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; }
     .small { font-size: 12px; color: #666; }
@@ -18,7 +18,8 @@
   /* single-line, smaller Comments */
   .comments-cell { white-space: nowrap; font-size: 11px; max-width: 1120px; overflow: hidden; text-overflow: ellipsis; }
   /* widen editable comment (disposition) column */
-  th.comment-col, td.comment-col { width: 480px; min-width: 480px; }
+  /* Reduced comment column width by ~30% (was 480px) */
+  th.comment-col, td.comment-col { width: 336px; min-width: 336px; }
   .disp-wrapper { flex: 1 1 auto; }
   /* Borderless Disposition edit box */
   .disp-input { border: none; outline: none; background: transparent; width: 98%; font: inherit; padding: 0 2px; resize:none; overflow:hidden; line-height:1.2; }
@@ -148,10 +149,10 @@
           <th>Stdev</th>
           <th>Median</th>
           <th class="comment-col">Comment</th>
-          <th>testtime</th>
-          <th>Start</th>
-          <th>End</th>
-          <th>Unit Info</th>
+          <th style="width:35%; white-space:nowrap; font-size:0.8em;">testtime</th>
+          <th style="white-space:nowrap;">Start</th>
+          <th style="white-space:nowrap;">End</th>
+          <th style="width:auto;">Unit Info</th>
         </tr>
       </thead>
       <tbody>
@@ -201,10 +202,10 @@
               <span class="disp-badge" data-badge-for="{{ key }}"></span>
             </div>
           </td>
-          <td>{{ r.get('testtime_label','') }}</td>
-          <td>{{ r.get('test_start','') }}</td>
-          <td>{{ r.get('test_end','') }}</td>
-          <td><span class="comments-cell">{{ r.get('unit_info','') }}</span></td>
+          <td style="width:35%; white-space:nowrap; font-size:0.8em;">{{ r.get('testtime_label','') }}</td>
+          <td style="white-space:nowrap;">{{ r.get('test_start','') }}</td>
+          <td style="white-space:nowrap;">{{ r.get('test_end','') }}</td>
+          <td><span class="comments-cell unit-info-cell" style="display:block; width:100%; white-space:nowrap; overflow:visible;">{{ r.get('unit_info','') }}</span></td>
         </tr>
         {% endfor %}
       </tbody>

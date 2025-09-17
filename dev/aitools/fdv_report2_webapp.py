@@ -985,6 +985,8 @@ def stats_by_fdv_with_splits(rows: List[Dict[str, str]], *, limit: float = 0.0, 
     valid_fuseids_set_by_key: Dict[Tuple[str, str, str, str, str], set] = defaultdict(set)
     # Track all DUT ids observed (even if fuseid invalid/missing) for fallback unit counting
     dut_ids_all_by_key: Dict[Tuple[str, str, str, str, str], set] = defaultdict(set)
+    # Preserve ordered distinct valid fuseids (first-seen order) per key for display parity with count
+    ordered_valid_fuseids_by_key: Dict[Tuple[str, str, str, str, str], list] = defaultdict(list)
     # When passfail_mode is requested we will classify PASS/FAIL using log tokens instead of numeric threshold.
     if passfail_mode:
         pass_token_counts: Dict[Tuple[str, str, str, str, str], int] = defaultdict(int)
@@ -1074,6 +1076,9 @@ def stats_by_fdv_with_splits(rows: List[Dict[str, str]], *, limit: float = 0.0, 
             if dut and fid:
                 dut_fid_by_key[key][dut] = fid
                 valid_fuseids_set_by_key[key].add(fid)
+                # Maintain first-seen ordered list of distinct fuseids
+                if fid not in ordered_valid_fuseids_by_key[key]:
+                    ordered_valid_fuseids_by_key[key].append(fid)
         except Exception:
             pass
         # If test_start/test_end present on this row and not yet captured for key, capture earliest start and latest end
@@ -1290,8 +1295,10 @@ def stats_by_fdv_with_splits(rows: List[Dict[str, str]], *, limit: float = 0.0, 
                 shown_fid = (raw_fid or '-')
                 invalid_units_render.append(f"{_norm_site(site_file or s_i)}:{d_i}:{shown_fid}")
         unit_info_parts: list[str] = []
-        if valid_units:
-            unit_info_parts.append("VALID: " + ", ".join(valid_units))
+        # Add back FUSEIDS list (ordered distinct valid fuseids) plus INVALID section
+        _ordered_ids = ordered_valid_fuseids_by_key.get(key, [])
+        if _ordered_ids:
+            unit_info_parts.append("FUSEIDS: " + ", ".join(_ordered_ids))
         if invalid_units_render:
             unit_info_parts.append("INVALID: " + ", ".join(invalid_units_render))
         unit_info_str = " | ".join(unit_info_parts)
