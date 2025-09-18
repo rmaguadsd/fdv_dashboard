@@ -63,45 +63,6 @@ def _persist_write(appname: str, token: str, html: str, filename: str = 'index.h
         out.write_text(html, encoding='utf-8')
     except Exception:
         pass
-    # Fallback: propagate test_start/test_end from any original row if missing in aggregated row
-    try:
-        # Build earliest/ latest map per fdv/pr/vcc/tm/temp
-        time_map: Dict[Tuple[str,str,str,str,str], Tuple[str,str]] = {}
-        for _r in rows:
-            _fdv_o = (_r.get('fdv_file') or _r.get('fdv') or '').strip()
-            if not _fdv_o:
-                continue
-            _pr_o = (_r.get('pr') or 'XX').strip() or 'XX'
-            _vcc_o = (_r.get('vcc') or '').strip()
-            _tm_o = (_r.get('tm') or '').strip()
-            _temp_o = (_r.get('temp') or '').strip()
-            _ts_o = (_r.get('test_start') or '').strip()
-            _te_o = (_r.get('test_end') or '').strip()
-            if not (_ts_o or _te_o):
-                continue
-            k = (_fdv_o, _pr_o, _vcc_o, _tm_o, _temp_o)
-            prev = time_map.get(k)
-            if not prev:
-                time_map[k] = (_ts_o, _te_o)
-            else:
-                pts, pte = prev
-                if _ts_o and (not pts or _ts_o < pts):
-                    pts = _ts_o
-                if _te_o and (not pte or _te_o > pte):
-                    pte = _te_o
-                time_map[k] = (pts, pte)
-        if time_map:
-            for _agg in out:
-                if (not _agg.get('test_start')) or (not _agg.get('test_end')):
-                    k = (_agg.get('fdv_file',''), _agg.get('pr','XX'), _agg.get('vcc',''), _agg.get('tm',''), _agg.get('temp',''))
-                    if k in time_map:
-                        pts, pte = time_map[k]
-                        if not _agg.get('test_start') and pts:
-                            _agg['test_start'] = pts
-                        if not _agg.get('test_end') and pte:
-                            _agg['test_end'] = pte
-    except Exception:
-        pass
     return out
 
 # ---------------- Encoding helpers / diagnostics ----------------
@@ -623,61 +584,7 @@ def _extract_plane_addr(r: Dict[str, str]) -> str:
                         return f"P{n}"
                 except Exception:
                     pass
-                # Inject synthetic marker rows per (pr,vcc,tm,temp) if time markers exist but no row carries them.
-                try:
-                    if (start_raw_str or end_raw_str) and not any(('test_start' in rr or 'test_end' in rr) for rr in r):
-                        import os as _os_syn2
-                        _fdv_short2 = _os_syn2.path.basename(str(fp))
-                        if _fdv_short2.lower().endswith('.fdv'):
-                            _fdv_short2 = _fdv_short2[:-4]
-                        combos2 = set()
-                        for _rr2 in r:
-                            combos2.add((_rr2.get('pr','XX') or 'XX', _rr2.get('vcc','') or '', _rr2.get('tm','') or '', _rr2.get('temp','') or ''))
-                        if not combos2:
-                            combos2.add(('XX','','',''))
-                        for (_pr2,_vcc2,_tm2,_temp2) in combos2:
-                            r.append({
-                                'fdv_file': _fdv_short2,
-                                'pr': _pr2,
-                                'vcc': _vcc2,
-                                'tm': _tm2,
-                                'temp': _temp2,
-                                'raw_line': '',
-                                'test_start': start_raw_str or '',
-                                'test_end': end_raw_str or '',
-                                'testtime_label': testtime_label or '',
-                                'testtime_seconds': (str(dur_secs) if (dur_secs is not None and dur_secs >= 0) else ''),
-                            })
-                except Exception:
-                    pass
-                # Inject synthetic rows (one per existing (pr,vcc,tm,temp) combo) carrying test_start/test_end if
-                # markers existed but NO existing row has those fields. Ensures downstream stats see time data.
-                try:
-                    if (start_raw_str or end_raw_str) and not any(('test_start' in rr or 'test_end' in rr) for rr in r):
-                        import os as _os_syn
-                        _fdv_short = _os_syn.path.basename(str(fp))
-                        if _fdv_short.lower().endswith('.fdv'):
-                            _fdv_short = _fdv_short[:-4]
-                        combos = set()
-                        for _rr in r:
-                            combos.add((_rr.get('pr','XX') or 'XX', _rr.get('vcc','') or '', _rr.get('tm','') or '', _rr.get('temp','') or ''))
-                        if not combos:
-                            combos.add(('XX','','',''))
-                        for (_pr_syn,_vcc_syn,_tm_syn,_temp_syn) in combos:
-                            r.append({
-                                'fdv_file': _fdv_short,
-                                'pr': _pr_syn,
-                                'vcc': _vcc_syn,
-                                'tm': _tm_syn,
-                                'temp': _temp_syn,
-                                'raw_line': '',
-                                'test_start': start_raw_str or '',
-                                'test_end': end_raw_str or '',
-                                'testtime_label': testtime_label or '',
-                                'testtime_seconds': (str(dur_secs) if (dur_secs is not None and dur_secs >= 0) else ''),
-                            })
-                except Exception:
-                    pass
+                # Note: no side-effects here; only parse and return plane address.
     # From tname token
     tn = (r.get('tname', '') or '')
     if tn:
@@ -1929,6 +1836,8 @@ CACHE: Dict[str, Dict] = {}
 JOBS: Dict[str, Dict[str, object]] = {}
 JOBS_LOCK = threading.Lock()
 JOB_NAMES_LOCK = threading.Lock()
+# Cancellation flags per token (used by prodmode 'Done' to end early after current file)
+CANCEL_FLAGS: Dict[str, bool] = {}
 
 def _job_names_path() -> Path:
     p = _persist_base_dir() / 'report2' / 'job_names.json'
@@ -2083,8 +1992,12 @@ def _list_files(paths: List[Path]) -> List[Path]:
     return files
 
 
-def _start_parse_job(token: str, files: List[Path], used_dir: str | None, limit_raw: str = '') -> None:
-    """Spawn a background job to parse files with progress updates stored in CACHE[token]."""
+def _start_parse_job(token: str, files: List[Path], used_dir: str | None, limit_raw: str = '', *, prodmode: bool = False, ledger_map: Dict[str, Path] | None = None) -> None:
+    """Spawn a background job to parse files with progress updates stored in CACHE[token].
+
+    When prodmode is True and a ledger_map is provided, after each file finishes processing,
+    the corresponding ledger .ready file will be renamed to .done.
+    """
     def job():
         try:
             # Allowed line prefixes per requirement; all other lines ignored early.
@@ -2099,27 +2012,30 @@ def _start_parse_job(token: str, files: List[Path], used_dir: str | None, limit_
                 ls = s.lstrip()
                 up = ls.upper()
                 return any(up.startswith(p) for p in _ALLOWED_PREFIXES)
+            # Determine if we should run in streaming prodmode (watch ledger and keep going until cancel)
+            stream_prodmode = bool(prodmode and used_dir and Path(used_dir).is_dir())
             total_bytes = 0
             sizes: List[int] = []
-            # Pre-count lines for accurate overall and per-file line progress/ETA
+            # Pre-count lines only for non-streaming mode. In streaming mode totals stay 0 (unknown).
             line_counts: List[int] = []
             total_lines = 0
-            for fp in files:
-                try:
-                    sz = fp.stat().st_size
-                except Exception:
-                    sz = 0
-                sizes.append(sz)
-                total_bytes += sz
-                lc = 0
-                try:
-                    with open(fp, 'r', encoding='utf-8', errors='replace') as _lfc:
-                        for lc, _ in enumerate(_lfc, start=1):
-                            pass
-                except Exception:
+            if not stream_prodmode:
+                for fp in files:
+                    try:
+                        sz = fp.stat().st_size
+                    except Exception:
+                        sz = 0
+                    sizes.append(sz)
+                    total_bytes += sz
                     lc = 0
-                line_counts.append(lc)
-                total_lines += lc
+                    try:
+                        with open(fp, 'r', encoding='utf-8', errors='replace') as _lfc:
+                            for lc, _ in enumerate(_lfc, start=1):
+                                pass
+                    except Exception:
+                        lc = 0
+                    line_counts.append(lc)
+                    total_lines += lc
             progress = {
                 'files_total': len(files),
                 'files_done': 0,
@@ -2160,7 +2076,479 @@ def _start_parse_job(token: str, files: List[Path], used_dir: str | None, limit_
                 pass
             bytes_done_prev = 0
             lines_done_prev = 0
+            # Normalize ledger map to string paths for quick lookup
+            _ledger_map = {}
+            try:
+                if ledger_map:
+                    for k, v in ledger_map.items():
+                        _ledger_map[str(Path(k))] = Path(v)
+            except Exception:
+                _ledger_map = {}
+
+            # Streaming prodmode branch: keep watching ledger and process files as .ready appear, until cancelled.
+            if stream_prodmode:
+                processed_ready: set[str] = set()
+                # Seed processed set with any provided map entries to avoid reprocessing
+                for _p in _ledger_map.values():
+                    try:
+                        processed_ready.add(str(Path(_p)))
+                    except Exception:
+                        pass
+                # Work queue initialized from provided files
+                work_queue: List[Path] = list(files)
+                def _list_non_ledger_files(root: Path) -> List[Path]:
+                    try:
+                        out: List[Path] = []
+                        for p in root.rglob('*'):
+                            try:
+                                if p.is_file():
+                                    # skip ledger directory
+                                    if (root / 'ledger') in p.parents:
+                                        continue
+                                    out.append(p)
+                            except Exception:
+                                continue
+                        return out
+                    except Exception:
+                        return []
+                def _discover_new_ready() -> None:
+                    nonlocal work_queue
+                    try:
+                        led_dir = Path(used_dir) / 'ledger'  # type: ignore[arg-type]
+                        current = []
+                        if led_dir.is_dir():
+                            current = [p for p in led_dir.iterdir() if p.is_file() and p.suffix.lower() == '.ready']
+                        # Build/update mapping for any unseen .ready
+                        for rf in current:
+                            key_ready = str(rf)
+                            if key_ready in processed_ready:
+                                continue
+                            stem = rf.stem
+                            # Try to find a matching file by stem under used_dir (prefer .txt)
+                            chosen: Path | None = None
+                            try:
+                                all_files = _list_non_ledger_files(Path(used_dir))  # type: ignore[arg-type]
+                                candidates = [f for f in all_files if f.stem == stem and f.suffix.lower()=='.txt']
+                                chosen = candidates[0] if candidates else None
+                            except Exception:
+                                chosen = None
+                            if chosen and chosen.is_file():
+                                _ledger_map[str(chosen)] = rf
+                                work_queue.append(chosen)
+                                # Do not mark processed_ready yet; only after processing+rename
+                    except Exception:
+                        pass
+                current_index = 0
+                while True:
+                    # Cancel requested by 'Done' button -> finalize
+                    try:
+                        if CANCEL_FLAGS.get(token):
+                            break
+                    except Exception:
+                        pass
+                    if not work_queue:
+                        # No work right now: refresh discovery and idle
+                        _discover_new_ready()
+                        try:
+                            progress['current_file'] = '(waiting for ledger)'
+                            progress['file_lines_total'] = 0
+                            progress['file_lines_done'] = 0
+                            progress['file_percent'] = 0.0
+                            progress['files_total'] = progress.get('files_done', 0)  # reflect that total grows over time
+                            CACHE[token]['progress'] = progress
+                        except Exception:
+                            pass
+                        time.sleep(1.0)
+                        continue
+                    # Pop next file to process
+                    fp = work_queue.pop(0)
+                    current_index += 1
+                    progress['current_file'] = str(fp)
+                    progress['current_index'] = current_index
+                    # Determine current file size and total lines (best-effort)
+                    try:
+                        file_size = fp.stat().st_size
+                    except Exception:
+                        file_size = 0
+                    file_lines_total = 0
+                    try:
+                        with open(fp, 'r', encoding='utf-8', errors='replace') as _lfc2:
+                            for file_lines_total, _ in enumerate(_lfc2, start=1):
+                                pass
+                    except Exception:
+                        file_lines_total = 0
+                    progress['file_lines_total'] = file_lines_total
+                    progress['expected_file_lines'] = file_lines_total
+                    progress['file_lines_done'] = 0
+                    progress['file_bytes_total'] = file_size
+                    progress['file_bytes_done'] = 0
+                    progress['file_percent'] = 0.0
+                    last_lineno = {'n': 0}
+                    last_snapshot_time = {'t': 0.0}
+                    def _cb_stream(lineno: int, pct: float) -> None:
+                        last_lineno['n'] = lineno
+                        bytes_curr = 0
+                        try:
+                            bytes_curr = int((pct / 100.0) * file_size)
+                        except Exception:
+                            bytes_curr = 0
+                        total_done = bytes_done_prev + bytes_curr
+                        lines_done_now = lines_done_prev + lineno
+                        # Overall percent unknown without totals; keep 0 unless we infer totals later
+                        overall_pct = progress.get('percent', 0.0)
+                        progress.update({
+                            'percent': overall_pct,
+                            'lines': lines_done_now,
+                            'file_lines_done': lineno,
+                            'file_bytes_done': bytes_curr,
+                            'file_bytes_total': file_size,
+                            'file_percent': pct,
+                            'bytes_done': total_done,
+                            'expected_overall_lines': progress.get('expected_overall_lines', 0) or 0,
+                            'expected_file_lines': file_lines_total or progress.get('expected_file_lines', 0),
+                        })
+                        try:
+                            if token not in CACHE:
+                                CACHE[token] = {'status': 'running', 'progress': progress, 'rows': [], 'dir': used_dir}
+                            else:
+                                CACHE[token]['progress'] = progress
+                        except Exception:
+                            pass
+                        try:
+                            if CANCEL_FLAGS.get(token):
+                                raise RuntimeError('cancelled')
+                        except Exception:
+                            pass
+                        now = time.time()
+                        if now - last_snapshot_time['t'] > 1.2:
+                            last_snapshot_time['t'] = now
+                            try:
+                                lr = (CACHE.get(token, {}).get('limit_raw') or '').strip().lower()
+                                pf_mode = (lr in ('', 'none', 'default'))
+                                limit_val = 1e9 if pf_mode else float(lr)
+                                stats_small = stats_by_fdv_with_splits(all_rows[-5000:], limit=limit_val, passfail_mode=pf_mode) if all_rows else []
+                                table_html = ''
+                                try:
+                                    table_html = render_template('fdv2_report_table.html', token=token, stats=stats_small, used_dir=used_dir, limit=(None if pf_mode else limit_val))
+                                except Exception:
+                                    table_html = ''
+                                if table_html:
+                                    with SNAP_LOCK:
+                                        SNAPSHOTS[token] = {'fdvtable_html': table_html, 'updated': now, 'limit_key': lr or 'none'}
+                            except Exception:
+                                pass
+                    # Parse the file (normal path)
+                    try:
+                        if process_file is not None:
+                            r, _kept, _markers = process_file(fp, PREFIX_DEFAULT, IGNORE_VALUE_DEFAULT, progress=True, progress_cb=_cb_stream)  # type: ignore[arg-type]
+                            # Defensive post-filter: remove any rows whose raw line includes MONITOR or SHMOO
+                            try:
+                                _filt = []
+                                for _row in r:
+                                    _rl = (_row.get('raw_line') or _row.get('raw') or '')
+                                    _u = _rl.upper()
+                                    if 'MONITOR' in _u or 'SHMOO' in _u:
+                                        continue
+                                    _filt.append(_row)
+                                r = _filt
+                            except Exception:
+                                pass
+                        else:
+                            r = []
+                            _candidate_fp = fp
+                            try:
+                                enc_guess = _detect_file_encoding(fp)
+                                if enc_guess == 'utf-16':
+                                    try:
+                                        print(f"[encoding] Detected possible UTF-16 file: {fp}")
+                                    except Exception:
+                                        pass
+                                    tmp_conv = _convert_utf16_to_temp_utf8(fp)
+                                    if tmp_conv and tmp_conv.exists():
+                                        _candidate_fp = tmp_conv
+                            except Exception:
+                                pass
+                            try:
+                                with open(_candidate_fp, 'r', encoding='utf-8', errors='replace') as f:
+                                    for i, line in enumerate(f, start=1):
+                                        _ls = line.lstrip()
+                                        if _ls.startswith('FDV OUTPUT'):
+                                            try:
+                                                import re as _re_mon
+                                                if _re_mon.search(r"\b(MONITOR|SHMOO)\b", _ls, _re_mon.IGNORECASE):
+                                                    continue
+                                            except Exception:
+                                                _uu = _ls.upper()
+                                                if 'MONITOR' in _uu or 'SHMOO' in _uu:
+                                                    continue
+                                            r.append({'raw_line': _ls.rstrip('\n'), 'line_number': str(i), 'fdv_file': str(fp)})
+                                        if i % 100000 == 0:
+                                            _cb_stream(i, 0.0)
+                            except Exception as e:  # pragma: no cover
+                                try:
+                                    print(f"[fallback-parse] Failed reading {fp}: {e}")
+                                except Exception:
+                                    pass
+                    except Exception:
+                        r = r if 'r' in locals() and isinstance(r, list) else []
+                    # Ensure fdv_file is set
+                    try:
+                        for rr in r:
+                            if not (rr.get('fdv_file') or rr.get('fdv')):
+                                rr['fdv_file'] = str(fp)
+                    except Exception:
+                        pass
+                    # Attach time labels (reuse logic from non-stream path)
+                    # Compute run/list info
+                    def _extract_run_parts_from_filename(p: Path) -> Tuple[str, str]:
+                        name = p.name
+                        up = name
+                        import re as _re
+                        m = _re.search(r"_fdvrun_(.+?)_tb_set_utility_([^\.]+)", up, flags=_re.IGNORECASE)
+                        if m:
+                            return (m.group(1), m.group(2))
+                        m2 = _re.search(r"fdvrun[_\-]([^\-]+?)[_\-]tb_set_utility[_\-]([^\.]+)", up, flags=_re.IGNORECASE)
+                        if m2:
+                            return (m2.group(1), m2.group(2))
+                        return ('', '')
+                    run_name, list_name = _extract_run_parts_from_filename(fp)
+                    start_dt = None
+                    end_dt = None
+                    list_name_from_marker = ''
+                    start_raw_str = ''
+                    end_raw_str = ''
+                    try:
+                        from datetime import datetime as _dt
+                        tm = next((m for m in (_markers or []) if isinstance(m, dict) and m.get('type') == 'test_time'), None)
+                        if tm:
+                            list_name_from_marker = (tm.get('list_name') or '').strip()
+                            start_raw_str = (tm.get('start_raw') or '').strip()
+                            end_raw_str = (tm.get('end_raw') or '').strip()
+                            s_iso = (tm.get('start_iso') or '').strip()
+                            e_iso = (tm.get('end_iso') or '').strip()
+                            if s_iso:
+                                try:
+                                    start_dt = _dt.fromisoformat(s_iso)
+                                except Exception:
+                                    start_dt = None
+                            if e_iso:
+                                try:
+                                    end_dt = _dt.fromisoformat(e_iso)
+                                except Exception:
+                                    end_dt = None
+                    except Exception:
+                        start_dt = start_dt or None
+                        end_dt = end_dt or None
+                    if not start_raw_str and not end_raw_str:
+                        try:
+                            import time as _t
+                            _mt = fp.stat().st_mtime
+                            _lt = _t.localtime(_mt)
+                            start_raw_str = f"{_lt.tm_year:04d}_{_lt.tm_mon}_{_lt.tm_mday} {_lt.tm_hour:02d}:{_lt.tm_min:02d}:{_lt.tm_sec:02d}"
+                            end_raw_str = start_raw_str
+                        except Exception:
+                            pass
+                    if not start_raw_str and not end_raw_str:
+                        try:
+                            import time as _t2
+                            _mt2 = fp.stat().st_mtime
+                            _lt2 = _t2.localtime(_mt2)
+                            start_raw_str = f"{_lt2.tm_year:04d}_{_lt2.tm_mon}_{_lt2.tm_mday} {_lt2.tm_hour:02d}:{_lt2.tm_min:02d}:{_lt2.tm_sec:02d}"
+                            end_raw_str = start_raw_str
+                        except Exception:
+                            pass
+                    def _fmt_duration_secs(s_dt, e_dt) -> int:
+                        try:
+                            if not s_dt or not e_dt:
+                                return -1
+                            delta = e_dt - s_dt
+                            secs = int(delta.total_seconds())
+                            if secs < 0:
+                                secs = 0
+                            return secs
+                        except Exception:
+                            return -1
+                    dur_secs = _fmt_duration_secs(start_dt, end_dt)
+                    testtime_label = ''
+                    try:
+                        ln_disp = (list_name or '').strip()
+                        if not ln_disp and list_name_from_marker:
+                            ln_tmp = list_name_from_marker
+                            try:
+                                import re as _re
+                                ln_tmp = _re.sub(r"^\d+_", "", ln_tmp)
+                                ln_tmp = _re.sub(r"(?i)^tb_set_utility_", "", ln_tmp)
+                            except Exception:
+                                pass
+                            ln_disp = ln_tmp.strip()
+                        if ln_disp or (dur_secs is not None and dur_secs >= 0):
+                            secs_txt = str(dur_secs if dur_secs is not None and dur_secs >= 0 else '')
+                            testtime_label = f"{ln_disp}:: = {secs_txt}".strip()
+                    except Exception:
+                        testtime_label = ''
+                    try:
+                        for rr in r:
+                            fdvtest = (rr.get('fdv_file') or '').strip()
+                            if fdvtest:
+                                import os as _os
+                                fdvtest = _os.path.basename(fdvtest)
+                                if fdvtest.lower().endswith('.fdv'):
+                                    fdvtest = fdvtest[:-4]
+                            if testtime_label or (fdvtest and (dur_secs is not None and dur_secs >= 0)):
+                                try:
+                                    ln_disp_local = testtime_label.split('::')[0] if testtime_label else (list_name or '').strip()
+                                except Exception:
+                                    ln_disp_local = (list_name or '').strip()
+                                secs_txt = str(dur_secs if dur_secs is not None and dur_secs >= 0 else '')
+                                rr['testtime_label'] = f"{(ln_disp_local or '').strip()}::{fdvtest} = {secs_txt}".strip()
+                                if dur_secs is not None and dur_secs >= 0:
+                                    rr['testtime_seconds'] = str(dur_secs)
+                            if start_raw_str:
+                                rr['test_start'] = start_raw_str
+                            if end_raw_str:
+                                rr['test_end'] = end_raw_str
+                            if list_name:
+                                rr['fdvlistname'] = list_name
+                            if run_name:
+                                rr['fdvtestrun'] = run_name
+                    except Exception:
+                        pass
+                    all_rows.extend(r)
+                    # finalize this file's contribution
+                    lines_done_prev += last_lineno['n']
+                    bytes_done_prev += file_size
+                    progress['files_done'] = progress.get('files_done', 0) + 1
+                    progress['bytes_done'] = bytes_done_prev
+                    progress['lines'] = lines_done_prev
+                    # Update cache and partial stats
+                    try:
+                        if token in CACHE:
+                            CACHE[token]['progress'] = progress
+                            CACHE[token]['progress']['last_file_completed_at'] = time.time()
+                            try:
+                                lr = (CACHE[token].get('limit_raw') or '').strip().lower()
+                                if lr in ('', 'none', 'default'):
+                                    limit_for_stats = 1e9
+                                    pf_mode = True
+                                else:
+                                    try:
+                                        limit_for_stats = float(lr)
+                                        pf_mode = False
+                                    except Exception:
+                                        limit_for_stats = 1e9
+                                        pf_mode = True
+                                partial_stats = stats_by_fdv_with_splits(all_rows, limit=limit_for_stats, passfail_mode=pf_mode)
+                                seen_pf = set()
+                                fdv_order_pf: List[str] = []
+                                for _r in partial_stats:
+                                    _f = _r.get('fdv_file','') or ''
+                                    if _f and _f not in seen_pf:
+                                        seen_pf.add(_f)
+                                        fdv_order_pf.append(_f)
+                                CACHE[token]['stats'] = partial_stats
+                                CACHE[token]['fdv_order'] = fdv_order_pf
+                            except Exception:
+                                pass
+                        else:
+                            CACHE[token] = {'status': 'running', 'progress': progress, 'rows': all_rows, 'dir': used_dir}
+                    except Exception:
+                        pass
+                    # Rename ledger .ready to .done
+                    try:
+                        key = str(Path(fp))
+                        if key in _ledger_map:
+                            ready_path = _ledger_map.get(key)
+                            if ready_path and ready_path.exists():
+                                done_path = ready_path.with_suffix('.done')
+                                try:
+                                    os.replace(str(ready_path), str(done_path))
+                                except Exception:
+                                    try:
+                                        ready_path.rename(done_path)
+                                    except Exception:
+                                        pass
+                                processed_ready.add(str(ready_path))
+                    except Exception:
+                        pass
+                    # After processing this item, discover new ones immediately (reduces idle time)
+                    _discover_new_ready()
+                # Cancelled: finalize stats and mark done
+                try:
+                    for i, rr in enumerate(all_rows):
+                        if '_idx' not in rr:
+                            rr['_idx'] = i
+                    try:
+                        _apply_guide_annotations(all_rows)
+                    except Exception:
+                        pass
+                    for i, rr in enumerate(all_rows):
+                        try:
+                            wl_v = _extract_wl_value(rr)
+                            if wl_v is not None:
+                                rr['wl_canonical'] = str(wl_v)
+                        except Exception:
+                            pass
+                        try:
+                            pg_v = _extract_page_value(rr)
+                            if pg_v is not None:
+                                rr['page_canonical'] = str(pg_v)
+                        except Exception:
+                            pass
+                        try:
+                            pa = _extract_plane_addr(rr)
+                            if pa:
+                                rr['plane_addr'] = pa
+                                rr['plane_addr_canonical'] = pa
+                        except Exception:
+                            pass
+                        try:
+                            bv = _extract_blk_value(rr)
+                            if bv is not None:
+                                rr['blk'] = str(bv)
+                                rr['blk_addr'] = str(bv)
+                                rr['blk_canonical'] = str(bv)
+                        except Exception:
+                            pass
+                    # Final stats (using current limit mode)
+                    lr_final = (limit_raw or '').strip().lower()
+                    if lr_final in ('', 'none', 'default'):
+                        limit_for_stats_final = 1e9
+                        pf_mode_final = True
+                    else:
+                        try:
+                            limit_for_stats_final = float(lr_final)
+                            pf_mode_final = False
+                        except Exception:
+                            limit_for_stats_final = 1e9
+                            pf_mode_final = True
+                    stats = stats_by_fdv_with_splits(all_rows, limit=limit_for_stats_final, passfail_mode=pf_mode_final)
+                    seen = set()
+                    fdv_order: List[str] = []
+                    for r in stats:
+                        f = r.get('fdv_file','') or ''
+                        if f and f not in seen:
+                            seen.add(f)
+                            fdv_order.append(f)
+                    CACHE[token].update({'rows': all_rows, 'stats': stats, 'fdv_order': fdv_order, 'status': 'done', 'limit_raw': limit_raw})
+                    try:
+                        with JOBS_LOCK:
+                            for jid, rec in JOBS.items():
+                                if rec.get('token') == token:
+                                    if 'ended_at' not in rec:
+                                        rec['ended_at'] = time.time()
+                                    break
+                    except Exception:
+                        pass
+                except Exception:
+                    pass
+                return
             for idx, fp in enumerate(files, start=1):
+                # Honor cancel (from 'Done' button) between files
+                try:
+                    if CANCEL_FLAGS.get(token):
+                        break
+                except Exception:
+                    pass
                 progress['current_file'] = str(fp)
                 progress['current_index'] = idx
                 file_size = sizes[idx - 1] if idx - 1 < len(sizes) else 0
@@ -2212,6 +2600,12 @@ def _start_parse_job(token: str, files: List[Path], used_dir: str | None, limit_
                             }
                         else:
                             CACHE[token]['progress'] = progress
+                    except Exception:
+                        pass
+                    # Allow cancel mid-file: signal via exception that outer parse_file may catch
+                    try:
+                        if CANCEL_FLAGS.get(token):
+                            raise RuntimeError('cancelled')
                     except Exception:
                         pass
                     # Throttled partial stats snapshot for fast table refresh (every ~1.2s)
@@ -2292,8 +2686,9 @@ def _start_parse_job(token: str, files: List[Path], used_dir: str | None, limit_
                                 print(f"[fallback-parse] Failed reading {fp}: {e}")
                             except Exception:
                                 pass
-                except Exception:
-                    r = []
+                except Exception as e_parse:
+                    # If cancelled mid-file, proceed with whatever rows gathered so far
+                    r = r if 'r' in locals() and isinstance(r, list) else []
                 # Ensure fdv_file is set for all rows (some parsers may omit)
                 try:
                     for rr in r:
@@ -2484,6 +2879,24 @@ def _start_parse_job(token: str, files: List[Path], used_dir: str | None, limit_
                         }
                 except Exception:
                     pass
+                # In prodmode, after finishing a file, rename its ledger .ready to .done if mapped
+                try:
+                    if prodmode and _ledger_map:
+                        key = str(Path(fp))
+                        if key in _ledger_map:
+                            ready_path = _ledger_map.get(key)
+                            if ready_path and ready_path.exists():
+                                done_path = ready_path.with_suffix('.done')
+                                try:
+                                    os.replace(str(ready_path), str(done_path))
+                                except Exception:
+                                    # Attempt fallback rename via Path
+                                    try:
+                                        ready_path.rename(done_path)
+                                    except Exception:
+                                        pass
+                except Exception:
+                    pass
             # After parsing, annotate rows with indices for later raw-line lookup
             for i, rr in enumerate(all_rows):
                 if '_idx' not in rr:
@@ -2583,16 +2996,52 @@ def _start_parse_job(token: str, files: List[Path], used_dir: str | None, limit_
 def report_home():
     if request.method == 'POST':
         dirpath = (request.form.get('dirpath') or '').strip()
+        prod_raw = (request.form.get('prodmode') or '').strip().lower()
+        prodmode = prod_raw in ('1','true','on','yes')
         used_dir = None
         try:
             file_list: List[Path] = []
+            ledger_map: Dict[str, Path] = {}
             if dirpath:
                 dp = Path(dirpath)
                 if not dp.exists() or not dp.is_dir():
                     flash('Directory not found or not a directory.')
                     return redirect(url_for('report_home'))
                 used_dir = str(dp)
-                file_list = _list_files([dp])
+                if prodmode:
+                    # Ledger-based selection: look for *.ready in dp/ledger, map to files whose stem matches
+                    led_dir = dp / 'ledger'
+                    ready_files: List[Path] = []
+                    try:
+                        if led_dir.is_dir():
+                            ready_files = sorted([p for p in led_dir.iterdir() if p.is_file() and p.suffix.lower() == '.ready'])
+                    except Exception:
+                        ready_files = []
+                    # Build an index of files in dp (recursive) by stem
+                    all_files = _list_files([dp])
+                    stem_index: Dict[str, List[Path]] = {}
+                    for f in all_files:
+                        # exclude ledger directory files from processing
+                        try:
+                            if 'ledger' in f.parts and (dp / 'ledger') in f.parents:
+                                continue
+                        except Exception:
+                            pass
+                        stem_index.setdefault(f.stem, []).append(f)
+                    selected: List[Path] = []
+                    for rf in ready_files:
+                        base = rf.stem  # filename without .ready
+                        candidates = [c for c in stem_index.get(base, []) if c.suffix.lower()=='.txt']
+                        chosen = candidates[0] if candidates else None
+                        if chosen is not None and chosen.is_file():
+                            selected.append(chosen)
+                            ledger_map[str(chosen)] = rf
+                    if not selected:
+                        flash('No matching ledger .ready files found under directory/ledger.')
+                        return redirect(url_for('report_home'))
+                    file_list = selected
+                else:
+                    file_list = _list_files([dp])
             else:
                 files = request.files.getlist('dirfiles') or request.files.getlist('files')
                 if not files:
@@ -2638,8 +3087,9 @@ def report_home():
             lim_raw = (request.form.get('limit') or '').strip()
             user_jobname = (request.form.get('jobname') or '').strip()
             token = uuid.uuid4().hex
-            CACHE[token] = {'status': 'queued', 'progress': {'files_total': len(file_list), 'files_done': 0, 'percent': 0.0, 'lines': 0}, 'dir': used_dir}
-            _start_parse_job(token, file_list, used_dir, lim_raw)
+            CACHE[token] = {'status': 'queued', 'progress': {'files_total': len(file_list), 'files_done': 0, 'percent': 0.0, 'lines': 0}, 'dir': used_dir, 'prodmode': prodmode}
+            CANCEL_FLAGS[token] = False
+            _start_parse_job(token, file_list, used_dir, lim_raw, prodmode=prodmode, ledger_map=ledger_map if ledger_map else None)
             job_id = _create_job_id(token, lim_raw)
             # Assign job name (user provided or derive default)
             try:
@@ -2666,15 +3116,21 @@ def report_home():
                         except Exception:
                             pass
                         _save_job_names(JOB_NAMES)
+                # Persist prodmode on job
+                with JOBS_LOCK:
+                    if job_id in JOBS:
+                        JOBS[job_id]['prodmode'] = prodmode
             except Exception:
                 pass
-            return render_template('fdv2_progress.html', token=token, job_id=job_id, limit_raw=lim_raw)
+            return render_template('fdv2_progress.html', token=token, job_id=job_id, limit_raw=lim_raw, prodmode=prodmode)
         except Exception as e:
             flash(f"Failed to start parsing: {e}")
             return redirect(url_for('report_home'))
     # GET: allow token to show the previous fdvtest results table or kick off parsing when dirpath is provided
     # Optional GET-based analyze path to avoid multipart parsing/temp issues
     dirpath_q = (request.args.get('dirpath') or '').strip()
+    prod_raw_q = (request.args.get('prodmode') or '').strip().lower()
+    prodmode_q = prod_raw_q in ('1','true','on','yes')
     if dirpath_q:
         try:
             dp = Path(dirpath_q)
@@ -2684,13 +3140,45 @@ def report_home():
             used_dir = str(dp)
             lim_raw = (request.args.get('limit') or '').strip()
             user_jobname = (request.args.get('jobname') or '').strip()
-            file_list = _list_files([dp])
+            ledger_map: Dict[str, Path] = {}
+            if prodmode_q:
+                led_dir = dp / 'ledger'
+                ready_files: List[Path] = []
+                try:
+                    if led_dir.is_dir():
+                        ready_files = sorted([p for p in led_dir.iterdir() if p.is_file() and p.suffix.lower() == '.ready'])
+                except Exception:
+                    ready_files = []
+                all_files = _list_files([dp])
+                stem_index: Dict[str, List[Path]] = {}
+                for f in all_files:
+                    try:
+                        if 'ledger' in f.parts and (dp / 'ledger') in f.parents:
+                            continue
+                    except Exception:
+                        pass
+                    stem_index.setdefault(f.stem, []).append(f)
+                selected: List[Path] = []
+                for rf in ready_files:
+                    base = rf.stem
+                    candidates = [c for c in stem_index.get(base, []) if c.suffix.lower()=='.txt']
+                    chosen = candidates[0] if candidates else None
+                    if chosen is not None and chosen.is_file():
+                        selected.append(chosen)
+                        ledger_map[str(chosen)] = rf
+                if not selected:
+                    flash('No matching ledger .ready files found under directory/ledger.')
+                    return redirect(url_for('report_home'))
+                file_list = selected
+            else:
+                file_list = _list_files([dp])
             if not file_list:
                 flash('No files found to parse in the directory.')
                 return redirect(url_for('report_home'))
             token = uuid.uuid4().hex
-            CACHE[token] = {'status': 'queued', 'progress': {'files_total': len(file_list), 'files_done': 0, 'percent': 0.0, 'lines': 0}, 'dir': used_dir}
-            _start_parse_job(token, file_list, used_dir, lim_raw)
+            CACHE[token] = {'status': 'queued', 'progress': {'files_total': len(file_list), 'files_done': 0, 'percent': 0.0, 'lines': 0}, 'dir': used_dir, 'prodmode': prodmode_q}
+            CANCEL_FLAGS[token] = False
+            _start_parse_job(token, file_list, used_dir, lim_raw, prodmode=prodmode_q, ledger_map=ledger_map if ledger_map else None)
             job_id = _create_job_id(token, lim_raw)
             try:
                 if user_jobname:
@@ -2716,9 +3204,12 @@ def report_home():
                         except Exception:
                             pass
                         _save_job_names(JOB_NAMES)
+                with JOBS_LOCK:
+                    if job_id in JOBS:
+                        JOBS[job_id]['prodmode'] = prodmode_q
             except Exception:
                 pass
-            return render_template('fdv2_progress.html', token=token, job_id=job_id, limit_raw=lim_raw)
+            return render_template('fdv2_progress.html', token=token, job_id=job_id, limit_raw=lim_raw, prodmode=prodmode_q)
         except Exception as e:
             flash(f"Failed to start parsing: {e}")
             return redirect(url_for('report_home'))
@@ -2790,7 +3281,7 @@ def report_home():
         except Exception:
             pass
         dispositions_map = data.get('dispositions', {}) or {}
-        html = render_template('fdv2_report.html', token=tok, job_id=job_id_for_token, stats=stats, used_dir=data.get('dir'), fdv_order=data.get('fdv_order', []), limit=limit_template, persist_url=persist_url, limit_raw_string=lim_raw, limit_source=limit_source, comments=comments_map, dispositions=dispositions_map)
+        html = render_template('fdv2_report.html', token=tok, job_id=job_id_for_token, stats=stats, used_dir=data.get('dir'), fdv_order=data.get('fdv_order', []), limit=limit_template, persist_url=persist_url, limit_raw_string=lim_raw, limit_source=limit_source, comments=comments_map, dispositions=dispositions_map, prodmode=data.get('prodmode', False))
         try:
             _persist_write('report2', tok, html)
         except Exception:
@@ -2800,7 +3291,7 @@ def report_home():
         app.logger.info("report_home GET (no token) limit_raw='%s' source=%s passfail_mode=%s effective_limit=%s", lim_raw, limit_source, passfail_mode, (None if passfail_mode else limit_for_stats))
     except Exception:
         pass
-    return render_template('fdv2_report.html', token='', job_id=None, stats=[], used_dir=None, fdv_order=[], limit=None, limit_raw_string=lim_raw, limit_source=limit_source, comments={}, dispositions={})
+    return render_template('fdv2_report.html', token='', job_id=None, stats=[], used_dir=None, fdv_order=[], limit=None, limit_raw_string=lim_raw, limit_source=limit_source, comments={}, dispositions={}, prodmode=False)
 
 
 @app.route('/status/<token>')
@@ -2837,9 +3328,33 @@ def job_progress(job_id: str):
             rec = JOBS.get(job_id)
             if rec:
                 limit_raw = rec.get('limit_raw','')  # type: ignore[arg-type]
+                prodmode = bool(rec.get('prodmode', False))
+            else:
+                prodmode = bool(data.get('prodmode', False))
+    except Exception:
+        prodmode = bool(data.get('prodmode', False))
+    return render_template('fdv2_progress.html', token=token, job_id=job_id, limit_raw=limit_raw, prodmode=prodmode)
+
+@app.route('/api/job/<job_id>/done', methods=['POST'])
+def api_job_done(job_id: str):
+    """Mark a job as done in prodmode: set cancel flag so parsing stops after current file, then redirect client to report.
+
+    Returns JSON with report_url.
+    """
+    token = _resolve_job_token(job_id)
+    if not token:
+        return jsonify({'ok': False, 'error': 'job not found'}), 404
+    # Set cancel flag (reader will stop between files; progress_cb will also check flag)
+    CANCEL_FLAGS[token] = True
+    # Also mark job record ended if not already
+    try:
+        with JOBS_LOCK:
+            rec = JOBS.get(job_id)
+            if rec and 'ended_at' not in rec:
+                rec['ended_at'] = time.time()
     except Exception:
         pass
-    return render_template('fdv2_progress.html', token=token, job_id=job_id, limit_raw=limit_raw)
+    return jsonify({'ok': True, 'report_url': url_for('job_report', job_id=job_id)})
 
 @app.route('/job/<job_id>/report')
 def job_report(job_id: str):

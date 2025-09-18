@@ -63,6 +63,8 @@
   <input type="text" name="dirpath" id="dirpath" size="60" placeholder="C:\\\\path\\\\to\\\\folder (leave empty to upload files)" value="{{ used_dir or request.args.get('dirpath', '') }}" oninput="syncAnalyzeGetState();" />
     <span>or</span>
     <input type="file" name="dirfiles" id="dirfiles" multiple onchange="syncAnalyzeGetState();" />
+      <label style="margin-left:12px;">Production</label>
+      <input type="checkbox" name="prodmode" id="prodmode" value="1" {% if prodmode %}checked{% endif %} title="When on: use ledger/*.ready to select inputs and mark them .done after processing" />
       <label style="margin-left:12px;">Job Name:</label>
       <input type="text" name="jobname" id="jobname" size="24" maxlength="120" placeholder="(optional)" title="Optional job name; blank uses folder or first files" />
       <input type="hidden" name="limit" id="limitHidden" />
@@ -433,6 +435,7 @@
       const lim = (document.getElementById('limitTop')?.value || '').trim();
   const jn = (document.getElementById('jobname')?.value || '').trim();
   let url = base + '?dirpath=' + encodeURIComponent(path) + '&limit=' + encodeURIComponent(lim);
+  try { const pm = document.getElementById('prodmode'); if (pm && pm.checked) { url += '&prodmode=1'; } } catch(e) {}
   if (jn) { url += '&jobname=' + encodeURIComponent(jn); }
       // Navigate in the same tab
       window.location.href = url;
@@ -465,12 +468,12 @@
       const hasFiles = !!(fileInput && fileInput.files && fileInput.files.length);
     // Persist directory text locally so it survives navigation
     try { if (dirInput && dirInput.value) { localStorage.setItem('fdv2_last_dirpath', dirInput.value); } } catch(e) {}
-      if (form) {
+  if (form) {
         if (hasFiles) {
           // Let the browser handle the submit to a new tab; this preserves file selection reliably.
           form.setAttribute('target', '_blank');
           // Do not disable UI; keep current page intact.
-        } else {
+  } else {
           // Directory-only GET/POST: keep in the same tab and show busy state.
           form.setAttribute('target', '_self');
           if (btn) { btn.disabled = true; btn.textContent = 'Analyzing…'; }

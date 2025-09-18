@@ -24,6 +24,12 @@
   <div class="bar"><div id="fill"></div></div>
   <div class="small mono" id="txt">Starting…</div>
   <div class="small mono" id="eta" style="margin-top:2px;color:#666;"></div>
+  {% if prodmode %}
+  <div style="margin:8px 0;">
+    <button id="doneBtn" type="button" onclick="return onDone();">Done</button>
+    <span class="small" style="margin-left:6px;color:#444;">Click 'Done' to stop after the current file and generate the report.</span>
+  </div>
+  {% endif %}
   <div class="small" style="margin-top:4px;">
     <span id="overall_total_lines" class="mono"></span>
     <span id="current_file_total_lines" class="mono" style="margin-left:12px;"></span>
@@ -43,9 +49,10 @@
     <span id="limitMode" style="margin-left:6px;color:#444;"></span>
   </div>
   <div id="fdvtable" class="small">Collecting…</div>
-  <script data-limit="{{ limit_raw or '' }}">
+  <script data-limit="{{ limit_raw or '' }}" data-prodm="{{ '1' if prodmode else '0' }}">
   const token = "{{ token }}";
   const jobId = "{{ job_id or '' }}";
+  const prodmode = (document.currentScript.getAttribute('data-prodm') === '1');
   // RBER limit chosen when analysis started; blank/none => token (log PASS/FAIL) mode
   let limitRaw = (document.currentScript.getAttribute('data-limit') || '').trim();
   function updateLimitModeDisplay(){
@@ -298,6 +305,21 @@
         // transient errors are okay; keep polling
       }
       setTimeout(poll, 800);
+    }
+    async function onDone(){
+      try {
+        if (!prodmode) return false;
+        const btn = document.getElementById('doneBtn'); if (btn){ btn.disabled = true; btn.textContent = 'Finishing…'; }
+        const res = await fetch(`/api/job/${jobId}/done`, {method: 'POST'});
+        if (res.ok) {
+          const data = await res.json();
+          const url = data && data.report_url ? data.report_url : `/job/${jobId}/report`;
+          window.location.href = url;
+        } else {
+          if (btn){ btn.disabled = false; btn.textContent = 'Done'; }
+        }
+      } catch(e){ const btn = document.getElementById('doneBtn'); if (btn){ btn.disabled = false; btn.textContent = 'Done'; } }
+      return false;
     }
   async function refreshTable(forceImmediate=false) {
       try {

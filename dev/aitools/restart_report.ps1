@@ -23,17 +23,32 @@ function Stop-ByPort([int]$Port) {
 
 Stop-ByPort -Port $Port
 
-$python = "C:\Users\rmaguad\OneDrive - NANDPS\Documents\Work_mirror\dev\.venv\Scripts\python.exe"
-$script = "C:\Users\rmaguad\OneDrive - NANDPS\Documents\Work_mirror\dev\aitools\fdv_report2_webapp_run.py"
+# Prefer a repo-local venv first, else fall back to Python launcher
+$repoVenvPython = Join-Path (Split-Path $PSScriptRoot -Parent) ".venv\Scripts\python.exe"
+$userVenvPython = "C:\\Users\\rmaguad\\OneDrive - NANDPS\\Documents\\Work_mirror\\dev\\.venv\\Scripts\\python.exe"
+$python = $null
+if (Test-Path $repoVenvPython) { $python = $repoVenvPython }
+elseif (Test-Path $userVenvPython) { $python = $userVenvPython }
+else { $python = $null }
 
-if (-not (Test-Path $python)) {
-  Write-Output "Python not found at expected venv path: $python"
-  exit 1
-}
+# Use the repository app that contains the latest prodmode changes
+$script = "d:\\FDV\\git\\fdv_dashboard\\dev\\aitools\\fdv_report2_webapp.py"
+
 if (-not (Test-Path $script)) {
   Write-Output "Script not found: $script"
   exit 1
 }
 
-Write-Output "Starting REPORT: $python $script"
-Start-Process -FilePath $python -ArgumentList $script -WindowStyle Hidden
+# Ensure env for host/port
+$env:FDV_REPORT2_PORT = "$Port"
+$env:FDV_REPORT2_HOST = "0.0.0.0"
+
+if ($python -and (Test-Path $python)) {
+  Write-Output "Starting REPORT via venv: $python $script"
+  Start-Process -FilePath $python -ArgumentList $script -WindowStyle Hidden
+}
+else {
+  # Fallback to Python launcher
+  Write-Output "Venv python not found. Falling back to 'py -3.12'"
+  Start-Process -FilePath "py" -ArgumentList "-3.12", $script -WindowStyle Hidden
+}
