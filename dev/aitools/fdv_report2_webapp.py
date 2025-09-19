@@ -3727,6 +3727,56 @@ def api_job_set_name(job_id: str):
         JOBS[job_id]['name'] = name
     return jsonify({'ok': True, 'name': name})
 
+# --- Job action helpers & endpoints (pause/continue/delete) ---
+def _resolve_cache_by_job(job_id: str):
+    with JOBS_LOCK:
+        rec = JOBS.get(job_id)
+    if not rec:
+        return None, None
+    token = rec.get('token') if isinstance(rec, dict) else None
+    if not token:
+        return None, None
+    return token, CACHE.get(token)
+
+@app.route('/api/job/<job_id>/pause', methods=['POST'])
+def api_job_pause(job_id: str):
+    token, entry = _resolve_cache_by_job(job_id)
+    if not token:
+        return jsonify({'ok': False, 'error': 'unknown job'}), 404
+    if not entry or entry.get('status') not in {'running'}:
+        return jsonify({'ok': False, 'error': 'not running'}), 400
+    # Flag for worker loops that support pausing; also update UI state immediately
+    entry['_pause_flag'] = True
+    entry['status'] = 'paused'
+    return jsonify({'ok': True, 'status': 'paused'})
+
+@app.route('/api/job/<job_id>/continue', methods=['POST'])
+def api_job_continue(job_id: str):
+    token, entry = _resolve_cache_by_job(job_id)
+    if not token:
+        return jsonify({'ok': False, 'error': 'unknown job'}), 404
+    if not entry or (entry.get('status') not in {'paused'} and not entry.get('_pause_flag')):
+        return jsonify({'ok': False, 'error': 'not paused'}), 400
+    entry['_pause_flag'] = False
+    entry['status'] = 'running'
+    return jsonify({'ok': True, 'status': 'running'})
+
+@app.route('/api/job/<job_id>/delete', methods=['POST'])
+def api_job_delete(job_id: str):
+    token, entry = _resolve_cache_by_job(job_id)
+    if not token:
+        return jsonify({'ok': False, 'error': 'unknown job'}), 404
+    # Signal stop to any cooperating worker and remove from active set
+    if entry is not None:
+        entry['_stop_flag'] = True
+        # Present as deleted to any subsequent status views
+        entry['status'] = 'deleted'
+        entry['ended_at'] = entry.get('ended_at') or time.time()
+    with JOBS_LOCK:
+        if job_id in JOBS:
+            del JOBS[job_id]
+    return jsonify({'ok': True, 'status': 'deleted'})
+
 @app.route('/api/comments/<token>', methods=['GET'])
 def api_comments_get(token: str):
     data = CACHE.get(token)
