@@ -830,6 +830,15 @@ def fails(token: str):
 		except Exception:
 			return ''
 	rows_html: List[str] = []
+	def _choose_raw_file(rec: Dict[str, str]) -> str:
+		# Only accept original .txt source files. Do NOT use fdv_file here.
+		cands = [rec.get('source_file'), rec.get('file'), rec.get('filepath'), rec.get('filename')]
+		for c in cands:
+			p = str(c or '').strip()
+			if p and p.lower().endswith('.txt'):
+				return p
+		# If no .txt known, leave empty rather than showing a derived fdv_file.
+		return ''
 	for r in failing[:10000]:
 		idx = r.get('_idx') or ''  # retained in case future linking needed
 		raw_line = r.get('raw_line','') or ''
@@ -858,13 +867,17 @@ def fails(token: str):
 					pass
 		rv_cell = _get_rber(r)
 		shade_attr = _shade_style(rv_cell)
+		# Raw file column: prefer .txt source; show basename; keep full path in title for hover
+		_full = _choose_raw_file(r)
+		_base = _full.replace('\\','/').split('/')[-1] if _full else ''
 		rows_html.append(
 			'<tr>'
+			f"<td>{esc(r.get('line_number',''))}</td>"
 			f"<td>{esc(r.get('testname') or derive_testname((r.get('tname','') or '').strip()) or '')}</td>"
 			f"<td>{esc(r.get('dut_id','') or '')}</td>"
 			f"<td>{esc(r.get('fuseid','') or '')}</td>"
 			f"<td {shade_attr}>{(rv_cell if rv_cell is not None else '')}</td>"
-			f"<td>{esc(r.get('line_number',''))}</td>"
+			f"<td class='path' title='{esc(_full)}'>{esc(_base)}</td>"
 			f"<td class='rl'>{raw_disp}</td>"
 			'</tr>'
 		)
@@ -894,16 +907,18 @@ def fails(token: str):
 			"</div>"
 		)
 	html = (
-		"<!doctype html><html><head><meta charset='utf-8'><title>Fail Rows</title>"
-		"<style>body{font-family:Arial;margin:16px;}table{border-collapse:collapse;width:100%;}th,td{border:1px solid #ccc;padding:4px 6px;font-size:12px;vertical-align:top;}th{background:#f7f7f7;} .failtok{background:#ff4444;color:#fff;padding:0 2px;border-radius:2px;} td.rl{white-space:pre-wrap;word-break:break-word;font-family:Consolas,monospace;font-size:11px;} .mono{font-family:Consolas,monospace;}</style></head><body>"
-		f"<h3>Fail rows for {esc(fdvsel)}</h3>"
-		f"<div>Total failing rows displayed: {len(failing)}</div>"
-		+ ("<div>Mode: PASS/FAIL from logs.</div>" if passfail_mode else (f"<div>Threshold (limit) = {limit_f:.6g}</div>" if limit_f is not None else ""))
-		+ legend_html
+	"<!doctype html><html><head><meta charset='utf-8'><title>Fail Rows</title>"
+		"<style>body{font-family:Arial;margin:16px;}table{border-collapse:collapse;width:100%;}th,td{border:1px solid #ccc;padding:4px 6px;font-size:12px;vertical-align:top;}th{background:#f7f7f7;cursor:pointer;} .failtok{background:#ff4444;color:#fff;padding:0 2px;border-radius:2px;} td.rl{white-space:pre-wrap;word-break:break-word;font-family:Consolas,monospace;font-size:11px;} .mono{font-family:Consolas,monospace;} td.path{font-family:Consolas,monospace;font-size:11px;} thead input{width:98%;box-sizing:border-box;font-size:11px;padding:2px;margin:2px 0}</style>"
+		"<script>(function(){function toNum(v){var n=parseFloat(v);return isNaN(n)?null:n}function cmp(a,b){if(a===b) return 0;return a<b?-1:1}function sortTable(tbl,colIndex,asNumber,desc){var tbody=tbl.tBodies[0];var rows=[].slice.call(tbody.rows);rows.sort(function(r1,r2){var t1=(r1.cells[colIndex]||{}).innerText||'';var t2=(r2.cells[colIndex]||{}).innerText||'';if(asNumber){var n1=toNum(t1);var n2=toNum(t2);if(n1===null&&n2!==null) return 1;if(n1!==null&&n2===null) return -1;if(n1===null&&n2===null) return 0;return desc?(n2-n1):(n1-n2)} else {t1=t1.toLowerCase();t2=t2.toLowerCase();return desc?(t2>t1?1:(t2<t1?-1:0)):(t1>t2?1:(t1<t2?-1:0))}});rows.forEach(function(r){tbody.appendChild(r)})}function addFilters(tbl){var thead=tbl.tHead; if(!thead) return; var hdr=thead.rows[0]; var filterRow=document.createElement('tr'); for(var i=0;i<hdr.cells.length;i++){var th=document.createElement('th'); var inp=document.createElement('input'); inp.placeholder='filter'; (function(idx){inp.addEventListener('input',function(){var val=this.value.toLowerCase(); var rows=[].slice.call(tbl.tBodies[0].rows); rows.forEach(function(r){var cell=(r.cells[idx]||{}); var txt=(cell.innerText||'').toLowerCase(); r.style.display = (val=='' || txt.indexOf(val)>=0)?'':'none';});});})(i); th.appendChild(inp); filterRow.appendChild(th);} thead.appendChild(filterRow);}function init(){var tbl=document.getElementById('failTable'); if(!tbl) return; addFilters(tbl); var hdr=tbl.tHead.rows[0]; for(let i=0;i<hdr.cells.length;i++){let th=hdr.cells[i]; let numeric = /^(rber|line)/i.test(th.innerText.trim()); let desc=false; th.addEventListener('click',function(){desc=!desc; sortTable(tbl,i,numeric,desc);});}} if(document.readyState==='loading'){document.addEventListener('DOMContentLoaded',init)} else {init()}})();</script>"
+		"</head><body>"
+	f"<h3>Fail rows for {esc(fdvsel)}</h3>"
+	f"<div>Total failing rows displayed: {len(failing)}</div>"
+	+ ("<div>Mode: PASS/FAIL from logs.</div>" if passfail_mode else (f"<div>Threshold (limit) = {limit_f:.6g}</div>" if limit_f is not None else ""))
+	+ legend_html
 		+ consistency_note
-		+ "<table><thead><tr><th>testname</th><th>DUT</th><th>FUSEID</th><th>RBER</th><th>line #</th><th>raw line</th></tr></thead><tbody>"
-		+ ''.join(rows_html) + "</tbody></table>"
-		+ "</body></html>"
+			+ "<table id='failTable'><thead><tr><th>line #</th><th>testname</th><th>DUT</th><th>FUSEID</th><th>RBER</th><th>raw file</th><th>raw line</th></tr></thead><tbody>"
+	+ ''.join(rows_html) + "</tbody></table>"
+	+ "</body></html>"
 	)
 	return Response(html, mimetype='text/html')
 
@@ -1121,6 +1136,19 @@ def report_status_fdvtable(token: str):
 			if pct==0: cls='pct-ok'
 			elif pct<=25: cls='pct-warn'
 			else: cls='pct-bad'
+		# Build FAIL cell content safely (avoid nested f-strings quoting issues)
+		try:
+			limit_q = "" if (d.get('passfail_mode') or d.get('limit') is None) else f"&limit={d.get('limit')}"
+			href = (
+				f"/fdv/{token}/fails?fdv="
+				f"{r.get('fdv_file','')}|{r.get('pr','')}|{r.get('vcc','')}|{r.get('tm','')}|{r.get('temp','')}"
+				f"{limit_q}"
+			)
+			fail_cell = str(failn)
+			if (failn > 0) and token:
+				fail_cell = f'<a href="{href}" target="_blank" rel="noopener">{failn}</a>'
+		except Exception:
+			fail_cell = str(failn)
 		rows_fragments.append(
 			'<tr>'
 			f"<td>{r.get('fdv_file','')}</td>"
@@ -1132,7 +1160,7 @@ def report_status_fdvtable(token: str):
 			f"<td>{r.get('valid_fuseid_count','')}</td>"
 			f"<td>{count}</td>"
 			f"<td>{r.get('pass_n', r.get('pass',''))}</td>"
-			f"<td>{(f'<a href=/fdv/{token}/fails?fdv={r.get('fdv_file','')}|{r.get('pr','')}|{r.get('vcc','')}|{r.get('tm','')}|{r.get('temp','')}{'' if (d.get('passfail_mode') or d.get('limit') is None) else f'&limit={d.get('limit')}'} target=_blank rel=noopener>{failn}</a>' if (failn>0 and token) else failn)}</td>"
+			f"<td>{fail_cell}</td>"
 			f"<td class='{cls}'>{pct:.1f}%</td>"
 			f"<td>{r.get('vector','')}</td>"
 			f"<td>{r.get('min','')}</td>"
