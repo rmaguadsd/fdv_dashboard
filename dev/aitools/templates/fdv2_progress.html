@@ -13,6 +13,11 @@
 </head>
 <body>
   <h3>Parsing FDV logs…</h3>
+  {% if job_name %}
+  <div class="small" style="margin:4px 0 10px 0; background:#fff6d7; padding:6px 8px; border-left:4px solid #c9971a;">
+    <strong>Job:</strong> <span class="mono">{{ job_name }}</span>
+  </div>
+  {% endif %}
   <div class="small" style="margin:4px 0 10px 0; background:#f4f8ff; padding:6px 8px; border-left:4px solid #3a78c2;">
     {% if job_id %}<div>Job ID: <span class="mono" id="jobIdDisp">{{ job_id }}</span></div>{% endif %}
     <div>Token: <span class="mono" id="tokenDisp">{{ token }}</span></div>
@@ -24,12 +29,10 @@
   <div class="bar"><div id="fill"></div></div>
   <div class="small mono" id="txt">Starting…</div>
   <div class="small mono" id="eta" style="margin-top:2px;color:#666;"></div>
-  {% if prodmode %}
-  <div style="margin:8px 0;">
+  <div id="doneWrap" style="margin:8px 0;">
     <button id="doneBtn" type="button" onclick="return onDone();">Done</button>
     <span class="small" style="margin-left:6px;color:#444;">Click 'Done' to stop after the current file and generate the report.</span>
   </div>
-  {% endif %}
   <div class="small" style="margin-top:4px;">
     <span id="overall_total_lines" class="mono"></span>
     <span id="current_file_total_lines" class="mono" style="margin-left:12px;"></span>

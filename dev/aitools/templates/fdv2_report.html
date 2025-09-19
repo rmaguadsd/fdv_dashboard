@@ -41,6 +41,11 @@
   {% endwith %}
 
   <h2>FDV Report v2</h2>
+  {% if job_name %}
+  <div class="small" style="margin:4px 0 10px 0; background:#fff6d7; padding:6px 8px; border-left:4px solid #c9971a;">
+    <strong>Job:</strong> <span class="mono">{{ job_name }}</span>
+  </div>
+  {% endif %}
   <div class="small" style="margin:4px 0 10px 0; background:#f4f8ff; padding:6px 8px; border-left:4px solid #3a78c2;">
     {% if job_id %}<span style="margin-right:12px;">Job ID: <span class="mono">{{ job_id }}</span></span>{% endif %}
     {% if token %}<span style="margin-right:12px;">Token: <span class="mono">{{ token }}</span></span>{% endif %}

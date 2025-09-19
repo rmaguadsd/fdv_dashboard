@@ -13,6 +13,7 @@
     .status-done { color:#064; }
     .status-error { color:#b00; font-weight:600; }
     .status-paused { color:#c78100; font-weight:600; }
+  .status-waiting { color:#555; font-weight:600; }
     .mono { font-family: Consolas, monospace; }
   th.job-name-col, td.job-name-cell { width:416px; min-width:416px; max-width:416px; }
   td.links-col { white-space:nowrap; }
@@ -70,7 +71,8 @@ async function refreshJobs(){
   if(!jobs.length){ body.innerHTML = '<tr><td colspan="10" class="small">No jobs yet.</td></tr>'; return; }
     let html='';
     for(const j of jobs){
-      const cls = 'status-'+(j.status||'unknown');
+    const statusDisplay = (j.status === 'running' && ((j.files_done||0) === 0)) ? 'waiting' : (j.status||'unknown');
+    const cls = 'status-'+statusDisplay;
       const pct = (j.percent!=null)? (Number(j.percent).toFixed(1)+'%') : '';
       const files = (j.files_done!=null)? `${j.files_done}/${j.files_total||''}` : '';
       // Use server-provided overall ETA
@@ -94,7 +96,7 @@ async function refreshJobs(){
       html += `<tr>`+
   `<td class="mono job-id">${j.job_id}</td>`+
   `<td class="job-name-cell" id="${nameId}" contenteditable="true" data-job="${j.job_id}" data-last="${nameVal.replace(/"/g,'&quot;')}" style="min-width:416px;min-height:18px;padding:2px;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${nameVal.replace(/</g,'&lt;')}</td>`+
-  `<td class="${cls} status-col">${j.status}</td>`+
+  `<td class="${cls} status-col">${statusDisplay}</td>`+
   `<td class="pct-col">${pct}</td>`+
   `<td class="files-col">${files}</td>`+
   `<td class="lines-col">${j.lines||''}</td>`+

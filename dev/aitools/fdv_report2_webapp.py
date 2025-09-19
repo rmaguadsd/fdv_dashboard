@@ -3250,7 +3250,12 @@ def report_home():
                         JOBS[job_id]['prodmode'] = prodmode
             except Exception:
                 pass
-            return render_template('fdv2_progress.html', token=token, job_id=job_id, limit_raw=lim_raw, prodmode=prodmode)
+            # Resolve job name to display on progress page
+            try:
+                job_name_disp = (JOB_NAMES.get(job_id) or derived or user_jobname or '').strip()
+            except Exception:
+                job_name_disp = (derived or user_jobname or '')
+            return render_template('fdv2_progress.html', token=token, job_id=job_id, limit_raw=lim_raw, prodmode=prodmode, job_name=job_name_disp)
         except Exception as e:
             flash(f"Failed to start parsing: {e}")
             return redirect(url_for('report_home'))
@@ -3337,7 +3342,12 @@ def report_home():
                         JOBS[job_id]['prodmode'] = prodmode_q
             except Exception:
                 pass
-            return render_template('fdv2_progress.html', token=token, job_id=job_id, limit_raw=lim_raw, prodmode=prodmode_q)
+            # Resolve job name to display on progress page
+            try:
+                job_name_disp = (JOB_NAMES.get(job_id) or derived or user_jobname or '').strip()
+            except Exception:
+                job_name_disp = (derived or user_jobname or '')
+            return render_template('fdv2_progress.html', token=token, job_id=job_id, limit_raw=lim_raw, prodmode=prodmode_q, job_name=job_name_disp)
         except Exception as e:
             flash(f"Failed to start parsing: {e}")
             return redirect(url_for('report_home'))
@@ -3409,7 +3419,19 @@ def report_home():
         except Exception:
             pass
         dispositions_map = data.get('dispositions', {}) or {}
-        html = render_template('fdv2_report.html', token=tok, job_id=job_id_for_token, stats=stats, used_dir=data.get('dir'), fdv_order=data.get('fdv_order', []), limit=limit_template, persist_url=persist_url, limit_raw_string=lim_raw, limit_source=limit_source, comments=comments_map, dispositions=dispositions_map, prodmode=data.get('prodmode', False))
+        # Resolve job name for banner
+        job_name_val = ''
+        try:
+            if job_id_for_token:
+                with JOBS_LOCK:
+                    rec = JOBS.get(job_id_for_token)
+                    if rec:
+                        job_name_val = (rec.get('name') or '').strip()
+            if (not job_name_val) and job_id_for_token:
+                job_name_val = (JOB_NAMES.get(job_id_for_token) or '').strip()
+        except Exception:
+            job_name_val = job_name_val
+        html = render_template('fdv2_report.html', token=tok, job_id=job_id_for_token, stats=stats, used_dir=data.get('dir'), fdv_order=data.get('fdv_order', []), limit=limit_template, persist_url=persist_url, limit_raw_string=lim_raw, limit_source=limit_source, comments=comments_map, dispositions=dispositions_map, prodmode=data.get('prodmode', False), job_name=job_name_val)
         try:
             _persist_write('report2', tok, html)
         except Exception:
@@ -3451,6 +3473,7 @@ def job_progress(job_id: str):
     if not data:
         return redirect(url_for('report_home'))
     limit_raw = ''
+    job_name = ''
     try:
         with JOBS_LOCK:
             rec = JOBS.get(job_id)
@@ -3461,11 +3484,23 @@ def job_progress(job_id: str):
                     prodmode = bool(rec.get('prodmode', False))
                 else:
                     prodmode = bool(data.get('prodmode', False))
+                try:
+                    job_name = (rec.get('name') or '').strip()
+                except Exception:
+                    job_name = job_name
             else:
                 prodmode = bool(data.get('prodmode', False))
     except Exception:
         prodmode = bool(data.get('prodmode', False))
-    return render_template('fdv2_progress.html', token=token, job_id=job_id, limit_raw=limit_raw, prodmode=prodmode)
+    # Fallback to JOB_NAMES file
+    try:
+        if not job_name:
+            nm = JOB_NAMES.get(job_id)
+            if nm:
+                job_name = nm
+    except Exception:
+        pass
+    return render_template('fdv2_progress.html', token=token, job_id=job_id, limit_raw=limit_raw, prodmode=prodmode, job_name=job_name)
 
 @app.route('/api/job/<job_id>/done', methods=['POST'])
 def api_job_done(job_id: str):
