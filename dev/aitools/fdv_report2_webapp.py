@@ -17,6 +17,7 @@ import uuid
 import secrets
 import tempfile
 from pathlib import Path
+import sqlite3
 from typing import Dict, List, Tuple
 import re
 import threading
@@ -64,6 +65,112 @@ def _persist_write(appname: str, token: str, html: str, filename: str = 'index.h
     except Exception:
         pass
     return out
+
+# ---------------- Lightweight SQLite persistence (rows on D:) ----------------
+def _sqlite_db_path(token: str) -> Path:
+    base = _persist_base_dir() / 'report2' / token
+    try:
+        base.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        pass
+    return base / 'rows.db'
+
+def _sqlite_connect(token: str) -> sqlite3.Connection:
+    dbp = _sqlite_db_path(token)
+    conn = sqlite3.connect(str(dbp))
+    try:
+        conn.execute('PRAGMA journal_mode=WAL;')
+        conn.execute('PRAGMA synchronous=NORMAL;')
+        conn.execute('PRAGMA temp_store=MEMORY;')
+    except Exception:
+        pass
+    return conn
+
+def _sqlite_init(token: str) -> None:
+    try:
+        with _sqlite_connect(token) as con:
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS rows (
+                    token TEXT,
+                    fdv   TEXT,
+                    pr    TEXT,
+                    vcc   TEXT,
+                    tm    TEXT,
+                    temp  TEXT,
+                    line_number INTEGER,
+                    fuseid TEXT,
+                    rber REAL,
+                    pass_fail TEXT,
+                    source_file TEXT,
+                    fdv_file TEXT,
+                    testname TEXT,
+                    raw_line TEXT
+                );
+                """
+            )
+            con.execute("CREATE INDEX IF NOT EXISTS idx_rows_token ON rows(token);")
+            con.execute("CREATE INDEX IF NOT EXISTS idx_rows_token_split ON rows(token, fdv, pr, vcc, tm, temp);")
+            con.execute("CREATE INDEX IF NOT EXISTS idx_rows_token_file ON rows(token, source_file);")
+            con.commit()
+    except Exception:
+        pass
+
+def _sqlite_insert_rows(token: str, rows: list[dict]) -> int:
+    if not rows:
+        return 0
+    try:
+        with _sqlite_connect(token) as con:
+            cur = con.cursor()
+            to_ins = []
+            for rr in rows:
+                try:
+                    fdv, pr, vcc, tm, temp = _get_split_tuple(rr)
+                except Exception:
+                    fdv = (rr.get('fdv_file') or rr.get('fdv') or '')
+                    pr = str(rr.get('pr') or '')
+                    vcc = str(rr.get('vcc') or '')
+                    tm = str(rr.get('tm') or '')
+                    temp = str(rr.get('temp') or '')
+                # line number
+                ln = None
+                try:
+                    for lk in ('line_number','lineno','line','line_no','line_num','linenum','_line','_lineno','line_idx','lineindex'):
+                        if lk in rr and rr.get(lk) not in (None, ''):
+                            try:
+                                ln = int(str(rr.get(lk)).strip())
+                                break
+                            except Exception:
+                                ln = int(str(rr.get(lk)).strip(), 0)
+                                break
+                except Exception:
+                    ln = None
+                # fuseid / rber / pass_fail
+                try:
+                    fuseid = (_get_fuseid(rr) or '').strip()
+                except Exception:
+                    fuseid = (rr.get('fuseid') or rr.get('FuseID') or rr.get('FUSEID') or '')
+                try:
+                    rber = _get_rber(rr)
+                except Exception:
+                    try:
+                        rber = float(rr.get('rber')) if rr.get('rber') not in (None, '') else None
+                    except Exception:
+                        rber = None
+                pf = str(rr.get('pass_fail') or rr.get('PASS_FAIL') or rr.get('status') or '')
+                src = (rr.get('source_file') or '').strip()
+                fdv_file = (rr.get('fdv_file') or rr.get('fdv') or '').strip()
+                tname = (rr.get('testname') or rr.get('tname') or '').strip()
+                raw = (rr.get('raw_line') or rr.get('raw') or '')
+                to_ins.append((token, fdv, pr, vcc, tm, temp, ln, fuseid, rber, pf, src, fdv_file, tname, raw))
+            cur.executemany(
+                "INSERT INTO rows(token, fdv, pr, vcc, tm, temp, line_number, fuseid, rber, pass_fail, source_file, fdv_file, testname, raw_line) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                to_ins
+            )
+            con.commit()
+            return len(to_ins)
+    except Exception:
+        return 0
 
 # ---------------- Encoding helpers / diagnostics ----------------
 def _detect_file_encoding(fp: Path) -> str:
@@ -2065,6 +2172,11 @@ def _start_parse_job(token: str, files: List[Path], used_dir: str | None, limit_
                 'limit_raw': limit_raw,
             }
             all_rows: List[Dict[str, str]] = []
+            # Initialize on-disk storage for rows
+            try:
+                _sqlite_init(token)
+            except Exception:
+                pass
             # Keep a live reference to rows in CACHE so other endpoints can compute partial stats
             try:
                 if token in CACHE:
@@ -2414,6 +2526,14 @@ def _start_parse_job(token: str, files: List[Path], used_dir: str | None, limit_
                     except Exception:
                         pass
                     all_rows.extend(r)
+                    # Persist this batch to D:\ and trim memory footprint
+                    try:
+                        if r:
+                            _sqlite_insert_rows(token, r)
+                            if len(all_rows) > 50000:
+                                all_rows[:] = all_rows[-20000:]
+                    except Exception:
+                        pass
                     # finalize this file's contribution
                     lines_done_prev += last_lineno['n']
                     bytes_done_prev += file_size
@@ -2529,7 +2649,7 @@ def _start_parse_job(token: str, files: List[Path], used_dir: str | None, limit_
                         if f and f not in seen:
                             seen.add(f)
                             fdv_order.append(f)
-                    CACHE[token].update({'rows': all_rows, 'stats': stats, 'fdv_order': fdv_order, 'status': 'done', 'limit_raw': limit_raw})
+                    CACHE[token].update({'rows': all_rows[-20000:], 'stats': stats, 'fdv_order': fdv_order, 'status': 'done', 'limit_raw': limit_raw})
                     try:
                         with JOBS_LOCK:
                             for jid, rec in JOBS.items():
@@ -2827,6 +2947,14 @@ def _start_parse_job(token: str, files: List[Path], used_dir: str | None, limit_
                 except Exception:
                     pass
                 all_rows.extend(r)
+                # Persist this batch and trim memory
+                try:
+                    if r:
+                        _sqlite_insert_rows(token, r)
+                        if len(all_rows) > 50000:
+                            all_rows[:] = all_rows[-20000:]
+                except Exception:
+                    pass
                 # finalize this file's contribution
                 lines_done_prev += last_lineno['n']
                 bytes_done_prev += file_size
@@ -2958,7 +3086,7 @@ def _start_parse_job(token: str, files: List[Path], used_dir: str | None, limit_
                 if f and f not in seen:
                     seen.add(f)
                     fdv_order.append(f)
-            CACHE[token].update({'rows': all_rows, 'stats': stats, 'fdv_order': fdv_order, 'status': 'done', 'limit_raw': limit_raw})
+            CACHE[token].update({'rows': all_rows[-20000:], 'stats': stats, 'fdv_order': fdv_order, 'status': 'done', 'limit_raw': limit_raw})
             # Mark job end time
             try:
                 with JOBS_LOCK:
@@ -3328,7 +3456,11 @@ def job_progress(job_id: str):
             rec = JOBS.get(job_id)
             if rec:
                 limit_raw = rec.get('limit_raw','')  # type: ignore[arg-type]
-                prodmode = bool(rec.get('prodmode', False))
+                # If prodmode wasn't persisted on JOBS record (older runs), fallback to cache value
+                if 'prodmode' in rec:
+                    prodmode = bool(rec.get('prodmode', False))
+                else:
+                    prodmode = bool(data.get('prodmode', False))
             else:
                 prodmode = bool(data.get('prodmode', False))
     except Exception:
