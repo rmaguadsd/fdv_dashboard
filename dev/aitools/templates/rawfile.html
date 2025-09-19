@@ -2,143 +2,158 @@
 <html>
   <head>
     <meta charset="utf-8" />
-    <title>Raw File View</title>
+    <title>Raw File — Fail Rows</title>
     <style>
-  body { font-family: Segoe UI, Arial, sans-serif; margin: 24px; background: #fff; color: #111; }
-  .meta { margin-bottom: 12px; color: #222; padding: 10px 12px; background: #f9f9f9; border: 1px solid #ddd; border-radius: 6px; }
-  .meta .lbl { color: #555; font-weight: 600; margin-right: 6px; }
-      .nav { margin: 8px 0 14px 0; }
-      .layout { display: grid; grid-template-columns: 320px 1fr; gap: 16px; }
+      body { font-family: Segoe UI, Arial, sans-serif; margin: 16px; background: #fff; color: #111; }
+      .meta { margin-bottom: 8px; color: #222; padding: 8px 10px; background: #f9f9f9; border: 1px solid #ddd; border-radius: 6px; }
+      .meta .lbl { color: #555; font-weight: 600; margin-right: 6px; }
       .fails { border: 1px solid #ddd; border-radius: 4px; }
       .fails .hd { background: #f4f4f4; padding: 6px 8px; font-weight: 600; border-bottom: 1px solid #ddd; }
-    .fails .list { max-height: calc(100vh - 220px); overflow: auto; }
-  .fails .item { padding: 6px 8px; border-bottom: 1px solid #eee; font-family: Consolas, Menlo, monospace; white-space: nowrap; }
+      .fails .list { max-height: calc(100vh - 180px); overflow: auto; }
+  table { width: 100%; border-collapse: collapse; table-layout: auto; }
+      th, td { border-bottom: 1px solid #eee; padding: 2px 4px; font-size: 11px; line-height: 1.2; font-family: Consolas, Menlo, monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      /* Show raw lines in full: wrap and no inner scrollbars */
+      td.col-raw { white-space: pre-wrap; word-break: break-word; overflow: visible; text-overflow: initial; }
+  /* Raw file column: allow the table to auto-size this column based on content */
+  td.col-file { white-space: nowrap; }
+  th { border-bottom-color: #ddd; background: #fafafa; cursor: pointer; position: sticky; top: 0; }
+  /* Sort indicators */
+  th.sort-asc::after { content: " \25B2"; font-size: 10px; color: #666; }
+  th.sort-desc::after { content: " \25BC"; font-size: 10px; color: #666; }
+      .rber-low { background: #e8f5e9; }
+      .rber-mid { background: #fff8e1; }
+      .rber-high { background: #ffebee; }
+      .filters { display: grid; grid-template-columns: 90px 160px 120px 220px 1fr; gap: 6px; padding: 6px; background: #f7f7f7; border-bottom: 1px solid #ddd; position: sticky; top: 0; z-index: 1; }
+      .filters input { width: 100%; padding: 3px 4px; font-size: 12px; font-family: Segoe UI, Arial, sans-serif; }
+      .fails .item { padding: 4px 6px; border-bottom: 1px solid #eee; font-family: Consolas, Menlo, monospace; white-space: nowrap; font-size: 11px; line-height: 1.2; }
       .fails .item:last-child { border-bottom: none; }
-  .fails .ln { width: auto; display: inline-block; color: #555; }
-  .fails .txt { font-size: 11px; color: #666; margin-left: 8px; }
-      .fails a { text-decoration: none; color: #1f6feb; }
-      .fails .curr { background: #fff7e6; }
-  .code { background: #0c0c0c; color: #e5e5e5; padding: 12px; border-radius: 4px; font-family: Consolas, Menlo, monospace; font-size: 12px; line-height: 1.25; max-height: calc(100vh - 220px); overflow: auto; }
-      .line { white-space: pre; }
-      .ln { display: inline-block; width: 64px; color: #888; }
-  /* Fail lines: light red background; Selected line overrides to yellow */
-  .fail { background: #332222; color: #ffdddd; }
-  .current { background: #fff59b; color: #111; }
-      a { color: #4ea1ff; }
-      .disabled { color: #777; pointer-events: none; }
+      .ln { display: inline-block; width: 64px; color: #555; }
+      .txt { font-size: 11px; color: #333; margin-left: 8px; }
     </style>
   </head>
   <body>
-  <div class="meta">
-    <div class="file"><span class="lbl">File:</span> <strong>{{ filename }}</strong></div>
-    {% if orig_filename and orig_filename != filename %}
-      <div style="color:#666; font-size:12px; margin-top:2px;">Original: {{ orig_filename }}</div>
-    {% endif %}
-    {% if filename_base and filename_base != filename %}
-      <div style="color:#666; font-size:12px; margin-top:2px;">Basename: {{ filename_base }}</div>
-    {% endif %}
-    <div>around line {{ target_line }} {% if total is defined %}(fail {{ (idx + 1) if idx is defined else 1 }} of {{ total }}){% endif %}{% if note %} — {{ note }}{% endif %}</div>
-    <div class="small" style="color:#444; margin-top:2px;">
-      {% set lim = request.args.get('limit', None) %}
-      {% if lim is not none and lim|lower == 'none' %}
-        Mode: using PASS/FAIL flags from logs (limit=none).
-      {% elif lim is not none and lim|length > 0 %}
-        Mode: threshold by RBER limit {{ lim }}.
-      {% else %}
-        Mode: threshold by RBER limit (unspecified; provide &limit= or select on main page).
+    <div class="meta">
+      {% if sel %}
+        <div style="color:#555; font-size:12px;">fdv={{ sel.fdv }}; pr={{ sel.pr }}; vcc={{ sel.vcc }}; tm={{ sel.tm }}; temp={{ sel.temp }}</div>
       {% endif %}
+      {% if note %}<div style="color:#666; font-size:12px; margin-top:4px;">{{ note }}</div>{% endif %}
     </div>
-    {% if attempted_paths and attempted_paths|length > 0 %}
-      <div style="color:#8a6d3b; font-size:12px; margin-top:6px;">Tried:
-        {% for p in attempted_paths %}
-          <div style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width: 100%;">{{ p }}</div>
-        {% endfor %}
-      </div>
-    {% elif row_file_hint and row_file_hint|length > 0 and (not ('/' in (filename or '') or '\\' in (filename or ''))) %}
-      <div style="color:#666; font-size:12px; margin-top:6px;">From data: {{ row_file_hint }}</div>
-    {% elif read_failed %}
-      <div style="color:#666; font-size:12px; margin-top:6px;">Could not open a source file. If you know the logs root, add it with <code>&dir=...</code> in the URL. Current search root: {{ search_root or '(none)' }}.</div>
-    {% endif %}
-    {% if filename and not ('/' in filename or '\\' in filename) %}
-      <div style="color:#777; font-size:12px; margin-top:2px;">Hint: "{{ filename }}" looks like a token. We try to expand it using the FDV rows and search root above.</div>
-    {% endif %}
-    {% if sel %}
-      <div style="color:#555; font-size:12px; margin-top:4px;">fdv={{ sel.fdv }}; pr={{ sel.pr }}; vcc={{ sel.vcc }}; tm={{ sel.tm }}; temp={{ sel.temp }}</div>
-    {% endif %}
-    {% if src_options and src_options|length > 1 %}
-      <form method="get" style="margin-top:6px;">
-        <input type="hidden" name="fdv" value="{{ sel.fdv }}" />
-        <input type="hidden" name="pr" value="{{ sel.pr }}" />
-        <input type="hidden" name="vcc" value="{{ sel.vcc }}" />
-        <input type="hidden" name="tm" value="{{ sel.tm }}" />
-        <input type="hidden" name="temp" value="{{ sel.temp }}" />
-        <input type="hidden" name="limit" value="{{ request.args.get('limit','') }}" />
-        <input type="hidden" name="context" value="{{ request.args.get('context','80') }}" />
-        <input type="hidden" name="idx" value="0" />
-        {% if request.args.get('testname') %}<input type="hidden" name="testname" value="{{ request.args.get('testname') }}" />{% endif %}
-        {% if request.args.get('fuseid') %}<input type="hidden" name="fuseid" value="{{ request.args.get('fuseid') }}" />{% endif %}
-        {% if request.args.get('plane') %}<input type="hidden" name="plane" value="{{ request.args.get('plane') }}" />{% endif %}
-        {% if request.args.get('op') %}<input type="hidden" name="op" value="{{ request.args.get('op') }}" />{% endif %}
-        {% if search_root %}<input type="hidden" name="dir" value="{{ search_root }}" />{% endif %}
-        <label class="lbl">Source file:</label>
-        <select name="src" onchange="this.form.submit()">
-          <option value="">(all)</option>
-          {% for s in src_options %}
-            <option value="{{ s }}" {% if src_selected and (s == src_selected or (s|basename) == (src_selected|basename)) %}selected{% endif %}>{{ s }}</option>
-          {% endfor %}
-        </select>
-      </form>
-    {% endif %}
-  </div>
-    <div class="nav">
-      {% if prev_url %}<a href="{{ prev_url }}">← Prev fail</a>{% else %}<span class="disabled">← Prev fail</span>{% endif %}
-      &nbsp;|&nbsp;
-      {% if next_url %}<a href="{{ next_url }}">Next fail →</a>{% else %}<span class="disabled">Next fail →</span>{% endif %}
-      &nbsp;|&nbsp;
-      <a href="{{ back_url }}">Back</a>
-    </div>
-    <div class="layout">
-      <div class="fails">
-        <div class="hd">Failing lines ({{ total }})</div>
+    <div class="fails">
+      <div class="hd">Failing lines ({{ total }})</div>
+      {% if fail_items and fail_items|length > 0 %}
         <div class="list">
-          {% if fail_items and fail_items|length > 0 %}
-            {% for f in fail_items %}
-              <div class="item{% if f.is_current %} curr{% endif %}">
-                <a href="{{ f.url }}"><span class="ln">{{ f.ln }}</span></a><span class="txt">{{ f.content }}</span>
-              </div>
-            {% endfor %}
-          {% else %}
-            <div class="item">No explicit line numbers available.</div>
-          {% endif %}
+          <div class="filters">
+            <input type="text" id="fltLine" placeholder="Line" />
+            <input type="text" id="fltFuse" placeholder="FuseID" />
+            <input type="text" id="fltRber" placeholder="RBER >= ..." />
+            <input type="text" id="fltFile" placeholder="File contains..." />
+            <input type="text" id="fltRaw" placeholder="Raw contains..." />
+          </div>
+          <table id="failsTable">
+            <thead>
+              <tr>
+                <th data-key="ln" data-type="num" style="width:90px; text-align:left;">Line</th>
+                <th data-key="fuseid" data-type="str" style="width:160px; text-align:left;">FuseID</th>
+                <th data-key="rber" data-type="num" style="width:120px; text-align:left;">RBER</th>
+                <th data-key="file_base" data-type="str" style="text-align:left;">Raw file</th>
+                <th data-key="content" data-type="str" style="text-align:left;">Raw line</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for f in fail_items %}
+                {% set rclass = 'rber-low' if (f.rber is defined and f.rber is not none and f.rber < 1e-4) else ('rber-mid' if (f.rber is defined and f.rber is not none and f.rber < 1e-2) else 'rber-high') %}
+                <tr>
+                  <td>{{ '%6d'|format(f.ln) }}</td>
+                  <td>{{ f.fuseid }}</td>
+                  <td class="{{ rclass }}" data-rber="{{ f.rber if f.rber is not none else '' }}">{{ f.rber_fmt }}</td>
+                  <td class="col-file" title="{{ f.file }}">{{ f.file_base }}</td>
+                  <td class="col-raw" title="{{ f.content }}">{{ f.content }}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
         </div>
-      </div>
-      <div>
-        <div class="code">
-          {% for r in snippet %}
-            <div class="line{% if r.is_target %} fail{% endif %}{% if r.is_current %} current{% endif %}"><span class="ln">{{ '%6d'|format(r.ln) }}</span> {{ r.content }}</div>
-          {% endfor %}
+      {% else %}
+        <div class="list">
+          <div class="item">No explicit line numbers available.</div>
         </div>
-      </div>
-    </div>
-  <div class="nav">
-      {% if prev_url %}<a href="{{ prev_url }}">← Prev fail</a>{% else %}<span class="disabled">← Prev fail</span>{% endif %}
-      &nbsp;|&nbsp;
-      {% if next_url %}<a href="{{ next_url }}">Next fail →</a>{% else %}<span class="disabled">Next fail →</span>{% endif %}
-      &nbsp;|&nbsp;
-      <a href="{{ back_url }}">Back</a>
+      {% endif %}
     </div>
     <script>
       (function(){
-        try {
-          var container = document.querySelector('.code');
-          var el = container ? container.querySelector('.line.current') : null;
-          if (container && el) {
-            var y = el.offsetTop - 120; // position within container
-            if (y < 0) y = 0;
-            container.scrollTo({ top: y, left: 0, behavior: 'auto' });
-          }
-        } catch(e) { /* ignore */ }
+        // Simple client-side filter and sort, scoped to this page only
+        var tbl = document.getElementById('failsTable');
+        if (!tbl) return;
+        var tbody = tbl.querySelector('tbody');
+        var rows = Array.prototype.slice.call(tbody.querySelectorAll('tr'));
+        var inputs = {
+          line: document.getElementById('fltLine'),
+          fuse: document.getElementById('fltFuse'),
+          rber: document.getElementById('fltRber'),
+          file: document.getElementById('fltFile'),
+          raw: document.getElementById('fltRaw')
+        };
+        function parseNum(s){ var v = parseFloat(String(s||'').trim()); return isNaN(v) ? null : v; }
+        function applyFilters(){
+          var qLine = (inputs.line && inputs.line.value || '').trim();
+          var qFuse = (inputs.fuse && inputs.fuse.value || '').trim().toLowerCase();
+          var qRber = parseNum(inputs.rber && inputs.rber.value);
+          var qFile = (inputs.file && inputs.file.value || '').trim().toLowerCase();
+          var qRaw = (inputs.raw && inputs.raw.value || '').trim().toLowerCase();
+          rows.forEach(function(tr){
+            var tds = tr.children;
+            var ln = (tds[0].textContent||'').trim();
+            var fuse = (tds[1].textContent||'').trim().toLowerCase();
+            var rberAttr = tds[2].getAttribute('data-rber');
+            var rber = rberAttr ? parseFloat(rberAttr) : null;
+            var fbase = (tds[3].textContent||'').toLowerCase();
+            var raw = (tds[4].textContent||'').toLowerCase();
+            var ok = true;
+            if (qLine) { ok = ok && ln.indexOf(qLine) >= 0; }
+            if (ok && qFuse) { ok = ok && fuse.indexOf(qFuse) >= 0; }
+            if (ok && (qRber !== null)) { ok = ok && (rber !== null) && (rber >= qRber); }
+            if (ok && qFile) { ok = ok && fbase.indexOf(qFile) >= 0; }
+            if (ok && qRaw) { ok = ok && raw.indexOf(qRaw) >= 0; }
+            tr.style.display = ok ? '' : 'none';
+          });
+        }
+        ['input','change','keyup'].forEach(function(evt){
+          if (inputs.line) inputs.line.addEventListener(evt, applyFilters);
+          if (inputs.fuse) inputs.fuse.addEventListener(evt, applyFilters);
+          if (inputs.rber) inputs.rber.addEventListener(evt, applyFilters);
+          if (inputs.file) inputs.file.addEventListener(evt, applyFilters);
+          if (inputs.raw) inputs.raw.addEventListener(evt, applyFilters);
+        });
+        applyFilters();
+        // Sort: click header toggles asc/desc
+        var sortState = {};
+        var ths = tbl.querySelectorAll('th');
+        ths.forEach(function(th, idx){
+          th.addEventListener('click', function(){
+            var key = th.getAttribute('data-key') || String(idx);
+            var type = th.getAttribute('data-type') || 'str';
+            // Reset indicators on other headers
+            ths.forEach(function(other){ if (other !== th) { other.classList.remove('sort-asc','sort-desc'); } });
+            sortState[key] = (sortState[key] === 'asc') ? 'desc' : 'asc';
+            var dir = sortState[key] === 'asc' ? 1 : -1;
+            th.classList.toggle('sort-asc', dir === 1);
+            th.classList.toggle('sort-desc', dir === -1);
+            var arr = rows.slice();
+            arr.sort(function(a,b){
+              var ax = a.children[idx]; var bx = b.children[idx];
+              var av = ax ? ax.getAttribute('data-rber') || ax.textContent : '';
+              var bv = bx ? bx.getAttribute('data-rber') || bx.textContent : '';
+              if (type === 'num') { av = parseFloat(av); bv = parseFloat(bv); if (isNaN(av)) av = -Infinity; if (isNaN(bv)) bv = -Infinity; }
+              else { av = String(av).toLowerCase(); bv = String(bv).toLowerCase(); }
+              if (av < bv) return -1 * dir; if (av > bv) return 1 * dir; return 0;
+            });
+            // Reattach in new order (keep current filtering)
+            arr.forEach(function(tr){ tbody.appendChild(tr); });
+            // Update rows reference so filters operate on current order
+            rows = arr;
+          });
+        });
       })();
     </script>
   </body>
-</html>
+  </html>

@@ -543,6 +543,7 @@ def process_file(
                 "line_number": str(lineno),
                 "dut_id": dutnum,
                 "fdv_file": short_fdv_name(last_fdv),
+                "source_file": str(in_path),
                 "tname": tname,
                 "testname": testname,
                 "operation": operation,

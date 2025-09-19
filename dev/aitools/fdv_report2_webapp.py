@@ -4388,6 +4388,8 @@ def report_fails(token: str):
     src_q = (request.args.get('src') or '').strip()
     source_files_all: set[str] = set()
     fails_by_src: dict[str, list[int]] = {}
+    # Keep per-source metadata for each failing line (fuseid, rber)
+    fail_meta_by_src: dict[str, dict[int, dict]] = {}
     def _num_equal(a: str, b: str) -> bool:
         try:
             return abs(float(a) - float(b)) < 1e-9
@@ -4523,10 +4525,14 @@ def report_fails(token: str):
                 continue
         # Track contributing source file and collect lines per source
         try:
-            sf = (r.get('source_file') or '').strip()
+            sf_raw = (r.get('source_file') or '').strip()
+            # Prefer only path-like entries for source menu
+            def _is_pathlike(s: str) -> bool:
+                return bool(s) and (('/' in s) or ('\\' in s))
+            sf = sf_raw if _is_pathlike(sf_raw) else ''
             if not sf:
-                # fall back to fdv_file if it looks like a path; else leave empty and we'll use best hint later
-                sf = ((r.get('fdv_file') or r.get('fdv') or '') or '').strip()
+                sf2 = ((r.get('fdv_file') or r.get('fdv') or '') or '').strip()
+                sf = sf2 if _is_pathlike(sf2) else ''
             if sf:
                 source_files_all.add(sf)
         except Exception:
@@ -4569,15 +4575,45 @@ def report_fails(token: str):
                         ln = 0
         if ln > 0:
             try:
-                key = sf or (best_row_file_hint or orig_filename or '')
+                # Build a robust grouping key: prefer a real path from source_file; else path-like hint; avoid tokenish values
+                def _is_pathlike(s: str) -> bool:
+                    return bool(s) and (('/' in s) or ('\\' in s))
+                # Start with source_file if path-like
+                key = ''
+                if _is_pathlike(sf_raw):
+                    key = sf_raw
+                else:
+                    # Next, prefer path-like best_row_file_hint
+                    key_hint = best_row_file_hint or ''
+                    if not _is_pathlike(key_hint):
+                        key_hint = orig_filename or ''
+                    if _is_pathlike(key_hint):
+                        key = key_hint
+                    else:
+                        # As last resort, try fdv_file/fdv if path-like; else fall back to sf_raw/token
+                        sf2 = ((r.get('fdv_file') or r.get('fdv') or '') or '').strip()
+                        if _is_pathlike(sf2):
+                            key = sf2
+                        else:
+                            key = sf_raw or sf2 or ''
             except Exception:
-                key = sf or ''
+                key = sf_raw or ''
             if key:
                 fails_by_src.setdefault(key, []).append(ln)
+                # Capture metadata for this line if not already set
+                try:
+                    meta_src = fail_meta_by_src.setdefault(key, {})
+                    if ln not in meta_src:
+                        meta_src[ln] = {
+                            'fuseid': (_get_fuseid(r) or '').strip(),
+                            'rber': _get_rber(r),
+                        }
+                except Exception:
+                    pass
             else:
                 # no source info; fall back to global list as before
                 fail_lines.append(ln)
-    # Choose a source for display: requested via src=... (exact or basename match) or the one with most failing lines
+    # Choose a source for display only when explicitly requested via src=...
     selected_src = ''
     if src_q:
         # prefer tolerant path-like match (exact, basename, or contains)
@@ -4588,27 +4624,31 @@ def report_fails(token: str):
                     break
         except Exception:
             selected_src = src_q
-    if not selected_src and fails_by_src:
-        try:
-            # pick the source with the most fails
-            selected_src = max(fails_by_src.items(), key=lambda kv: len(kv[1]))[0]
-        except Exception:
-            selected_src = next(iter(fails_by_src.keys()))
-    # Build fail_lines from the chosen source
+    # Build fail_lines only when a single source is selected (single-source view)
     if selected_src:
         try:
             fail_lines = sorted(set(fails_by_src.get(selected_src, [])))
         except Exception:
             fail_lines = fails_by_src.get(selected_src, []) or fail_lines
+    # Metadata map for the chosen source
+    selected_meta: dict[int, dict] = {}
+    try:
+        if selected_src:
+            selected_meta = fail_meta_by_src.get(selected_src, {}) or {}
+    except Exception:
+        selected_meta = {}
     # Establish an initial filename hint based on selected source
     try:
         filename = selected_src or ''
     except Exception:
         filename = filename or ''
-    # If caller provided an explicit file path, prefer it
+    # If caller provided an explicit file path, prefer it unless it looks like an .fdv file (project container, not raw log)
     try:
         if file_q:
-            filename = file_q
+            _fq = file_q.strip()
+            # Heuristic: ignore .fdv extensions to avoid mislabeling raw file column
+            if not _fq.lower().endswith('.fdv'):
+                filename = _fq
     except Exception:
         pass
     # If we have a path-like hint from rows and our current filename looks like a token, adopt the hint
@@ -5184,18 +5224,521 @@ def report_fails(token: str):
     except Exception:
         _attempted = []
     # Keep fdv filter stable; do not overwrite fdv with resolved filename
-    # Prepare a compact list of all failing lines (line number + content + link) for quick navigation
+    # Prepare a compact list of all failing lines
     fail_items = []
-    if not no_line_numbers:
+    total_count = None
+    # If no specific source was selected, aggregate all sources into one table
+    if (not src_q) and fails_by_src:
         try:
-            for i, ln in enumerate(fail_lines):
+            import os as _os
+            from pathlib import Path as _Path
+            def _resolve_src_path(_spath: str) -> str:
                 try:
-                    c = all_lines[ln - 1].rstrip('\n')
+                    if _spath and _os.path.isfile(_spath):
+                        return _spath
+                    bn = ''
+                    try:
+                        bn = _Path(_spath).name if _spath else ''
+                    except Exception:
+                        try:
+                            bn = _os.path.basename(_spath) if _spath else ''
+                        except Exception:
+                            bn = ''
+                    # Try base_dir then search_roots
+                    if bn:
+                        base = (base_dir_q or (data.get('dir') or '').strip())
+                        if base:
+                            cand = str(_Path(base) / bn)
+                            try:
+                                if _os.path.isfile(cand):
+                                    return cand
+                            except Exception:
+                                pass
+                        try:
+                            for _root in (search_roots or []):
+                                cand = str(_Path(_root) / bn)
+                                if _os.path.isfile(cand):
+                                    return cand
+                        except Exception:
+                            pass
+                    return _spath
                 except Exception:
-                    c = ''
-                fail_items.append({'ln': ln, 'content': c, 'url': _build_url(i), 'is_current': (i == idx_req)})
+                    return _spath
+            total = 0
+            for src_key in sorted(fails_by_src.keys()):
+                lines_list = sorted(set(fails_by_src.get(src_key, [])))
+                if not lines_list:
+                    continue
+                resolved = _resolve_src_path(src_key)
+                # Read file once
+                try:
+                    with open(resolved, 'r', encoding='utf-8', errors='replace') as f:
+                        src_lines = f.readlines()
+                except Exception:
+                    src_lines = []
+                meta_src = fail_meta_by_src.get(src_key, {})
+                for ln in lines_list:
+                    try:
+                        c = src_lines[ln - 1].rstrip('\n') if (ln-1) < len(src_lines) and (ln-1) >= 0 else ''
+                    except Exception:
+                        c = ''
+                    fus = ''
+                    rber_val = None
+                    # Prefer cached metadata when available
+                    try:
+                        mi = meta_src.get(ln)
+                        if mi:
+                            fus = (mi.get('fuseid') or '').strip()
+                            rber_val = mi.get('rber')
+                    except Exception:
+                        fus = fus
+                    # Locate the matching parsed row to improve accuracy (content fallback + source file path)
+                    rr_match = None
+                    try:
+                        for rr in rows:
+                            k = _get_split_tuple(rr)
+                            if fdv and not _fdv_matches(fdv, k[0]):
+                                continue
+                            if pr and pr != k[1]:
+                                continue
+                            if vcc and not (vcc == k[2] or _num_equal(vcc, k[2])):
+                                continue
+                            if tm and not (tm == k[3] or _num_equal(tm, k[3])):
+                                continue
+                            if temp and not (temp == k[4] or _num_equal(temp, k[4])):
+                                continue
+                            rf_full = (rr.get('source_file') or '').strip() or (rr.get('fdv_file') or rr.get('fdv') or '').strip()
+                            if not _src_like_match(rf_full, src_key):
+                                continue
+                            ln2 = 0
+                            for lk in ('line_number','lineno','line','line_no','line_num','linenum','_line','_lineno','line_idx','lineindex'):
+                                if lk in rr and rr.get(lk) not in (None, ''):
+                                    try:
+                                        ln2 = int(str(rr.get(lk)).strip())
+                                        break
+                                    except Exception:
+                                        try:
+                                            ln2 = int(str(rr.get(lk)).strip(), 0)
+                                            break
+                                        except Exception:
+                                            ln2 = 0
+                            if ln2 != ln:
+                                continue
+                            rr_match = rr
+                            break
+                    except Exception:
+                        rr_match = None
+                    # If file content was empty, fall back to embedded raw_line from parsed row
+                    try:
+                        if (not c) and rr_match:
+                            c2 = (rr_match.get('raw_line') or '').rstrip('\n')
+                            if c2:
+                                c = c2
+                    except Exception:
+                        pass
+                    # If metadata missing, fill from matched row
+                    if rr_match and (not fus or rber_val is None):
+                        try:
+                            if not fus:
+                                fus = (_get_fuseid(rr_match) or '').strip()
+                            if rber_val is None:
+                                rber_val = _get_rber(rr_match)
+                        except Exception:
+                            pass
+                    # If the raw line contains an explicit RBER/BER token, prefer that for display
+                    try:
+                        import re as _re
+                        m = _re.search(r"(?:\bRBER\b|\bRAW[_ ]?BER\b|\bBER\b|\bERROR[_ ]?RATE\b)\s*[:=]\s*([0-9]*\.?[0-9]+(?:[eE][+-]?[0-9]+)?)", c)
+                        if m:
+                            rber_from_text = float(m.group(1))
+                            rber_val = rber_from_text
+                    except Exception:
+                        pass
+                    try:
+                        rber_fmt = ("{:.3e}".format(float(rber_val)) if (rber_val is not None) else '')
+                    except Exception:
+                        rber_fmt = ''
+                    # Choose the most accurate file path for the row: prefer the row's actual source_file if available
+                    try:
+                        rf_row = ''
+                        if rr_match:
+                            rf_row = (rr_match.get('source_file') or '').strip()
+                        # Prefer per-row source_file; fall back to resolved/src_key when unavailable
+                        file_full = rf_row or (resolved or src_key or '')
+                        # Heuristic: prefer Output_*.txt when available
+                        def _pick_output_like(primary: str, fallback1: str, fallback2: str, token_hint: str) -> str:
+                            def bn(p: str) -> str:
+                                try:
+                                    return _os.path.basename(p)
+                                except Exception:
+                                    return p or ''
+                            def starts_output(p: str) -> bool:
+                                try:
+                                    return bn(p).lower().startswith('output_') and bn(p).lower().endswith('.txt')
+                                except Exception:
+                                    return False
+                            # Quick wins
+                            if starts_output(primary):
+                                return primary
+                            if starts_output(fallback1):
+                                return fallback1
+                            if starts_output(fallback2):
+                                return fallback2
+                            # Try to locate a sibling Output file in same dir as primary/fallback1
+                            token_l = (token_hint or '').strip().lower()
+                            for base in [primary, fallback1]:
+                                try:
+                                    if not base:
+                                        continue
+                                    d = _os.path.dirname(base)
+                                    if d and _os.path.isdir(d):
+                                        try:
+                                            cand = []
+                                            for name in _os.listdir(d):
+                                                low = name.lower()
+                                                if low.startswith('output_') and low.endswith('.txt'):
+                                                    if (not token_l) or ('tb_set_utility' in low and token_l in low):
+                                                        cand.append(_os.path.join(d, name))
+                                            if cand:
+                                                # pick latest by mtime
+                                                try:
+                                                    cand.sort(key=lambda p: _os.path.getmtime(p), reverse=True)
+                                                except Exception:
+                                                    pass
+                                                return cand[0]
+                                        except Exception:
+                                            continue
+                                except Exception:
+                                    continue
+                            # As a broader fallback, search known roots for Output logs matching the token
+                            try:
+                                roots = list(search_roots) if ('search_roots' in locals() and search_roots) else []
+                            except Exception:
+                                roots = []
+                            if roots:
+                                try:
+                                    patt = []
+                                    if token_l:
+                                        patt.extend([
+                                            f"*Output*tb_set_utility*{token_l}*.txt",
+                                            f"Output_*{token_l}*.txt",
+                                        ])
+                                    # generic Output fallback
+                                    patt.append("Output_*.txt")
+                                    hits: list[str] = []
+                                    for r_ in roots:
+                                        try:
+                                            R = _Path(r_)
+                                            for pat in patt:
+                                                try:
+                                                    for pth in R.rglob(pat):
+                                                        if pth.is_file():
+                                                            hits.append(str(pth))
+                                                except Exception:
+                                                    continue
+                                        except Exception:
+                                            continue
+                                    if hits:
+                                        try:
+                                            # dedupe and sort by mtime desc
+                                            hits = list(dict.fromkeys(hits))
+                                        except Exception:
+                                            pass
+                                        try:
+                                            hits.sort(key=lambda p: _os.path.getmtime(p), reverse=True)
+                                        except Exception:
+                                            pass
+                                        return hits[0]
+                                except Exception:
+                                    pass
+                            return primary or fallback1 or fallback2
+                        # Extract a token hint from fdv_file if present
+                        token_hint = ''
+                        try:
+                            if rr_match:
+                                _fdv_f = (rr_match.get('fdv_file') or rr_match.get('fdv') or '')
+                                import re as _re
+                                m = _re.search(r"tb_set_utility_([A-Za-z0-9_\-]+)", _fdv_f, flags=_re.IGNORECASE)
+                                if m:
+                                    token_hint = m.group(1).lower()
+                        except Exception:
+                            token_hint = ''
+                        # If we have a per-row source file, use it directly (it is the actual processed log)
+                        if rf_row:
+                            file_full = rf_row
+                        else:
+                            file_full = _pick_output_like(file_full, resolved or '', src_key or '', token_hint)
+                        _fb = _os.path.basename(file_full) if file_full else ''
+                    except Exception:
+                        file_full = resolved or src_key or ''
+                        _fb = file_full
+                    fail_items.append({
+                        'ln': ln,
+                        'file': file_full,
+                        'file_base': _fb,
+                        'content': c,
+                        'url': '',  # no per-line navigation in aggregate view
+                        'is_current': False,
+                        'fuseid': fus,
+                        'rber': rber_val,
+                        'rber_fmt': rber_fmt
+                    })
+                total += len(lines_list)
+            total_count = total
+            # In aggregate view, disable prev/next navigation
+            prev_url = ''
+            next_url = ''
+            idx_req = 0
         except Exception:
             fail_items = []
+    else:
+        # Single-source (legacy) behavior
+        # We will set per-row file info based on matching row's source_file when possible
+        try:
+            import os as _os
+        except Exception:
+            pass
+    if not no_line_numbers:
+            try:
+                for i, ln in enumerate(fail_lines):
+                    try:
+                        c = all_lines[ln - 1].rstrip('\n')
+                    except Exception:
+                        c = ''
+                    # Lookup metadata (fuseid, rber) for this line
+                    fus = ''
+                    rber_val = None
+                    file_full_single = ''
+                    try:
+                        mi = selected_meta.get(ln)
+                        if mi:
+                            fus = (mi.get('fuseid') or '').strip()
+                            rber_val = mi.get('rber')
+                    except Exception:
+                        fus = fus
+                    # Fallback: try to locate a matching row for this line
+                    if (not fus) and (rber_val is None):
+                        try:
+                            for rr in rows:
+                                # Match basic split and line number
+                                k = _get_split_tuple(rr)
+                                if fdv and not _fdv_matches(fdv, k[0]):
+                                    continue
+                                if pr and pr != k[1]:
+                                    continue
+                                if vcc and not (vcc == k[2] or _num_equal(vcc, k[2])):
+                                    continue
+                                if tm and not (tm == k[3] or _num_equal(tm, k[3])):
+                                    continue
+                                if temp and not (temp == k[4] or _num_equal(temp, k[4])):
+                                    continue
+                                # Source file scope
+                                if selected_src:
+                                    rf_full = (rr.get('source_file') or '').strip() or (rr.get('fdv_file') or rr.get('fdv') or '').strip()
+                                    if not _src_like_match(rf_full, selected_src):
+                                        continue
+                                # Line number match
+                                ln2 = 0
+                                for lk in ('line_number','lineno','line','line_no','line_num','linenum','_line','_lineno','line_idx','lineindex'):
+                                    if lk in rr and rr.get(lk) not in (None, ''):
+                                        try:
+                                            ln2 = int(str(rr.get(lk)).strip())
+                                            break
+                                        except Exception:
+                                            try:
+                                                ln2 = int(str(rr.get(lk)).strip(), 0)
+                                                break
+                                            except Exception:
+                                                ln2 = 0
+                                if ln2 != ln:
+                                    continue
+                                fus = (_get_fuseid(rr) or '').strip()
+                                rber_val = _get_rber(rr)
+                                # Capture source log file from the row when available
+                                try:
+                                    file_full_single = (rr.get('source_file') or '').strip()
+                                except Exception:
+                                    file_full_single = file_full_single
+                                break
+                        except Exception:
+                            pass
+                    # If file content was empty, fall back to embedded raw_line from parsed row
+                    try:
+                        if (not c):
+                            c2 = ''
+                            # Locate matching row for fallback content
+                            for rr in rows:
+                                k = _get_split_tuple(rr)
+                                if fdv and not _fdv_matches(fdv, k[0]):
+                                    continue
+                                if pr and pr != k[1]:
+                                    continue
+                                if vcc and not (vcc == k[2] or _num_equal(vcc, k[2])):
+                                    continue
+                                if tm and not (tm == k[3] or _num_equal(tm, k[3])):
+                                    continue
+                                if temp and not (temp == k[4] or _num_equal(temp, k[4])):
+                                    continue
+                                if selected_src:
+                                    rf_full = (rr.get('source_file') or '').strip() or (rr.get('fdv_file') or rr.get('fdv') or '').strip()
+                                    if not _src_like_match(rf_full, selected_src):
+                                        continue
+                                ln2 = 0
+                                for lk in ('line_number','lineno','line','line_no','line_num','linenum','_line','_lineno','line_idx','lineindex'):
+                                    if lk in rr and rr.get(lk) not in (None, ''):
+                                        try:
+                                            ln2 = int(str(rr.get(lk)).strip())
+                                            break
+                                        except Exception:
+                                            try:
+                                                ln2 = int(str(rr.get(lk)).strip(), 0)
+                                                break
+                                            except Exception:
+                                                ln2 = 0
+                                if ln2 != ln:
+                                    continue
+                                c2 = (rr.get('raw_line') or '').rstrip('\n')
+                                # Capture source file if not already set
+                                try:
+                                    if not file_full_single:
+                                        file_full_single = (rr.get('source_file') or '').strip()
+                                except Exception:
+                                    pass
+                                if c2:
+                                    break
+                            if c2:
+                                c = c2
+                    except Exception:
+                        pass
+                    # If the raw line contains an explicit RBER/BER token, prefer that for display to ensure exact correspondence
+                    try:
+                        import re as _re
+                        m = _re.search(r"(?:\bRBER\b|\bRAW[_ ]?BER\b|\bBER\b|\bERROR[_ ]?RATE\b)\s*[:=]\s*([0-9]*\.?[0-9]+(?:[eE][+-]?[0-9]+)?)", c)
+                        if m:
+                            rber_from_text = float(m.group(1))
+                            # Use text-extracted RBER for display; keep parsed rber_val as fallback
+                            rber_val = rber_from_text
+                    except Exception:
+                        pass
+                    # Format RBER
+                    try:
+                        rber_fmt = ("{:.3e}".format(float(rber_val)) if (rber_val is not None) else '')
+                    except Exception:
+                        rber_fmt = ''
+                    # Determine display file path for this row (prefer row.source_file; else the opened filename)
+                    try:
+                        # Prefer Output_*.txt basename when possible in single-source mode
+                        def _pick_output_like_single(primary: str, fallback1: str, token_hint: str) -> str:
+                            try:
+                                import os as __os
+                            except Exception:
+                                __os = _os
+                            def bn(p: str) -> str:
+                                try:
+                                    return __os.path.basename(p)
+                                except Exception:
+                                    return p or ''
+                            def starts_output(p: str) -> bool:
+                                try:
+                                    b = bn(p).lower()
+                                    return b.startswith('output_') and b.endswith('.txt')
+                                except Exception:
+                                    return False
+                            if starts_output(primary):
+                                return primary
+                            if starts_output(fallback1):
+                                return fallback1
+                            # Try sibling search in dir of fallback1
+                            token_l = (token_hint or '').strip().lower()
+                            try:
+                                d = __os.path.dirname(fallback1)
+                                if d and __os.path.isdir(d):
+                                    cand = []
+                                    for name in __os.listdir(d):
+                                        low = name.lower()
+                                        if low.startswith('output_') and low.endswith('.txt'):
+                                            if (not token_l) or ('tb_set_utility' in low and token_l in low):
+                                                cand.append(__os.path.join(d, name))
+                                    if cand:
+                                        try:
+                                            cand.sort(key=lambda p: __os.path.getmtime(p), reverse=True)
+                                        except Exception:
+                                            pass
+                                        return cand[0]
+                            except Exception:
+                                pass
+                            # As a broader fallback, search known roots for Output logs matching the token
+                            try:
+                                roots = list(search_roots) if ('search_roots' in locals() and search_roots) else []
+                            except Exception:
+                                roots = []
+                            if roots:
+                                try:
+                                    patt = []
+                                    if token_l:
+                                        patt.extend([
+                                            f"*Output*tb_set_utility*{token_l}*.txt",
+                                            f"Output_*{token_l}*.txt",
+                                        ])
+                                    patt.append("Output_*.txt")
+                                    hits: list[str] = []
+                                    for r_ in roots:
+                                        try:
+                                            R = _Path(r_)
+                                            for pat in patt:
+                                                try:
+                                                    for pth in R.rglob(pat):
+                                                        if pth.is_file():
+                                                            hits.append(str(pth))
+                                                except Exception:
+                                                    continue
+                                        except Exception:
+                                            continue
+                                    if hits:
+                                        try:
+                                            hits = list(dict.fromkeys(hits))
+                                        except Exception:
+                                            pass
+                                        try:
+                                            hits.sort(key=lambda p: __os.path.getmtime(p), reverse=True)
+                                        except Exception:
+                                            pass
+                                        return hits[0]
+                                except Exception:
+                                    pass
+                            return primary or fallback1
+                        # token hint from any matching row (if we captured earlier)
+                        token_hint2 = ''
+                        # Try to extract token from selected_src or filename
+                        try:
+                            import re as _re
+                            m2 = _re.search(r"tb_set_utility_([A-Za-z0-9_\-]+)", (filename or ''), flags=_re.IGNORECASE)
+                            if m2:
+                                token_hint2 = m2.group(1).lower()
+                        except Exception:
+                            token_hint2 = ''
+                        # If the row captured a source_file, show it directly; else use heuristic to pick Output_*.txt
+                        if file_full_single:
+                            file_disp = file_full_single
+                        else:
+                            file_disp = _pick_output_like_single(file_full_single or '', (filename or ''), token_hint2)
+                        file_base_disp = _os.path.basename(file_disp) if file_disp else ''
+                    except Exception:
+                        file_disp = (file_full_single or filename or '')
+                        file_base_disp = file_disp
+                    fail_items.append({
+                        'ln': ln,
+                        'file': file_disp,
+                        'file_base': file_base_disp,
+                        'content': c,
+                        'url': _build_url(i),
+                        'is_current': (i == idx_req),
+                        'fuseid': fus,
+                        'rber': rber_val,
+                        'rber_fmt': rber_fmt
+                    })
+            except Exception:
+                fail_items = []
     # Ensure we always show something in the filename slot at the top of the page
     try:
         _display_name = filename.strip() if filename else (fdv.strip() if fdv else '(unresolved file)')
@@ -5325,7 +5868,7 @@ def report_fails(token: str):
         available_sources = sorted(source_files_all)
     except Exception:
         available_sources = list(source_files_all)
-    return render_template('rawfile.html', filename=_display_name, filename_base=_display_base, orig_filename=orig_filename, snippet=snippet, target_line=target_line, back_url=back_url, idx=idx_req, total=len(fail_lines), prev_url=prev_url, next_url=next_url, note=note, fail_items=fail_items, sel=sel, attempted_paths=_attempted, row_file_hint=best_row_file_hint, read_failed=read_failed, search_root=search_root, src_selected=src_q, src_options=available_sources)
+    return render_template('rawfile.html', filename=_display_name, filename_base=_display_base, orig_filename=orig_filename, snippet=snippet, target_line=target_line, back_url=back_url, idx=idx_req, total=(total_count if (total_count is not None) else len(fail_lines)), prev_url=prev_url, next_url=next_url, note=note, fail_items=fail_items, sel=sel, attempted_paths=_attempted, row_file_hint=best_row_file_hint, read_failed=read_failed, search_root=search_root, src_selected=src_q, src_options=available_sources)
 
 
 def run_filename_resolver_selftest() -> dict:

@@ -177,7 +177,7 @@
             {% if failn and (failn|int) > 0 %}
               {# Only build the link when a session token exists to avoid BuildError #}
               {% if token %}
-                <a href="/fdv/{{ token }}/fails?fdv={{ r['fdv_file'] }}|{{ r['pr'] }}|{{ r['vcc'] }}|{{ r['tm'] }}|{{ r['temp'] }}&file={{ r['fdv_file']|urlencode }}&limit={{ '' if (limit is none) else ('%.6g' % limit) }}" target="_blank" rel="noopener">{{ failn }}</a>
+                <a href="/fdv/{{ token }}/fails?fdv={{ r['fdv_file'] }}|{{ r['pr'] }}|{{ r['vcc'] }}|{{ r['tm'] }}|{{ r['temp'] }}&limit={{ '' if (limit is none) else ('%.6g' % limit) }}" target="_blank" rel="noopener">{{ failn }}</a>
               {% else %}
                 {{ failn }}
               {% endif %}

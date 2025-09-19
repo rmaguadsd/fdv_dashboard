@@ -8,12 +8,12 @@ function Stop-ByPort([int]$Port) {
   }
   if ($conns) {
     $pids = $conns | Select-Object -ExpandProperty OwningProcess -Unique
-    foreach ($pid in $pids) {
+    foreach ($procId in $pids) {
       try {
-        Stop-Process -Id $pid -Force -ErrorAction SilentlyContinue
-        Write-Output "Killed PID $pid on port $Port"
+        Stop-Process -Id $procId -Force -ErrorAction SilentlyContinue
+        Write-Output "Killed PID $procId on port $Port"
       } catch {
-        Write-Output ("Failed to kill PID {0} on port {1}: {2}" -f $pid, $Port, $_.Exception.Message)
+        Write-Output ("Failed to kill PID {0} on port {1}: {2}" -f $procId, $Port, $_.Exception.Message)
       }
     }
   } else {
