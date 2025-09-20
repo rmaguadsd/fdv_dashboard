@@ -207,7 +207,7 @@ def _interpret_limit_mode(raw: str | None) -> tuple[bool, float | None]:
 	except Exception:
 		return True, None
 
-def _start_job(token: str, files: List[Path], used_dir: str, *, passfail_mode: bool, limit: float | None, job_id: str | None = None) -> None:
+def _start_job(token: str, files: List[Path], used_dir: str, *, passfail_mode: bool, limit: float | None, job_id: str | None = None, prodmode: bool = False, ledger_map: Dict[str, Path] | None = None) -> None:
 	def job():
 		progress = {"files_total": len(files), "files_done": 0, "current_file": "", "lines": 0, "lines_total": 0, "percent": 0.0}
 		CACHE[token].update(status='running', progress=progress, rows=[], dir=used_dir)
@@ -216,6 +216,17 @@ def _start_job(token: str, files: List[Path], used_dir: str, *, passfail_mode: b
 				rec = JOBS.get(job_id)
 				if rec:
 					rec['status'] = 'running'
+		# If prodmode, keep only files that have a corresponding ledger .ready entry
+		if prodmode and ledger_map:
+			try:
+				files = [fp for fp in files if str(fp) in {str(k) for k in ledger_map.keys()}]
+			except Exception:
+				pass
+			try:
+				progress['files_total'] = len(files)
+				CACHE[token]['progress'] = progress
+			except Exception:
+				pass
 		# Pre-count total lines
 		total_lines = 0
 		line_counts: Dict[str,int] = {}
@@ -235,6 +246,7 @@ def _start_job(token: str, files: List[Path], used_dir: str, *, passfail_mode: b
 		# For overall ETA smoothing (store recent value)
 		eta_last = None  # type: ignore
 		job_start_time = time.time()
+		# Files list is final at this point; iterate and process
 		for idx, fp in enumerate(files, start=1):
 			# Support pause: spin while _pause_flag set (allow cooperative delete)
 			while CACHE.get(token, {}).get('_pause_flag'):
@@ -339,6 +351,22 @@ def _start_job(token: str, files: List[Path], used_dir: str, *, passfail_mode: b
 			rows.extend(recs)
 			progress['files_done'] = idx
 			progress['lines'] = processed_lines
+			# In prodmode, rename corresponding ledger .ready to .done after processing this file
+			try:
+				if prodmode and ledger_map:
+					key = str(fp)
+					ready_path = ledger_map.get(key)
+					if ready_path and ready_path.exists():
+						done_path = ready_path.with_suffix('.done')
+						try:
+							os.replace(str(ready_path), str(done_path))
+						except Exception:
+							try:
+								ready_path.rename(done_path)
+							except Exception:
+								pass
+			except Exception:
+				pass
 			# Update overall ETA each iteration (based on lines processed vs total)
 			try:
 				if total_lines > 0 and processed_lines > 0 and processed_lines <= total_lines:
@@ -411,6 +439,8 @@ def _start_job(token: str, files: List[Path], used_dir: str, *, passfail_mode: b
 def home():
 	if request.method == 'POST':
 		dirpath = (request.form.get('dirpath') or '').strip()
+		prod_raw = (request.form.get('prodmode') or '').strip().lower()
+		prodmode = prod_raw in ('1','true','on','yes')
 		user_jobname = (request.form.get('jobname') or '').strip()
 		limit_raw = (request.form.get('limit') or '').strip()
 		passfail_mode, limit_val = _interpret_limit_mode(limit_raw)
@@ -425,9 +455,55 @@ def home():
 				if not root.exists() or not root.is_dir():
 					flash('Directory not found.')
 					return redirect(url_for('home'))
-				files = _list_files(root)
+				ledger_map: Dict[str, Path] = {}
+				if prodmode:
+					# Require ledger directory with .ready files; convert lingering .done -> .ready first
+					led_dir = root / 'ledger'
+					if led_dir.is_dir():
+						for p in led_dir.iterdir():
+							try:
+								if p.is_file() and p.suffix.lower() == '.done':
+									tgt = p.with_suffix('.ready')
+									if not tgt.exists():
+										try:
+											os.replace(str(p), str(tgt))
+										except Exception:
+											try:
+												p.rename(tgt)
+											except Exception:
+												pass
+							except Exception:
+								continue
+					# Gather .ready list and map by stem to .txt under root (excluding ledger)
+					ready_files = [p for p in led_dir.iterdir() if p.is_file() and p.suffix.lower() == '.ready'] if led_dir.is_dir() else []
+					all_files = _list_files(root)
+					stem_index: Dict[str, List[Path]] = {}
+					for f in all_files:
+						try:
+							if 'ledger' in f.parts and (root / 'ledger') in f.parents:
+								continue
+						except Exception:
+							pass
+						stem_index.setdefault(f.stem, []).append(f)
+					selected: List[Path] = []
+					for rf in ready_files:
+						base = rf.stem
+						candidates = [c for c in stem_index.get(base, []) if c.suffix.lower() == '.txt']
+						chosen = candidates[0] if candidates else None
+						if chosen is not None and chosen.is_file():
+							selected.append(chosen)
+							ledger_map[str(chosen)] = rf
+					if not selected:
+						flash('No matching ledger .ready files found under directory/ledger.')
+						return redirect(url_for('home'))
+					files = selected
+				else:
+					files = _list_files(root)
 				used_dir = str(root)
 			else:
+				if prodmode:
+					flash('Production mode requires a directory with a ledger folder (uploads are not allowed).')
+					return redirect(url_for('home'))
 				uploads = request.files.getlist('dirfiles') or request.files.getlist('files')
 				if not uploads:
 					flash('Select files or specify directory.')
@@ -486,7 +562,7 @@ def home():
 					'passfail_mode': passfail_mode,
 				}
 				_save_job_registry()
-			_start_job(token, files, used_dir, passfail_mode=passfail_mode, limit=limit_val, job_id=job_id)
+			_start_job(token, files, used_dir, passfail_mode=passfail_mode, limit=limit_val, job_id=job_id, prodmode=prodmode, ledger_map=ledger_map if dirpath and prodmode else None)
 			return render_template('fdv2_progress.html', token=token, job_id=job_id)
 		except Exception as e:
 			flash(f'Failed: {e}')

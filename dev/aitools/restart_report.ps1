@@ -24,15 +24,16 @@ function Stop-ByPort([int]$Port) {
 Stop-ByPort -Port $Port
 
 # Prefer a repo-local venv first, else fall back to Python launcher
-$repoVenvPython = Join-Path (Split-Path $PSScriptRoot -Parent) ".venv\Scripts\python.exe"
+$repoRoot = Split-Path $PSScriptRoot -Parent
+$repoVenvPython = Join-Path $repoRoot ".venv\Scripts\python.exe"
 $userVenvPython = "C:\\Users\\rmaguad\\OneDrive - NANDPS\\Documents\\Work_mirror\\dev\\.venv\\Scripts\\python.exe"
 $python = $null
 if (Test-Path $repoVenvPython) { $python = $repoVenvPython }
 elseif (Test-Path $userVenvPython) { $python = $userVenvPython }
 else { $python = $null }
 
-# Use the repository app that contains the latest prodmode changes
-$script = "d:\\FDV\\git\\fdv_dashboard\\dev\\aitools\\fdv_report2_webapp.py"
+# Use a dedicated runner that imports the Flask app and starts it
+$script = Join-Path $PSScriptRoot "run_report2.py"
 
 if (-not (Test-Path $script)) {
   Write-Output "Script not found: $script"
@@ -43,12 +44,22 @@ if (-not (Test-Path $script)) {
 $env:FDV_REPORT2_PORT = "$Port"
 $env:FDV_REPORT2_HOST = "0.0.0.0"
 
+# Ensure we run from the aitools folder so relative imports and templates work
+$workDir = $PSScriptRoot
+
+# Prepare logs
+$logDir = Join-Path $repoRoot "logs"
+New-Item -ItemType Directory -Force -Path $logDir | Out-Null
+$logFile = Join-Path $logDir "report2_server.log"
+$errFile = Join-Path $logDir "report2_server.err.log"
+"[restart] Launching at $(Get-Date -Format o) using $script" | Out-File -FilePath $logFile -Append -Encoding utf8
+
 if ($python -and (Test-Path $python)) {
   Write-Output "Starting REPORT via venv: $python $script"
-  Start-Process -FilePath $python -ArgumentList $script -WindowStyle Hidden
+  Start-Process -FilePath $python -ArgumentList $script -WorkingDirectory $workDir -RedirectStandardOutput $logFile -RedirectStandardError $errFile -WindowStyle Hidden
 }
 else {
   # Fallback to Python launcher
   Write-Output "Venv python not found. Falling back to 'py -3.12'"
-  Start-Process -FilePath "py" -ArgumentList "-3.12", $script -WindowStyle Hidden
+  Start-Process -FilePath "py" -ArgumentList "-3.12", $script -WorkingDirectory $workDir -RedirectStandardOutput $logFile -RedirectStandardError $errFile -WindowStyle Hidden
 }

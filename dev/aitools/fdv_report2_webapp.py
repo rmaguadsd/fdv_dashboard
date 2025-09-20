@@ -1936,8 +1936,9 @@ def _mk_app() -> Flask:
         pass
     return app
 
-
+# Initialize Flask app once (must be before any @app.route usage)
 app = _mk_app()
+# Fast caches
 CACHE: Dict[str, Dict] = {}
 # Job indirection: expose stable job ids separate from internal parse tokens
 JOBS: Dict[str, Dict[str, object]] = {}
@@ -2229,6 +2230,7 @@ def _start_parse_job(token: str, files: List[Path], used_dir: str | None, limit_
                         led_dir = Path(used_dir) / 'ledger'  # type: ignore[arg-type]
                         current = []
                         if led_dir.is_dir():
+                            # Discovery only: do not rename here; only list .ready files
                             current = [p for p in led_dir.iterdir() if p.is_file() and p.suffix.lower() == '.ready']
                         # Build/update mapping for any unseen .ready
                         for rf in current:
@@ -2662,7 +2664,14 @@ def _start_parse_job(token: str, files: List[Path], used_dir: str | None, limit_
                 except Exception:
                     pass
                 return
-            for idx, fp in enumerate(files, start=1):
+            # In non-stream mode, when prodmode flag is set, process only files that have a corresponding ledger .ready entry
+            files_effective: List[Path] = files
+            try:
+                if prodmode and _ledger_map:
+                    files_effective = [fp for fp in files if str(Path(fp)) in _ledger_map]
+            except Exception:
+                files_effective = files
+            for idx, fp in enumerate(files_effective, start=1):
                 # Honor cancel (from 'Done' button) between files
                 try:
                     if CANCEL_FLAGS.get(token):
@@ -3137,11 +3146,12 @@ def report_home():
                     return redirect(url_for('report_home'))
                 used_dir = str(dp)
                 if prodmode:
-                    # Ledger-based selection: look for *.ready in dp/ledger, map to files whose stem matches
+                    # Ledger-based selection: scan for *.ready files only (never rename .done to .ready)
                     led_dir = dp / 'ledger'
                     ready_files: List[Path] = []
                     try:
                         if led_dir.is_dir():
+                            # Only list .ready files; .done files are ignored
                             ready_files = sorted([p for p in led_dir.iterdir() if p.is_file() and p.suffix.lower() == '.ready'])
                     except Exception:
                         ready_files = []
@@ -3171,6 +3181,10 @@ def report_home():
                 else:
                     file_list = _list_files([dp])
             else:
+                # When prodmode is enabled, we require a directory with a ledger folder; do not accept uploads
+                if prodmode:
+                    flash('Production mode requires a directory with a ledger folder (uploads are not allowed).')
+                    return redirect(url_for('report_home'))
                 files = request.files.getlist('dirfiles') or request.files.getlist('files')
                 if not files:
                     flash('Please enter a directory or select one or more files.')
@@ -3279,6 +3293,7 @@ def report_home():
                 ready_files: List[Path] = []
                 try:
                     if led_dir.is_dir():
+                        # Only list .ready files; do not rename .done to .ready
                         ready_files = sorted([p for p in led_dir.iterdir() if p.is_file() and p.suffix.lower() == '.ready'])
                 except Exception:
                     ready_files = []
@@ -6289,14 +6304,7 @@ def report_master_csv(token: str):
     return send_file(out, mimetype='text/csv', as_attachment=True, download_name=fname)
 
 
-if __name__ == '__main__':
-    debug = (os.environ.get('FDV_REPORT2_DEBUG','1').strip().lower() not in ('0','false','no','off'))
-    host = os.environ.get('FDV_REPORT2_HOST','0.0.0.0').strip() or '0.0.0.0'
-    try:
-        port = int(os.environ.get('FDV_REPORT2_PORT','5057'))
-    except Exception:
-        port = 5057
-    app.run(host=host, port=port, debug=debug, use_reloader=False, threaded=True)
+# (removed early __main__ runner to avoid starting the app before all routes are defined)
 
 
 def _to_float(s: str | None) -> float | None:
@@ -7003,8 +7011,7 @@ def _mk_app() -> Flask:
     return app
 
 
-app = _mk_app()
-CACHE: Dict[str, Dict] = {}
+## (second app init removed)
 
 
 def _list_files(paths: List[Path]) -> List[Path]:
@@ -7032,8 +7039,8 @@ def _list_files(paths: List[Path]) -> List[Path]:
     return files
 
 
-def _start_parse_job(token: str, files: List[Path], used_dir: str | None) -> None:
-    """Spawn a background job to parse files with progress updates stored in CACHE[token]."""
+def _start_parse_job_legacy(token: str, files: List[Path], used_dir: str | None) -> None:
+    """Legacy parser (unused). Kept for reference; main implementation is defined earlier with extended parameters."""
     def job():
         try:
             # Allowed line prefixes; all other lines ignored for performance.
@@ -7526,202 +7533,4 @@ def _start_parse_job(token: str, files: List[Path], used_dir: str | None) -> Non
 
 ## Duplicate legacy report_home removed (limit-aware version defined earlier).
 
-
-@app.route('/status/<token>')
-def report_status(token: str):
-    data = CACHE.get(token)
-    if not data:
-        return Response(json.dumps({'status': 'missing'}), mimetype='application/json')
-    # Only expose minimal info
-    out = {
-        'status': data.get('status', 'unknown'),
-        'progress': data.get('progress', {}),
-        'error': data.get('error')
-    }
-    return Response(json.dumps(out), mimetype='application/json')
-
-
-@app.route('/fdv/<token>/tests', methods=['GET','POST'])
-def report_tests(token: str):
-    data = CACHE.get(token)
-    if not data or 'rows' not in data:
-        flash('Session expired. Please re-run the FDV Report.')
-        return redirect(url_for('report_home'))
-    # Accept multi-select: list via GET ?fdv=A&fdv=B or POST getlist('fdv')
-    fdvs: List[str] = []
-    if request.method == 'POST':
-        fdvs = [s.strip() for s in request.form.getlist('fdv') if (s or '').strip()]
-    else:
-        fdvs = [s.strip() for s in request.args.getlist('fdv') if (s or '').strip()]
-    if not fdvs:
-        # Backfill single param 'fdv'
-        one = (request.values.get('fdv') or '').strip()
-        if one:
-            fdvs = [one]
-    if not fdvs:
-        flash('Missing fdvtest selection.')
-        return redirect(url_for('report_home', token=token))
-    rows = data.get('rows', [])
-    # Determine limit / token mode ('none')
-    lim_raw = (request.values.get('limit') or '').strip()
-    passfail_mode = False
-    if lim_raw.lower() in ('', 'none', 'default'):
-        limit_for_stats = 1e9
-        limit_template = None
-        passfail_mode = True
-    else:
-        try:
-            limit_for_stats = float(lim_raw)
-            limit_template = limit_for_stats
-        except Exception:
-            limit_for_stats = 1e9
-            limit_template = None
-            passfail_mode = True
-    stats = stats_by_testname_selected(rows, fdvs, limit=limit_for_stats, passfail_mode=passfail_mode)
-    # Capture split_plane_addr preference from prior page
-    try:
-        spa = (request.values.get('split_plane_addr') or '').strip().lower()
-        split_plane_addr = (spa not in ('', '0', 'false', 'no', 'off'))
-    except Exception:
-        split_plane_addr = False
-    # Build a display table for selected rows (fdv,pr,vcc,tm,temp)
-    sel_rows = []
-    for s in fdvs:
-        fdv, pr, vcc, tm, temp = _parse_fdv_selector(s)
-        sel_rows.append({'fdv': fdv, 'pr': pr, 'vcc': vcc, 'tm': tm, 'temp': temp})
-    return render_template('fdv2_report_tests.html', token=token, fdvs=fdvs, stats=stats, sel_rows=sel_rows, limit=limit_template, split_plane_addr=split_plane_addr)
-
-
-@app.route('/fdv/<token>/tests/sample', methods=['GET'])
-def report_tests_sample(token: str):
-    """Return the first N data rows for selected FDV test(s) (fdv,pr,vcc,tm,temp).
-
-    Query params:
-      - fdv: can repeat; value format 'fdv|pr|vcc|tm|temp' (parts optional)
-      - limit: default 10
-      - format: 'html' (default) or 'json'
-    Each row includes testname, DUT, plane_op, plane_addr, blk, WL or PAGE, RBER, pagetype, and line_number.
-    """
-    data = CACHE.get(token)
-    if not data or 'rows' not in data:
-        return Response('session expired', status=400)
-    rows: List[Dict[str, str]] = data.get('rows', [])
-    sel_fdvs = [s.strip() for s in (request.args.getlist('fdv') or []) if s.strip()]
-    if not sel_fdvs:
-        one = (request.args.get('fdv') or '').strip()
-        if one:
-            sel_fdvs = [one]
-    if not sel_fdvs:
-        return Response('missing fdv', status=400)
-    # Build records akin to variability but without testname filtering
-    parsed = [_parse_fdv_selector(x) for x in sel_fdvs]
-    recs: List[Dict] = []
-    for idx, r in enumerate(rows):
-        rk = _get_split_tuple(r)
-        ok = False
-        for (sf, spr, svcc, stm, stemp) in parsed:
-            if sf and sf != rk[0]:
-                continue
-            if spr and spr != rk[1]:
-                continue
-            if svcc and svcc != rk[2]:
-                continue
-            if stm and stm != rk[3]:
-                continue
-            if stemp and stemp != rk[4]:
-                continue
-            ok = True
-            break
-        if not ok:
-            continue
-        if (r.get('tname','') or '').strip().upper() == 'PR':
-            continue
-        tn = (r.get('testname','') or '').strip() or derive_testname((r.get('tname','') or '').strip())
-        wl = _extract_wl_or_page(r, allow_page_fallback=True)
-        rber = _get_rber(r)
-        if rber is None:
-            continue
-        if rber <= 0:
-            rber = 1e-12
-        recs.append({
-            'testname': tn,
-            'DUT': f"DUT{(r.get('dut_id','') or '').strip() or '?'}",
-            'plane': _plane_from_tname_or_default(r),
-            'plane_addr': _extract_plane_addr(r),
-            'blk': _extract_blk_value(r),
-            'WL': wl,
-            'RBER': rber,
-            'pagetype': (r.get('pagetype','') or '').strip(),
-            'line_number': r.get('line_number',''),
-            '_idx': r.get('_idx', idx),
-        })
-    # Slice
-    try:
-        limit = int((request.args.get('limit') or '10').strip())
-    except Exception:
-        limit = 10
-    head = recs[:max(0, limit)]
-    fmt = (request.args.get('format') or 'html').strip().lower()
-    if fmt == 'json':
-        try:
-            body = json.dumps(head)
-
-        except Exception:
-            body = json.dumps([])
-        return Response(body, mimetype='application/json')
-    # Build HTML
-    def _fmt_row(r: Dict) -> str:
-        wl_txt = '-' if r.get('WL') is None or float(r.get('WL') or -1.0) < 0 else str(int(float(r.get('WL'))))
-        blk_txt = '' if r.get('blk') is None else str(r.get('blk'))
-        return (
-            f"<tr><td>{r.get('testname','')}</td>"
-            f"<td>{r.get('DUT','')}</td>"
-            f"<td>{r.get('plane','')}</td>"
-            f"<td>{r.get('plane_addr','')}</td>"
-            f"<td>{blk_txt}</td>"
-            f"<td>{wl_txt}</td>"
-            f"<td>{float(r.get('RBER',0.0)):.3e}</td>"
-            f"<td>{r.get('pagetype','')}</td>"
-            f"<td>{r.get('line_number','')}</td>"
-            f"<td><a href=\"{url_for('report_rawline', token=token, idx=r.get('_idx', -1))}\" target=\"_blank\">view</a></td>"
-            f"</tr>"
-        )
-    rows_html = ''.join(_fmt_row(r) for r in head)
-    table = (
-        "<!doctype html><html><head><meta charset='utf-8'><title>FDV sample (first %d)</title>"
-        "<style>body{font-family:Arial, sans-serif;margin:16px;}table{border-collapse:collapse;}th,td{border:1px solid #ccc;padding:4px 6px;font-size:13px;}th{background:#f7f7f7;}</style>"
-        "</head><body>" % (len(head))
-        + ("<div style='font-size:12px;color:#666;margin-bottom:8px;'>FDV(s): %s</div>" % (', '.join([x.split('|')[0] for x in sel_fdvs])))
-        + "<table><thead><tr><th>testname</th><th>DUT</th><th>plane</th><th>plane_addr</th><th>blk</th><th>WL</th><th>RBER</th><th>pagetype</th><th>line #</th><th>raw</th></tr></thead><tbody>"
-        + rows_html + "</tbody></table>"
-        + "</body></html>"
-    )
-    return Response(table, mimetype='text/html')
-
-
-@app.route('/fdv/<token>/rawline')
-def report_rawline(token: str):
-    data = CACHE.get(token)
-    if not data or 'rows' not in data:
-        flash('Session expired. Please re-run the FDV Report.')
-        return redirect(url_for('report_home'))
-    rows: List[Dict[str,str]] = data.get('rows', [])
-    try:
-        idx = int(request.args.get('idx', '-1'))
-    except Exception:
-        idx = -1
-    if idx < 0 or idx >= len(rows):
-        flash('Invalid raw line index.')
-        return redirect(url_for('report_home'))
-    r = rows[idx]
-    return render_template('fdv2_rawline.html', token=token, row=r)
-
-
-if __name__ == '__main__':
-    debug = (os.environ.get('FDV_REPORT2_DEBUG','1').strip().lower() not in ('0','false','no','off'))
-    host = os.environ.get('FDV_REPORT2_HOST','0.0.0.0').strip() or '0.0.0.0'
-    try:
-        port = int(os.environ.get('FDV_REPORT2_PORT','5057'))
-    except Exception:
-        port = 5057
-    app.run(host=host, port=port, debug=debug, use_reloader=False, threaded=True)
+# (removed trailing __main__ runner to avoid starting the app automatically)
