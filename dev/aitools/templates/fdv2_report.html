@@ -130,6 +130,19 @@
     </div>
   {% endif %}
 
+  {% if summary_enabled and token and stats and (stats|length) %}
+  <div id="summaryPanel" style="margin:12px 0; padding:10px; border:1px solid #ddd; background:#fafafa;">
+    <div style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
+      <div style="font-weight:700;">Report Summary</div>
+      <div>
+        <button type="button" id="genSummaryBtn" onclick="return generateSummary();">Generate Summary</button>
+        <button type="button" id="refreshSummaryBtn" onclick="return refreshSummary();" style="margin-left:6px; display:none;">Refresh</button>
+      </div>
+    </div>
+    <div id="summaryBody" class="small" style="margin-top:6px; color:#444;">Click "Generate Summary" to produce a concise overview using a local model. This runs asynchronously and won’t affect table performance.</div>
+  </div>
+  {% endif %}
+
   {% if stats and stats|length %}
   <form id="fdvtests-form" method="post" {% if token %}action="{{ url_for('report_tests', token=token) }}"{% endif %}>
     <div class="small" style="margin:6px 0;">Check one or more FDV tests, then click “View Testnames”.</div>
@@ -424,6 +437,63 @@
       window.location.href = base + '?' + params.toString();
       return false;
     } catch(e){ return false; }
+  }
+  async function generateSummary(){
+    try{
+      const tok = '{{ token }}'; if(!tok) return false;
+      const lim = effectiveLimitString();
+      const body = document.getElementById('summaryBody');
+      const btn = document.getElementById('genSummaryBtn');
+      const rbtn = document.getElementById('refreshSummaryBtn');
+      if(body){ body.textContent = 'Preparing summary…'; }
+      if(btn){ btn.disabled = true; btn.textContent='Working…'; }
+      const u = `/api/summary/${encodeURIComponent(tok)}?limit=${encodeURIComponent(lim||'none')}`;
+      const res = await fetch(u, {method:'GET', cache:'no-store'});
+      if(!res.ok){ if(body) body.textContent = 'Summary request failed.'; if(btn){ btn.disabled=false; btn.textContent='Generate Summary'; } return false; }
+      const j = await res.json();
+      if(j && j.summary){
+        // Immediate summary available
+        if(body){ body.innerHTML = (j.summary||'').replace(/\n/g,'<br/>'); }
+        if(rbtn){ rbtn.style.display=''; }
+      } else {
+        // Pending: poll the embed endpoint a few times
+        if(body){ body.textContent = 'Generating (background)…'; }
+        await pollSummary(0);
+      }
+      if(btn){ btn.disabled=false; btn.textContent='Generate Summary'; }
+      return false;
+    }catch(e){ try{ const body = document.getElementById('summaryBody'); if(body) body.textContent='Summary error.'; }catch(_){} return false; }
+  }
+  async function pollSummary(iter){
+    const maxIter = 20; // ~30s total at 1.5s interval
+    try{
+      const tok = '{{ token }}'; if(!tok) return;
+      const lim = effectiveLimitString();
+      const res = await fetch(`/embed/summary/${encodeURIComponent(tok)}?limit=${encodeURIComponent(lim||'none')}`, {cache:'no-store'});
+      const body = document.getElementById('summaryBody');
+      const rbtn = document.getElementById('refreshSummaryBtn');
+      if(res.ok){
+        const html = await res.text();
+        if(html && html.indexOf('Summary not ready') === -1){
+          if(body){ body.innerHTML = html; }
+          if(rbtn){ rbtn.style.display=''; }
+          return;
+        }
+      }
+      if(iter < maxIter){ setTimeout(()=>pollSummary(iter+1), 1500); }
+      else { if(body){ body.textContent='Summary not ready. Try Refresh.'; } }
+    }catch(e){ /* silent */ }
+  }
+  async function refreshSummary(){
+    const tok = '{{ token }}'; if(!tok) return false;
+    const lim = effectiveLimitString();
+    const body = document.getElementById('summaryBody'); if(body) body.textContent='Refreshing…';
+    try{
+      const res = await fetch(`/embed/summary/${encodeURIComponent(tok)}?limit=${encodeURIComponent(lim||'none')}`, {cache:'no-store'});
+      if(res.ok){ const html = await res.text(); if(body) body.innerHTML = html; }
+      else { if(body) body.textContent='Refresh failed.'; }
+    }catch(e){ if(body) body.textContent='Refresh error.'; }
+    return false;
   }
   function analyzeByGet() {
     try {

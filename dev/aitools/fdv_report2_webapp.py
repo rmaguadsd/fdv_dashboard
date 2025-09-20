@@ -24,6 +24,8 @@ import re
 import threading
 import time
 import json
+import urllib.request
+import urllib.error
 
 # Headless matplotlib
 os.environ.setdefault("MPLBACKEND", "Agg")
@@ -2319,6 +2321,233 @@ _SQLITE_CONNS: Dict[str, sqlite3.Connection] = {}
 _SQLITE_LOCK = threading.Lock()
 SNAP_LOCK = threading.Lock()
 
+# ---------------- LLM summary support (optional, async, cached) ----------------
+# Config via environment variables:
+#   FDV2_SUMMARY_ENABLED: '1' to enable UI and API (default: '1')
+#   FDV2_SUMMARY_AUTO: '1' to auto-generate after parsing completes (default: '0')
+#   FDV2_LLM_BACKEND: 'ollama' to use local Ollama HTTP API; anything else disables LLM and uses heuristic summary (default: 'ollama')
+#   FDV2_LLM_MODEL: model name for Ollama (default: 'llama3.2')
+#   FDV2_LLM_TIMEOUT: HTTP timeout seconds (default: '25')
+
+SUMMARY_JOBS_RUNNING: Dict[str, bool] = {}
+SUMMARY_LOCK = threading.Lock()
+
+def _summary_enabled() -> bool:
+    return str(os.environ.get('FDV2_SUMMARY_ENABLED', '1')).strip() not in ('0', 'false', 'off', 'no')
+
+def _summary_auto() -> bool:
+    return str(os.environ.get('FDV2_SUMMARY_AUTO', '0')).strip() in ('1', 'true', 'on', 'yes')
+
+def _summary_backend() -> str:
+    return (os.environ.get('FDV2_LLM_BACKEND') or 'ollama').strip().lower()
+
+def _summary_model() -> str:
+    return (os.environ.get('FDV2_LLM_MODEL') or 'llama3.2').strip()
+
+def _summary_timeout() -> float:
+    try:
+        return float(os.environ.get('FDV2_LLM_TIMEOUT') or '25')
+    except Exception:
+        return 25.0
+
+def _summary_path(token: str, limit_key: str) -> Path:
+    base = _persist_base_dir() / 'report2' / token
+    try:
+        base.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        pass
+    # Normalize limit key for filename
+    lk = (limit_key or 'none').replace('/', '_').replace('\\', '_').replace(':', '_')
+    return base / f'summary_{lk}.json'
+
+def _summary_load(token: str, limit_key: str) -> Dict[str, object] | None:
+    try:
+        p = _summary_path(token, limit_key)
+        if p.exists():
+            return json.loads(p.read_text(encoding='utf-8') or '{}')
+    except Exception:
+        return None
+    return None
+
+def _summary_save(token: str, limit_key: str, payload: Dict[str, object]) -> None:
+    try:
+        p = _summary_path(token, limit_key)
+        p.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding='utf-8')
+    except Exception:
+        pass
+
+def _compact_stats_for_prompt(stats: List[Dict[str, object]], *, max_rows: int = 30) -> str:
+    """Return a compact, stable text encoding of key stats for the LLM prompt.
+    Format: one row per line sorted by descending fail_n then fail_pct, limited to max_rows.
+    Each line: <basename(fdv)> | PR=<pr> VCC=<vcc> TM=<tm> TEMP=<temp> | count=<count> pass=<pass_n> fail=<fail_n> fail%=<fail_pct>
+    """
+    def _base(s: str) -> str:
+        try:
+            s = s.replace('\\', '/');
+            return s.rsplit('/', 1)[-1]
+        except Exception:
+            return s
+    # Sort by fail_n desc, then fail_pct desc
+    try:
+        ord_stats = sorted(stats, key=lambda r: (-int((r.get('fail_n') or r.get('fail') or 0)), -float(str(r.get('fail_pct') or '0') or 0)))
+    except Exception:
+        ord_stats = stats[:]
+    lines: List[str] = []
+    for r in ord_stats[:max_rows]:
+        try:
+            fdv = _base(str(r.get('fdv_file') or ''))
+            pr = str(r.get('pr') or '')
+            vcc = str(r.get('vcc') or '')
+            tm = str(r.get('tm') or '')
+            temp = str(r.get('temp') or '')
+            cnt = str(r.get('count') or '')
+            pas = str(r.get('pass_n') or r.get('pass') or '')
+            fai = str(r.get('fail_n') or r.get('fail') or '')
+            fp = str(r.get('fail_pct') or '')
+            pm = str(r.get('pagemap') or '')
+            line = f"{fdv} | PR={pr} VCC={vcc} TM={tm} TEMP={temp} PAGEMAP={pm} | count={cnt} pass={pas} fail={fai} fail%={fp}"
+            lines.append(line)
+        except Exception:
+            continue
+    return "\n".join(lines)
+
+def _build_summary_prompt(compact_rows: str) -> str:
+    return (
+        "You are a concise NAND validation assistant. Analyze the following FDV test summary table rows and produce a short, actionable summary for engineers. "
+        "Focus on: overall health, highest failure concentrations, notable PR/VCC/TM/TEMP or pagemap patterns, and any obvious next steps. "
+        "Be specific but brief (5-10 bullet points max). Avoid repeating raw numbers excessively; highlight the key outliers.\n\n"
+        "Rows (top by failures):\n" + compact_rows + "\n\n"
+        "Output format:\n- One-line headline\n- 3-8 bullet points\n- Optional short note on data coverage if limited\n"
+    )
+
+def _ollama_generate(prompt: str, *, model: str, timeout: float) -> str | None:
+    """Call local Ollama HTTP API; return response text or None on failure."""
+    try:
+        url = os.environ.get('OLLAMA_URL') or 'http://127.0.0.1:11434/api/generate'
+        payload = {
+            'model': model,
+            'prompt': prompt,
+            'stream': False,
+            'options': {'temperature': 0.2, 'num_ctx': 4096}
+        }
+        req = urllib.request.Request(url, data=json.dumps(payload).encode('utf-8'), headers={'Content-Type': 'application/json'}, method='POST')
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            data = resp.read()
+        if not data:
+            return None
+        try:
+            obj = json.loads(data.decode('utf-8', errors='replace'))
+            # Ollama returns {'response': '...'}
+            return obj.get('response') or None
+        except Exception:
+            # Some backends may return plain text
+            return data.decode('utf-8', errors='replace')
+    except Exception:
+        return None
+
+def _heuristic_summary(stats: List[Dict[str, object]]) -> str:
+    """Fallback quick summary without LLM. Emphasize top failing rows and coverage."""
+    if not stats:
+        return "No data available to summarize yet."
+    try:
+        total_rows = len(stats)
+        total_count = sum(int(r.get('count') or 0) for r in stats)
+        total_fail = sum(int(r.get('fail_n') or r.get('fail') or 0) for r in stats)
+        total_pass = sum(int(r.get('pass_n') or r.get('pass') or 0) for r in stats)
+        fail_pct = (100.0 * total_fail / max(1, total_pass + total_fail)) if (total_pass + total_fail) > 0 else 0.0
+        # Top 3 by fail_n
+        tops = sorted(stats, key=lambda r: -int(r.get('fail_n') or r.get('fail') or 0))[:3]
+        lines = [
+            f"Overall: {total_rows} groups; total vectors={total_count}; fail%={fail_pct:.1f}.",
+        ]
+        for i, r in enumerate(tops, start=1):
+            fdv = str(r.get('fdv_file') or '')
+            pr = str(r.get('pr') or '')
+            vcc = str(r.get('vcc') or '')
+            tm = str(r.get('tm') or '')
+            temp = str(r.get('temp') or '')
+            cnt = str(r.get('count') or '')
+            fai = str(r.get('fail_n') or r.get('fail') or '')
+            fp = str(r.get('fail_pct') or '')
+            pm = str(r.get('pagemap') or '')
+            lines.append(f"Top {i}: {os.path.basename(fdv)} | PR={pr} VCC={vcc} TM={tm} TEMP={temp} {('PM='+pm) if pm else ''} | fail={fai}/{cnt} ({fp}%).")
+        if total_rows > 3:
+            lines.append("See table for additional groups; investigate top failures first, then compare across PR/VCC/TM/TEMP.")
+        return "Summary (fallback):\n- " + "\n- ".join(lines)
+    except Exception:
+        return "Summary unavailable due to an internal error."
+
+def _generate_summary_text(token: str, limit_key: str) -> Dict[str, object]:
+    """Compute summary text (LLM or heuristic) for the given token and limit key, using persisted SQLite stats when available."""
+    # Determine effective limit and passfail mode from limit_key
+    lr = (limit_key or '').strip().lower()
+    passfail_mode = lr in ('', 'none', 'default')
+    if passfail_mode:
+        limit_val = 1e9
+    else:
+        try:
+            limit_val = float(lr)
+        except Exception:
+            limit_val = 1e9
+            passfail_mode = True
+    # Prefer persisted SQLite aggregates for completeness
+    try:
+        stats = _stats_from_sqlite(token, limit=limit_val, passfail_mode=passfail_mode)
+    except Exception:
+        stats = []
+    compact = _compact_stats_for_prompt(stats, max_rows=30)
+    backend = _summary_backend()
+    model = _summary_model()
+    text: str | None = None
+    used_backend = 'heuristic'
+    if backend == 'ollama' and _summary_enabled() and compact:
+        prompt = _build_summary_prompt(compact)
+        text = _ollama_generate(prompt, model=model, timeout=_summary_timeout())
+        if text:
+            used_backend = 'ollama'
+    if not text:
+        text = _heuristic_summary(stats)
+        used_backend = 'heuristic'
+    payload = {
+        'ok': True,
+        'token': token,
+        'limit': limit_key,
+        'backend': used_backend,
+        'model': (model if used_backend == 'ollama' else ''),
+        'generated_at': time.time(),
+        'summary': text,
+        'rows_used': min(len(stats), 30)
+    }
+    return payload
+
+def _ensure_summary_async(token: str, limit_key: str) -> None:
+    """Start a summary generation job if not already running or available."""
+    # If already exists on disk, do nothing
+    try:
+        if _summary_load(token, limit_key):
+            return
+    except Exception:
+        pass
+    job_key = f"{token}:{limit_key}"
+    with SUMMARY_LOCK:
+        if SUMMARY_JOBS_RUNNING.get(job_key):
+            return
+        SUMMARY_JOBS_RUNNING[job_key] = True
+    def _worker():
+        try:
+            payload = _generate_summary_text(token, limit_key)
+            _summary_save(token, limit_key, payload)
+        except Exception:
+            try:
+                err = {'ok': False, 'token': token, 'limit': limit_key, 'error': 'summary generation failed', 'generated_at': time.time()}
+                _summary_save(token, limit_key, err)
+            except Exception:
+                pass
+        finally:
+            with SUMMARY_LOCK:
+                SUMMARY_JOBS_RUNNING.pop(job_key, None)
+    threading.Thread(target=_worker, name=f"fdv-summarize-{token[:6]}", daemon=True).start()
+
 def _create_job_id(token: str, limit_raw: str) -> str:
     for _ in range(5):
         jid = secrets.token_urlsafe(8).replace('-', '').replace('_', '')[:10]
@@ -3871,7 +4100,13 @@ def report_home():
                 job_name_val = (JOB_NAMES.get(job_id_for_token) or '').strip()
         except Exception:
             job_name_val = job_name_val
-        html = render_template('fdv2_report.html', token=tok, job_id=job_id_for_token, stats=stats, used_dir=data.get('dir'), fdv_order=data.get('fdv_order', []), limit=limit_template, persist_url=persist_url, limit_raw_string=lim_raw, limit_source=limit_source, comments=comments_map, dispositions=dispositions_map, prodmode=data.get('prodmode', False), job_name=job_name_val)
+        # Optionally kick off auto-summary in background when parsing is complete
+        try:
+            if status_val == 'done' and _summary_enabled() and _summary_auto():
+                _ensure_summary_async(tok, (lim_raw or 'none').lower())
+        except Exception:
+            pass
+        html = render_template('fdv2_report.html', token=tok, job_id=job_id_for_token, stats=stats, used_dir=data.get('dir'), fdv_order=data.get('fdv_order', []), limit=limit_template, persist_url=persist_url, limit_raw_string=lim_raw, limit_source=limit_source, comments=comments_map, dispositions=dispositions_map, prodmode=data.get('prodmode', False), job_name=job_name_val, summary_enabled=_summary_enabled())
         # Persist a snapshot only once parsing is done
         if status_val == 'done':
             try:
@@ -3883,7 +4118,7 @@ def report_home():
         app.logger.info("report_home GET (no token) limit_raw='%s' source=%s passfail_mode=%s effective_limit=%s", lim_raw, limit_source, passfail_mode, (None if passfail_mode else limit_for_stats))
     except Exception:
         pass
-    return render_template('fdv2_report.html', token='', job_id=None, stats=[], used_dir=None, fdv_order=[], limit=None, limit_raw_string=lim_raw, limit_source=limit_source, comments={}, dispositions={}, prodmode=False)
+    return render_template('fdv2_report.html', token='', job_id=None, stats=[], used_dir=None, fdv_order=[], limit=None, limit_raw_string=lim_raw, limit_source=limit_source, comments={}, dispositions={}, prodmode=False, summary_enabled=_summary_enabled())
 
 
 @app.route('/status/<token>')
@@ -3974,6 +4209,51 @@ def job_report(job_id: str):
     if lr:
         return redirect(url_for('report_home', token=token, limit=lr))
     return redirect(url_for('report_home', token=token))
+
+@app.route('/api/summary/<token>', methods=['GET', 'POST'])
+def api_summary(token: str):
+    """Get or trigger generation of a summary for the current token and limit.
+
+    Query/body params:
+      - limit: string; '' or 'default' => pass/fail-from-logs; numeric => threshold
+      - force: when POST and force=1, re-generate ignoring cached file
+    Returns JSON with summary text and metadata.
+    """
+    if not _summary_enabled():
+        return jsonify({'ok': False, 'error': 'summary disabled'}), 400
+    lim_raw = (request.values.get('limit') or '').strip().lower()
+    if lim_raw in ('default',):
+        lim_raw = ''
+    # For GET, try to load cached summary; if missing, start async job and return pending
+    force = False
+    if request.method == 'POST':
+        force = str(request.values.get('force', '0')).strip().lower() in ('1','true','on','yes')
+    if not force:
+        cached = _summary_load(token, lim_raw or 'none')
+        if cached:
+            return Response(json.dumps(cached), mimetype='application/json')
+    # No cached summary or force requested: start async and reply with pending
+    _ensure_summary_async(token, lim_raw or 'none')
+    return jsonify({'ok': True, 'pending': True, 'token': token, 'limit': lim_raw or 'none'})
+
+@app.route('/embed/summary/<token>')
+def embed_summary(token: str):
+    """Return a small HTML snippet containing the current summary (if available) or a placeholder."""
+    if not _summary_enabled():
+        return Response('<div class="small">Summary disabled.</div>', mimetype='text/html')
+    lim_raw = (request.args.get('limit') or '').strip().lower()
+    if lim_raw in ('default',):
+        lim_raw = ''
+    cached = _summary_load(token, lim_raw or 'none')
+    if cached and cached.get('summary'):
+        txt = str(cached.get('summary') or '')
+        backend = cached.get('backend') or ''
+        model = cached.get('model') or ''
+        meta = f"<div class=\"small\" style=\"color:#666;\">source: {backend}{(' / ' + model) if model else ''}</div>" if backend else ''
+        body = txt.replace('\n', '<br/>')
+        return Response(f"<div class=\"llm-summary\"><div style=\"font-weight:600;margin-bottom:4px;\">Report Summary</div><div>{body}</div>{meta}</div>", mimetype='text/html')
+    # Not available yet
+    return Response('<div class="small">Summary not ready…</div>', mimetype='text/html')
 
 @app.route('/api/launch', methods=['POST'])
 def api_launch():
