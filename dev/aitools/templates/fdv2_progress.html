@@ -168,6 +168,15 @@
       if (el){ const base = curr.replaceAll('\\\\','/'); const name = base.includes('/') ? base.split('/').pop() : base; el.textContent = name || '(preparing…)'; el.title = curr || ''; }
       const ep = document.getElementById('currpct'); if (ep) ep.textContent = filePercent ? `(${filePercent.toFixed(1)}%)` : '';
 
+      // Trigger a quick table refresh when we finish a file (filesDone increases)
+      try {
+        if (typeof applyProgressData._lastFilesDone === 'undefined') { applyProgressData._lastFilesDone = null; }
+        if (applyProgressData._lastFilesDone !== null && filesDone > applyProgressData._lastFilesDone) {
+          try { refreshTable(true); } catch(e){}
+        }
+        applyProgressData._lastFilesDone = filesDone;
+      } catch(e){}
+
       // Establish overall start time when first progress observed
       try {
         if ((percent > 0 || lines > 0) && startTimeMs == null) {
@@ -292,7 +301,7 @@
       }
       if (st === 'error') { document.getElementById('txt').textContent = 'Error: ' + (data.error || 'unknown'); }
     }
-    async function poll() {
+  async function poll() {
       if (sseActive) return; // SSE supersedes polling
       try {
         const res = await fetch(`{{ url_for('report_status', token='__TOK__') }}`.replace('__TOK__', token), {cache: 'no-store'});
@@ -301,7 +310,7 @@
         applyProgressData(data);
         // If not finished, schedule next poll
         if (!(data && (data.status === 'done' || data.status === 'error'))) {
-          setTimeout(poll, 800);
+          setTimeout(poll, 600);
         }
         return;
       } catch (e) {

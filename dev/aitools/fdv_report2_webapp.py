@@ -4228,13 +4228,40 @@ def stream_job(job_id: str):
         return Response('not found', status=404)
     def gen():
         last_sent = 0.0
+        last_current_file = None
+        last_percent = None
+        last_file_percent = None
+        last_files_done = None
         while True:
             data = CACHE.get(token) or {}
             prog = data.get('progress', {})
             status = data.get('status','unknown')
             now = time.time()
-            if now - last_sent >= 1.0:
+            # Adaptive push: send at least every ~0.5s; send immediately on notable changes
+            per = prog.get('percent')
+            fper = prog.get('file_percent')
+            cfile = prog.get('current_file')
+            fdone = prog.get('files_done')
+            should_send = False
+            if now - last_sent >= 0.5:
+                should_send = True
+            try:
+                if cfile is not None and cfile != last_current_file:
+                    should_send = True
+                if (per is not None) and (last_percent is None or abs(float(per) - float(last_percent)) >= 0.5):
+                    should_send = True
+                if (fper is not None) and (last_file_percent is None or abs(float(fper) - float(last_file_percent)) >= 1.0):
+                    should_send = True
+                if fdone is not None and fdone != last_files_done:
+                    should_send = True
+            except Exception:
+                pass
+            if should_send:
                 last_sent = now
+                last_current_file = cfile
+                last_percent = per
+                last_file_percent = fper
+                last_files_done = fdone
                 payload = {
                     'status': status,
                     'progress': {
@@ -4249,12 +4276,17 @@ def stream_job(job_id: str):
                         'file_lines_done': prog.get('file_lines_done'),
                         'file_lines_total': prog.get('file_lines_total'),
                         'expected_file_lines': prog.get('expected_file_lines') or prog.get('file_lines_total'),
+                        # Include byte counters to improve per-file ETA when line totals are unknown
+                        'file_bytes_done': prog.get('file_bytes_done'),
+                        'file_bytes_total': prog.get('file_bytes_total'),
+                        # Optional server-side ETA if producer sets it
+                        'eta_overall_secs': prog.get('eta_overall_secs'),
                     }
                 }
                 yield f"data: {json.dumps(payload)}\n\n"
             if status in ('done','error'):
                 break
-            time.sleep(0.25)
+            time.sleep(0.2)
     return Response(gen(), mimetype='text/event-stream')
 
 @app.route('/api/jobs')
