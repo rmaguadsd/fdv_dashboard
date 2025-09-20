@@ -109,28 +109,30 @@ def _sqlite_init(token: str) -> None:
     try:
         con = _sqlite_connect(token)
         con.execute(
-                """
-                CREATE TABLE IF NOT EXISTS rows (
-                    token TEXT,
-                    fdv   TEXT,
-                    pr    TEXT,
-                    vcc   TEXT,
-                    tm    TEXT,
-                    temp  TEXT,
-                    line_number INTEGER,
-                    fuseid TEXT,
-                    rber REAL,
-                    pass_fail TEXT,
-                    source_file TEXT,
-                    fdv_file TEXT,
-                    testname TEXT,
-                    raw_line TEXT
-                );
-                """
-            )
+            """
+            CREATE TABLE IF NOT EXISTS rows (
+                token TEXT,
+                fdv   TEXT,
+                pr    TEXT,
+                vcc   TEXT,
+                tm    TEXT,
+                temp  TEXT,
+                line_number INTEGER,
+                fuseid TEXT,
+                rber REAL,
+                pass_fail TEXT,
+                source_file TEXT,
+                fdv_file TEXT,
+                testname TEXT,
+                raw_line TEXT
+            );
+            """
+        )
         con.execute("CREATE INDEX IF NOT EXISTS idx_rows_token ON rows(token);")
         con.execute("CREATE INDEX IF NOT EXISTS idx_rows_token_split ON rows(token, fdv, pr, vcc, tm, temp);")
         con.execute("CREATE INDEX IF NOT EXISTS idx_rows_token_file ON rows(token, source_file);")
+        # Ensure idempotent updates per source file and line; enables fast UPSERT on reprocessing
+        con.execute("CREATE UNIQUE INDEX IF NOT EXISTS ux_rows_token_src_line ON rows(token, source_file, line_number);")
         con.commit()
     except Exception:
         pass
@@ -182,10 +184,28 @@ def _sqlite_insert_rows(token: str, rows: list[dict]) -> int:
                 tname = (rr.get('testname') or rr.get('tname') or '').strip()
                 raw = (rr.get('raw_line') or rr.get('raw') or '')
                 to_ins.append((token, fdv, pr, vcc, tm, temp, ln, fuseid, rber, pf, src, fdv_file, tname, raw))
+        # Use UPSERT to avoid duplicates and refresh fields when present.
+        # Keep existing values when the new value is NULL or empty, to preserve previously parsed/enriched data.
         cur.executemany(
-                "INSERT INTO rows(token, fdv, pr, vcc, tm, temp, line_number, fuseid, rber, pass_fail, source_file, fdv_file, testname, raw_line) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                to_ins
-            )
+            """
+            INSERT INTO rows(token, fdv, pr, vcc, tm, temp, line_number, fuseid, rber, pass_fail, source_file, fdv_file, testname, raw_line)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            ON CONFLICT(token, source_file, line_number) DO UPDATE SET
+                fdv       = CASE WHEN COALESCE(excluded.fdv, '') <> '' THEN excluded.fdv ELSE rows.fdv END,
+                pr        = CASE WHEN COALESCE(excluded.pr, '') <> '' THEN excluded.pr ELSE rows.pr END,
+                vcc       = CASE WHEN COALESCE(excluded.vcc, '') <> '' THEN excluded.vcc ELSE rows.vcc END,
+                tm        = CASE WHEN COALESCE(excluded.tm, '') <> '' THEN excluded.tm ELSE rows.tm END,
+                temp      = CASE WHEN COALESCE(excluded.temp, '') <> '' THEN excluded.temp ELSE rows.temp END,
+                fuseid    = CASE WHEN COALESCE(excluded.fuseid, '') <> '' THEN excluded.fuseid ELSE rows.fuseid END,
+                rber      = COALESCE(excluded.rber, rows.rber),
+                pass_fail = CASE WHEN COALESCE(excluded.pass_fail, '') <> '' THEN excluded.pass_fail ELSE rows.pass_fail END,
+                fdv_file  = CASE WHEN COALESCE(excluded.fdv_file, '') <> '' THEN excluded.fdv_file ELSE rows.fdv_file END,
+                testname  = CASE WHEN COALESCE(excluded.testname, '') <> '' THEN excluded.testname ELSE rows.testname END,
+                raw_line  = CASE WHEN COALESCE(excluded.raw_line, '') <> '' THEN excluded.raw_line ELSE rows.raw_line END
+            ;
+            """,
+            to_ins
+        )
         # Defer commit slightly; rely on caller’s cadence to amortize I/O
         con.commit()
         return len(to_ins)
