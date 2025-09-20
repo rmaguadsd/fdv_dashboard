@@ -3375,7 +3375,7 @@ def report_home():
                 selected: List[Path] = []
                 for rf in ready_files:
                     base = rf.stem
-                    candidates = [c for c in stem_index.get(base, []) if c.suffix.lower()=='.txt']
+                    candidates = [c for c in stem_index.get(base, []) if c.suffix.lower() in _allowed_exts or c.suffix == '']
                     chosen = candidates[0] if candidates else None
                     if chosen is not None and chosen.is_file():
                         selected.append(chosen)
@@ -3472,7 +3472,9 @@ def report_home():
                 CACHE[tok]['limit_raw'] = lim_raw
         except Exception:
             pass
-        persist_url = url_for('report2_persist', token=tok)
+        # Only expose a snapshot permalink when the job is complete
+        status_val = (data.get('status') or '').strip().lower()
+        persist_url = url_for('report2_persist', token=tok) if status_val == 'done' else None
         try:
             app.logger.info("report_home GET token=%s limit_raw='%s' source=%s passfail_mode=%s effective_limit=%s", tok, lim_raw, limit_source, passfail_mode, (None if passfail_mode else limit_for_stats))
         except Exception:
@@ -3513,10 +3515,12 @@ def report_home():
         except Exception:
             job_name_val = job_name_val
         html = render_template('fdv2_report.html', token=tok, job_id=job_id_for_token, stats=stats, used_dir=data.get('dir'), fdv_order=data.get('fdv_order', []), limit=limit_template, persist_url=persist_url, limit_raw_string=lim_raw, limit_source=limit_source, comments=comments_map, dispositions=dispositions_map, prodmode=data.get('prodmode', False), job_name=job_name_val)
-        try:
-            _persist_write('report2', tok, html)
-        except Exception:
-            pass
+        # Persist a snapshot only once parsing is done
+        if status_val == 'done':
+            try:
+                _persist_write('report2', tok, html)
+            except Exception:
+                pass
         return html
     try:
         app.logger.info("report_home GET (no token) limit_raw='%s' source=%s passfail_mode=%s effective_limit=%s", lim_raw, limit_source, passfail_mode, (None if passfail_mode else limit_for_stats))
