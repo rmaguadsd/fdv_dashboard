@@ -2363,7 +2363,8 @@ def _start_parse_job(token: str, files: List[Path], used_dir: str | None, limit_
                                 lr = (CACHE.get(token, {}).get('limit_raw') or '').strip().lower()
                                 pf_mode = (lr in ('', 'none', 'default'))
                                 limit_val = 1e9 if pf_mode else float(lr)
-                                stats_small = stats_by_fdv_with_splits(all_rows[-5000:], limit=limit_val, passfail_mode=pf_mode) if all_rows else []
+                                # Aggregate over all rows so previously processed files remain visible in the table
+                                stats_small = stats_by_fdv_with_splits(all_rows, limit=limit_val, passfail_mode=pf_mode) if all_rows else []
                                 table_html = ''
                                 try:
                                     table_html = render_template('fdv2_report_table.html', token=token, stats=stats_small, used_dir=used_dir, limit=(None if pf_mode else limit_val))
@@ -2769,11 +2770,8 @@ def _start_parse_job(token: str, files: List[Path], used_dir: str | None, limit_
                             lr = (CACHE.get(token, {}).get('limit_raw') or '').strip().lower()
                             pf_mode = (lr in ('', 'none', 'default'))
                             limit_val = 1e9 if pf_mode else float(lr)
-                            # Light computation: only if we have some rows
-                            if all_rows:
-                                stats_small = stats_by_fdv_with_splits(all_rows[-5000:], limit=limit_val, passfail_mode=pf_mode)  # last 5000 rows window
-                            else:
-                                stats_small = []
+                            # Aggregate over all rows so previously processed files remain visible in the table
+                            stats_small = stats_by_fdv_with_splits(all_rows, limit=limit_val, passfail_mode=pf_mode) if all_rows else []
                             table_html = ''
                             try:
                                 table_html = render_template('fdv2_report_table.html', token=token, stats=stats_small, used_dir=used_dir, limit=(None if pf_mode else limit_val))
