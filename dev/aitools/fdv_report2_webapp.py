@@ -2228,21 +2228,22 @@ def _start_parse_job(token: str, files: List[Path], used_dir: str | None, limit_
                     nonlocal work_queue
                     try:
                         led_dir = Path(used_dir) / 'ledger'  # type: ignore[arg-type]
-                        current = []
+                        current: list[Path] = []
                         if led_dir.is_dir():
                             # Discovery only: do not rename here; only list .ready files
                             current = [p for p in led_dir.iterdir() if p.is_file() and p.suffix.lower() == '.ready']
                         # Build/update mapping for any unseen .ready
+                        _allowed_exts = {'.txt', '.log', '.out'}
                         for rf in current:
                             key_ready = str(rf)
                             if key_ready in processed_ready:
                                 continue
                             stem = rf.stem
-                            # Try to find a matching file by stem under used_dir (prefer .txt)
+                            # Try to find a matching file by stem under used_dir
                             chosen: Path | None = None
                             try:
                                 all_files = _list_non_ledger_files(Path(used_dir))  # type: ignore[arg-type]
-                                candidates = [f for f in all_files if f.stem == stem and f.suffix.lower()=='.txt']
+                                candidates = [f for f in all_files if f.stem == stem and (f.suffix.lower() in _allowed_exts or f.suffix == '')]
                                 chosen = candidates[0] if candidates else None
                             except Exception:
                                 chosen = None
@@ -3189,9 +3190,11 @@ def report_home():
                             pass
                         stem_index.setdefault(f.stem, []).append(f)
                     selected: List[Path] = []
+                    # Accept multiple raw log extensions commonly used
+                    _allowed_exts = {'.txt', '.log', '.out'}
                     for rf in ready_files:
                         base = rf.stem  # filename without .ready
-                        candidates = [c for c in stem_index.get(base, []) if c.suffix.lower()=='.txt']
+                        candidates = [c for c in stem_index.get(base, []) if c.suffix.lower() in _allowed_exts or c.suffix == '']
                         chosen = candidates[0] if candidates else None
                         if chosen is not None and chosen.is_file():
                             selected.append(chosen)
