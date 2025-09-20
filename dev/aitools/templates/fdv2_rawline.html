@@ -8,6 +8,11 @@
     pre { background: #f8f8f8; padding: 12px; border: 1px solid #ddd; overflow-x: auto; }
     table { border-collapse: collapse; }
     td { padding: 4px 8px; }
+    .rber-low { background: #e8f5e9; }
+    .rber-mid { background: #fff8e1; }
+    .rber-high { background: #ffebee; }
+    .pass-tag { background: #e8f5e9; color: #1b5e20; font-weight: 700; padding: 0 2px; border-radius: 2px; }
+    .fail-tag { background: #ffebee; color: #b71c1c; font-weight: 700; padding: 0 2px; border-radius: 2px; }
   </style>
 </head>
 <body>
@@ -20,8 +25,30 @@
     <tr><td><b>PR</b></td><td>{{ row.get('pr','') }}</td></tr>
     <tr><td><b>FuseID</b></td><td>{{ row.get('fuseid','') }}</td></tr>
     <tr><td><b>WL</b></td><td>{{ row.get('wl','') }}</td></tr>
-    <tr><td><b>RBER</b></td><td>{{ row.get('rber','') }}</td></tr>
+    {% set rber_val = row.get('rber', '') %}
+    {% set rber_num = (rber_val if rber_val is number else (rber_val|float if (rber_val|string)|length > 0 else None)) %}
+    {% set rclass = 'rber-low' if (rber_num is not none and rber_num < 1e-4) else ('rber-mid' if (rber_num is not none and rber_num < 1e-2) else 'rber-high') %}
+    <tr><td><b>RBER</b></td><td class="{{ rclass }}">{{ rber_num if rber_num is not none else '' }}</td></tr>
   </table>
-  <pre>{{ row.get('raw_line','') }}</pre>
+  <pre id="rawText">{{ row.get('raw_line','') }}</pre>
+  <script>
+    (function(){
+      var el = document.getElementById('rawText');
+      if (!el) return;
+      function esc(s){
+        return String(s)
+          .replaceAll('&','&amp;')
+          .replaceAll('<','&lt;')
+          .replaceAll('>','&gt;')
+          .replaceAll('"','&quot;')
+          .replaceAll("'",'&#39;');
+      }
+      var txt = el.textContent || '';
+      var html = esc(txt)
+        .replace(/\bFAIL(?:ED)?\b/gi, function(m){ return '<span class="fail-tag">'+m+'</span>'; })
+        .replace(/\bPASS(?:ED)?\b/gi, function(m){ return '<span class="pass-tag">'+m+'</span>'; });
+      el.innerHTML = html;
+    })();
+  </script>
 </body>
 </html>

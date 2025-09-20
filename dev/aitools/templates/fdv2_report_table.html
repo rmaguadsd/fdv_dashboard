@@ -76,12 +76,12 @@
         {% set pct = (100.0 * f / total) if total > 0 else 0.0 %}
       {% endif %}
       <td class="{% if pct == 0 %}pct-ok{% elif pct <= 25 %}pct-warn{% else %}pct-bad{% endif %}">{{ '%.1f' % pct }}%</td>
+  <td>{{ r.get('vector','') }}</td>
       <td>{{ r['min'] }}</td>
       <td>{{ r['max'] }}</td>
       <td>{{ r['mean'] }}</td>
       <td>{{ r['stdev'] }}</td>
       <td>{{ r['median'] }}</td>
-  <td>{{ r.get('vector','') }}</td>
       <td>
         {% set key = r['fdv_file'] ~ '|' ~ r['pr'] ~ '|' ~ r['vcc'] ~ '|' ~ r['tm'] ~ '|' ~ r['temp'] %}
   <input type="text" class="disp-input" data-key="{{ key }}" value="{{ (dispositions or {}).get(key, '') }}" onchange="return onDispositionChange(this, '{{ token }}');" oninput="return onDispositionChange(this, '{{ token }}');" />

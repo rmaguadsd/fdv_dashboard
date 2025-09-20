@@ -18,6 +18,7 @@ import secrets
 import tempfile
 from pathlib import Path
 import sqlite3
+import atexit
 from typing import Dict, List, Tuple
 import re
 import threading
@@ -76,20 +77,38 @@ def _sqlite_db_path(token: str) -> Path:
     return base / 'rows.db'
 
 def _sqlite_connect(token: str) -> sqlite3.Connection:
-    dbp = _sqlite_db_path(token)
-    conn = sqlite3.connect(str(dbp))
-    try:
-        conn.execute('PRAGMA journal_mode=WAL;')
-        conn.execute('PRAGMA synchronous=NORMAL;')
-        conn.execute('PRAGMA temp_store=MEMORY;')
-    except Exception:
-        pass
-    return conn
+    with _SQLITE_LOCK:
+        if token in _SQLITE_CONNS:
+            return _SQLITE_CONNS[token]
+        dbp = _sqlite_db_path(token)
+        conn = sqlite3.connect(str(dbp), check_same_thread=False)
+        try:
+            conn.execute('PRAGMA journal_mode=WAL;')
+            conn.execute('PRAGMA synchronous=NORMAL;')
+            conn.execute('PRAGMA temp_store=MEMORY;')
+        except Exception:
+            pass
+        _SQLITE_CONNS[token] = conn
+        return conn
+
+def _sqlite_close_all() -> None:
+    with _SQLITE_LOCK:
+        for k, c in list(_SQLITE_CONNS.items()):
+            try:
+                c.close()
+            except Exception:
+                pass
+            try:
+                del _SQLITE_CONNS[k]
+            except Exception:
+                pass
+
+atexit.register(_sqlite_close_all)
 
 def _sqlite_init(token: str) -> None:
     try:
-        with _sqlite_connect(token) as con:
-            con.execute(
+        con = _sqlite_connect(token)
+        con.execute(
                 """
                 CREATE TABLE IF NOT EXISTS rows (
                     token TEXT,
@@ -109,10 +128,10 @@ def _sqlite_init(token: str) -> None:
                 );
                 """
             )
-            con.execute("CREATE INDEX IF NOT EXISTS idx_rows_token ON rows(token);")
-            con.execute("CREATE INDEX IF NOT EXISTS idx_rows_token_split ON rows(token, fdv, pr, vcc, tm, temp);")
-            con.execute("CREATE INDEX IF NOT EXISTS idx_rows_token_file ON rows(token, source_file);")
-            con.commit()
+        con.execute("CREATE INDEX IF NOT EXISTS idx_rows_token ON rows(token);")
+        con.execute("CREATE INDEX IF NOT EXISTS idx_rows_token_split ON rows(token, fdv, pr, vcc, tm, temp);")
+        con.execute("CREATE INDEX IF NOT EXISTS idx_rows_token_file ON rows(token, source_file);")
+        con.commit()
     except Exception:
         pass
 
@@ -120,10 +139,10 @@ def _sqlite_insert_rows(token: str, rows: list[dict]) -> int:
     if not rows:
         return 0
     try:
-        with _sqlite_connect(token) as con:
-            cur = con.cursor()
-            to_ins = []
-            for rr in rows:
+        con = _sqlite_connect(token)
+        cur = con.cursor()
+        to_ins = []
+        for rr in rows:
                 try:
                     fdv, pr, vcc, tm, temp = _get_split_tuple(rr)
                 except Exception:
@@ -163,14 +182,284 @@ def _sqlite_insert_rows(token: str, rows: list[dict]) -> int:
                 tname = (rr.get('testname') or rr.get('tname') or '').strip()
                 raw = (rr.get('raw_line') or rr.get('raw') or '')
                 to_ins.append((token, fdv, pr, vcc, tm, temp, ln, fuseid, rber, pf, src, fdv_file, tname, raw))
-            cur.executemany(
+        cur.executemany(
                 "INSERT INTO rows(token, fdv, pr, vcc, tm, temp, line_number, fuseid, rber, pass_fail, source_file, fdv_file, testname, raw_line) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 to_ins
             )
-            con.commit()
-            return len(to_ins)
+        # Defer commit slightly; rely on caller’s cadence to amortize I/O
+        con.commit()
+        return len(to_ins)
     except Exception:
         return 0
+
+
+def _stats_from_sqlite(token: str, *, limit: float = 0.0, passfail_mode: bool = False) -> List[Dict[str, object]]:
+    """Build aggregated stats from persisted rows.db to cover all processed files, independent of in-memory trimming.
+
+    Computes per-(fdv,pr,vcc,tm,temp): count, pass_n, fail_n and basic rber stats (min/max/mean/stdev) when available.
+    Also fills lightweight fields for vector, unit info (FUSEIDS summary), and a coarse testtime label/start/end by
+    inspecting file modification times and a representative testname. This avoids heavy rescans and keeps live updates fast.
+    """
+    agg: Dict[Tuple[str, str, str, str, str], Dict[str, object]] = {}
+    con = None
+    # Cache file mtimes to avoid repeating expensive stat calls
+    _mtime_cache: Dict[str, float] = {}
+    try:
+        con = _sqlite_connect(token)
+        cur = con.cursor()
+        # Columns: token, fdv, pr, vcc, tm, temp, line_number, fuseid, rber, pass_fail, source_file, fdv_file, testname, raw_line
+        # Include source_file and testname to derive unit info and testtime cheaply.
+        cur.execute("SELECT fdv_file, pr, vcc, tm, temp, rber, pass_fail, fuseid, source_file, testname FROM rows WHERE token= ?", (token,))
+        while True:
+            rows = cur.fetchmany(50000)
+            if not rows:
+                break
+            for fdv_file, pr, vcc, tm, temp, rber, pf, fuseid, source_file, testname in rows:
+                try:
+                    k = (str(fdv_file or ''), str(pr or ''), str(vcc or ''), str(tm or ''), str(temp or ''))
+                    st = agg.get(k)
+                    if st is None:
+                        st = {
+                            'fdv_file': k[0], 'pr': k[1], 'vcc': k[2], 'tm': k[3], 'temp': k[4],
+                            'count': 0, 'pass_n': 0, 'fail_n': 0,
+                            '_sum': 0.0, '_sumsq': 0.0, '_n_rber': 0,
+                            'min': None, 'max': None,
+                            # Vector populated at finalize from count (rows are FDV OUTPUT-derived)
+                            'vector': '', 'median': '', 'stdev': '', 'mean': '',
+                            # Unit Info via comments; testtime filled from coarse file mtimes
+                            'comments': '', 'testtime_label': '', 'test_start': '', 'test_end': '',
+                            '_fuseids': set(), 'valid_fuseid_count': 0,
+                            '_start_ts': None, '_end_ts': None, '_tname': '',
+                        }
+                        agg[k] = st
+                    st['count'] = int(st['count']) + 1  # type: ignore[index]
+                    # fuseid tracking for Unit Count
+                    try:
+                        if fuseid:
+                            st['_fuseids'].add(str(fuseid))  # type: ignore[index]
+                    except Exception:
+                        pass
+                    # Track representative testname for label
+                    try:
+                        if testname and not st.get('_tname'):
+                            st['_tname'] = str(testname)  # type: ignore[index]
+                    except Exception:
+                        pass
+                    # Track earliest and latest file mtimes across contributing raw files
+                    try:
+                        sf = str(source_file or '')
+                        if sf:
+                            ts = _mtime_cache.get(sf)
+                            if ts is None:
+                                try:
+                                    ts = Path(sf).stat().st_mtime
+                                except Exception:
+                                    ts = 0.0
+                                _mtime_cache[sf] = ts
+                            if ts and ts > 0:
+                                st_s = st.get('_start_ts')
+                                st_e = st.get('_end_ts')
+                                if st_s is None or float(ts) < float(st_s):
+                                    st['_start_ts'] = float(ts)
+                                if st_e is None or float(ts) > float(st_e):
+                                    st['_end_ts'] = float(ts)
+                    except Exception:
+                        pass
+                    # PASS/FAIL accounting
+                    pf_u = str(pf or '').upper()
+                    if passfail_mode:
+                        if pf_u == 'PASS':
+                            st['pass_n'] = int(st['pass_n']) + 1  # type: ignore[index]
+                        elif pf_u == 'FAIL':
+                            st['fail_n'] = int(st['fail_n']) + 1  # type: ignore[index]
+                    # rber aggregates
+                    try:
+                        if rber is not None:
+                            rv = float(rber)
+                            st['_n_rber'] = int(st['_n_rber']) + 1  # type: ignore[index]
+                            st['_sum'] = float(st['_sum']) + rv  # type: ignore[index]
+                            st['_sumsq'] = float(st['_sumsq']) + (rv * rv)  # type: ignore[index]
+                            # numeric min/max
+                            mn = st['min']
+                            mx = st['max']
+                            if mn is None or rv < float(mn):
+                                st['min'] = rv
+                            if mx is None or rv > float(mx):
+                                st['max'] = rv
+                            if not passfail_mode:
+                                # Threshold classification in numeric mode
+                                if rv <= limit:
+                                    st['pass_n'] = int(st['pass_n']) + 1  # type: ignore[index]
+                                else:
+                                    st['fail_n'] = int(st['fail_n']) + 1  # type: ignore[index]
+                    except Exception:
+                        pass
+                except Exception:
+                    continue
+    except Exception:
+        pass
+    # finalize aggregates
+    out: List[Dict[str, object]] = []
+    for k, st in agg.items():
+        try:
+            n_r = int(st.get('_n_rber', 0))
+            if n_r > 0:
+                s = float(st.get('_sum', 0.0))
+                ss = float(st.get('_sumsq', 0.0))
+                mean = s / n_r
+                var = (ss - (s * s) / n_r) / (n_r - 1) if n_r > 1 else 0.0
+                if var < 0:
+                    var = 0.0
+                st['mean'] = mean
+                st['stdev'] = (var ** 0.5)
+                # Compute exact median using a targeted SQL query scoped to this group
+                try:
+                    if con is not None:
+                        fdv_file, pr, vcc, tm, temp = (str(st.get('fdv_file') or ''), str(st.get('pr') or ''), str(st.get('vcc') or ''), str(st.get('tm') or ''), str(st.get('temp') or ''))
+                        cur_m = con.cursor()
+                        if n_r % 2 == 1:
+                            off = n_r // 2
+                            cur_m.execute(
+                                """
+                                SELECT rber FROM rows
+                                WHERE token=? AND fdv_file=? AND pr=? AND vcc=? AND tm=? AND temp=? AND rber IS NOT NULL
+                                ORDER BY rber
+                                LIMIT 1 OFFSET ?
+                                """,
+                                (token, fdv_file, pr, vcc, tm, temp, off)
+                            )
+                            row = cur_m.fetchone()
+                            if row and row[0] is not None:
+                                st['median'] = float(row[0])
+                            else:
+                                st['median'] = ''
+                        else:
+                            off = max(0, (n_r // 2) - 1)
+                            cur_m.execute(
+                                """
+                                SELECT rber FROM rows
+                                WHERE token=? AND fdv_file=? AND pr=? AND vcc=? AND tm=? AND temp=? AND rber IS NOT NULL
+                                ORDER BY rber
+                                LIMIT 2 OFFSET ?
+                                """,
+                                (token, fdv_file, pr, vcc, tm, temp, off)
+                            )
+                            vals = cur_m.fetchall()
+                            if vals and len(vals) == 2 and vals[0][0] is not None and vals[1][0] is not None:
+                                st['median'] = (float(vals[0][0]) + float(vals[1][0])) / 2.0
+                            elif vals and len(vals) >= 1 and vals[0][0] is not None:
+                                st['median'] = float(vals[0][0])
+                            else:
+                                st['median'] = ''
+                    else:
+                        st['median'] = ''
+                except Exception:
+                    st['median'] = ''
+            else:
+                st['mean'] = ''
+                st['stdev'] = ''
+                st['median'] = ''
+            # finalize valid_fuseid_count
+            try:
+                st['valid_fuseid_count'] = len(st.get('_fuseids', set()))
+            except Exception:
+                st['valid_fuseid_count'] = 0
+            # Ensure min/max are strings or numbers compatible with template
+            if st.get('min') is None:
+                st['min'] = ''
+            if st.get('max') is None:
+                st['max'] = ''
+            # Populate vector as total row count for the group
+            try:
+                st['vector'] = str(int(st.get('count', 0)))
+            except Exception:
+                st['vector'] = str(st.get('count', '') or '')
+            # Build a concise Unit Info into comments: ordered distinct fuseids (truncated)
+            try:
+                fids = sorted([str(x) for x in (st.get('_fuseids') or set())])
+                if fids:
+                    max_show = 40
+                    shown = fids[:max_show]
+                    extra = len(fids) - len(shown)
+                    txt = "FUSEIDS: " + ", ".join(shown)
+                    if extra > 0:
+                        txt += f" (+{extra} more)"
+                    st['comments'] = txt
+                else:
+                    st['comments'] = ''
+            except Exception:
+                st['comments'] = ''
+            # Build coarse testtime label/start/end from earliest/latest file mtimes and representative testname
+            try:
+                st_ts = st.get('_start_ts')
+                en_ts = st.get('_end_ts')
+                start_str = ''
+                end_str = ''
+                secs = ''
+                if st_ts and en_ts and float(st_ts) > 0 and float(en_ts) > 0:
+                    import time as _t
+                    lt_s = _t.localtime(float(st_ts))
+                    lt_e = _t.localtime(float(en_ts))
+                    start_str = f"{lt_s.tm_year:04d}_{lt_s.tm_mon}_{lt_s.tm_mday} {lt_s.tm_hour:02d}:{lt_s.tm_min:02d}:{lt_s.tm_sec:02d}"
+                    end_str = f"{lt_e.tm_year:04d}_{lt_e.tm_mon}_{lt_e.tm_mday} {lt_e.tm_hour:02d}:{lt_e.tm_min:02d}:{lt_e.tm_sec:02d}"
+                    dsecs = int(max(0, float(en_ts) - float(st_ts)))
+                    secs = str(dsecs)
+                st['test_start'] = start_str
+                st['test_end'] = end_str
+                # testtime_label uses guide-derived testname and fdvtest basename
+                ln_disp = ''
+                try:
+                    tn = str(st.get('_tname') or '')
+                    if tn:
+                        ln_disp = _derive_testname_guide(tn)
+                except Exception:
+                    ln_disp = ''
+                try:
+                    import os as _os
+                    fdvtest = _os.path.basename(str(st.get('fdv_file') or ''))
+                    if fdvtest.lower().endswith('.fdv'):
+                        fdvtest = fdvtest[:-4]
+                except Exception:
+                    fdvtest = ''
+                lbl = ''
+                if ln_disp or secs:
+                    lbl = f"{ln_disp}::{fdvtest} = {secs}".strip()
+                st['testtime_label'] = lbl
+            except Exception:
+                pass
+        except Exception:
+            pass
+        # drop internal fields
+        st.pop('_sum', None)
+        st.pop('_sumsq', None)
+        st.pop('_n_rber', None)
+        st.pop('_fuseids', None)
+        st.pop('_start_ts', None)
+        st.pop('_end_ts', None)
+        st.pop('_tname', None)
+        # Format numeric fields like original renderer
+        try:
+            if isinstance(st.get('mean'), float):
+                st['mean'] = f"{st['mean']:.6g}"
+            if isinstance(st.get('stdev'), float):
+                st['stdev'] = f"{st['stdev']:.6g}"
+            if isinstance(st.get('median'), float):
+                st['median'] = f"{st['median']:.6g}"
+            if isinstance(st.get('min'), float):
+                st['min'] = f"{st['min']:.6g}"
+            if isinstance(st.get('max'), float):
+                st['max'] = f"{st['max']:.6g}"
+        except Exception:
+            pass
+        out.append(st)
+    # order by previously seen file order if available
+    try:
+        order = (CACHE.get(token, {}) or {}).get('fdv_order', []) or []
+        idx = {f: i for i, f in enumerate(order)}
+        out.sort(key=lambda r: (idx.get(str(r.get('fdv_file') or ''), 10**9), str(r.get('fdv_file') or ''), str(r.get('pr') or '')))
+    except Exception:
+        out.sort(key=lambda r: (str(r.get('fdv_file') or ''), str(r.get('pr') or '')))
+    return out
 
 # ---------------- Encoding helpers / diagnostics ----------------
 def _detect_file_encoding(fp: Path) -> str:
@@ -489,7 +778,7 @@ def _read_rows_from_paths(paths: List[Path]) -> List[Dict[str, str]]:
             if p.is_dir():
                 for q in p.iterdir():
                     if q.is_file():
-                        rows.extend(pfdv.read_dir_rows(q.parent if q.is_dir() else Path(q).parent))
+                        rows.extend(pfdv.read_dir_rows(q.parent if q.is_dir() else Path(q).parent))  # type: ignore
                         break
             else:
                 # Use process_file directly for single file
@@ -1998,6 +2287,16 @@ def _maybe_reload_job_names() -> None:
 
 # Fast snapshot caches for progress page / table so clients can render instantly
 SNAPSHOTS: Dict[str, Dict[str, object]] = {}  # token -> {'fdvtable_html': str, 'updated': float, 'limit_key': str}
+
+# --- Performance configuration (env-tunable) ---
+_ALLOWED_EXTS: set[str] = set([e.strip() for e in (os.environ.get('FDV_ALLOWED_EXT', '.txt,.log,.out') or '').lower().split(',') if e.strip()]) or {'.txt', '.log', '.out'}
+_EXCLUDE_DIRS: set[str] = set([d.strip() for d in (os.environ.get('FDV_EXCLUDE_DIRS', '__pycache__,.git,ledger') or '').split(',') if d.strip()]) or {'__pycache__', '.git', 'ledger'}
+_SNAPSHOT_INTERVAL_SECS: float = float(os.environ.get('FDV_SNAPSHOT_INTERVAL', '8.0'))
+_SNAPSHOT_MIN_ROWS_DELTA: int = int(os.environ.get('FDV_SNAPSHOT_MIN_DELTA', '2000'))
+
+# --- SQLite connection cache (per token) ---
+_SQLITE_CONNS: Dict[str, sqlite3.Connection] = {}
+_SQLITE_LOCK = threading.Lock()
 SNAP_LOCK = threading.Lock()
 
 def _create_job_id(token: str, limit_raw: str) -> str:
@@ -2079,6 +2378,12 @@ def _list_files(paths: List[Path]) -> List[Path]:
     for p in paths:
         try:
             if p.is_file():
+                # Filter by extension if configured
+                try:
+                    if _ALLOWED_EXTS and p.suffix and p.suffix.lower() not in _ALLOWED_EXTS:
+                        continue
+                except Exception:
+                    pass
                 files.append(p)
             elif p.is_dir():
                 # Walk recursively; sort filenames for stable order
@@ -2087,10 +2392,23 @@ def _list_files(paths: List[Path]) -> List[Path]:
                         root_path = Path(root)
                     except Exception:
                         continue
+                    # Skip excluded directories
+                    try:
+                        parts_lower = {seg.lower() for seg in root_path.parts}
+                        if any((d.lower() in parts_lower) for d in _EXCLUDE_DIRS):
+                            continue
+                    except Exception:
+                        pass
                     for name in sorted(fnames):
                         fp = root_path / name
                         try:
                             if fp.is_file():
+                                if _ALLOWED_EXTS:
+                                    try:
+                                        if fp.suffix and fp.suffix.lower() not in _ALLOWED_EXTS:
+                                            continue
+                                    except Exception:
+                                        pass
                                 files.append(fp)
                         except Exception:
                             # Skip unreadable entries
@@ -2280,20 +2598,14 @@ def _start_parse_job(token: str, files: List[Path], used_dir: str | None, limit_
                     current_index += 1
                     progress['current_file'] = str(fp)
                     progress['current_index'] = current_index
-                    # Determine current file size and total lines (best-effort)
+                    # Determine current file size (bytes); avoid a separate pre-count pass over lines
                     try:
                         file_size = fp.stat().st_size
                     except Exception:
                         file_size = 0
-                    file_lines_total = 0
-                    try:
-                        with open(fp, 'r', encoding='utf-8', errors='replace') as _lfc2:
-                            for file_lines_total, _ in enumerate(_lfc2, start=1):
-                                pass
-                    except Exception:
-                        file_lines_total = 0
-                    progress['file_lines_total'] = file_lines_total
-                    progress['expected_file_lines'] = file_lines_total
+                    # Use bytes-based estimates for progress
+                    progress['file_lines_total'] = 0
+                    progress['expected_file_lines'] = 0
                     progress['file_lines_done'] = 0
                     progress['file_bytes_total'] = file_size
                     progress['file_bytes_done'] = 0
@@ -2331,6 +2643,17 @@ def _start_parse_job(token: str, files: List[Path], used_dir: str | None, limit_
                             overall_pct = 0.0
                         if overall_pct > 100.0:
                             overall_pct = 100.0
+                        # Estimate target totals (lines) without pre-counting:
+                        # - per-file target: scale current lines by file percent
+                        # - overall target: scale overall lines by overall percent
+                        try:
+                            exp_file = int(round(lineno / max(pct / 100.0, 1e-6))) if pct > 0 else 0
+                        except Exception:
+                            exp_file = 0
+                        try:
+                            exp_overall = int(round(lines_done_now / max(overall_pct / 100.0, 1e-6))) if overall_pct > 0 else 0
+                        except Exception:
+                            exp_overall = 0
                         progress.update({
                             'percent': overall_pct,
                             'lines': lines_done_now,
@@ -2341,8 +2664,8 @@ def _start_parse_job(token: str, files: List[Path], used_dir: str | None, limit_
                             'bytes_done': total_done,
                             # keep an estimated files_total for UI display
                             'files_total': est_files_total,
-                            'expected_overall_lines': progress.get('expected_overall_lines', 0) or 0,
-                            'expected_file_lines': file_lines_total or progress.get('expected_file_lines', 0),
+                            'expected_overall_lines': exp_overall,
+                            'expected_file_lines': exp_file,
                         })
                         try:
                             if token not in CACHE:
@@ -2357,13 +2680,23 @@ def _start_parse_job(token: str, files: List[Path], used_dir: str | None, limit_
                         except Exception:
                             pass
                         now = time.time()
-                        if now - last_snapshot_time['t'] > 1.2:
+                        # Throttle fdvtable snapshots by time and growth
+                        if now - last_snapshot_time['t'] > _SNAPSHOT_INTERVAL_SECS:
                             last_snapshot_time['t'] = now
                             try:
                                 lr = (CACHE.get(token, {}).get('limit_raw') or '').strip().lower()
                                 pf_mode = (lr in ('', 'none', 'default'))
                                 limit_val = 1e9 if pf_mode else float(lr)
                                 # Aggregate over all rows so previously processed files remain visible in the table
+                                # Only rebuild if row growth since last snapshot is significant
+                                rows_total = len(all_rows)
+                                last_rows = 0
+                                try:
+                                    last_rows = int(progress.get('_last_snapshot_rows', 0) or 0)
+                                except Exception:
+                                    last_rows = 0
+                                if rows_total - last_rows < _SNAPSHOT_MIN_ROWS_DELTA:
+                                    raise RuntimeError('skip-snapshot-small-delta')
                                 stats_small = stats_by_fdv_with_splits(all_rows, limit=limit_val, passfail_mode=pf_mode) if all_rows else []
                                 table_html = ''
                                 try:
@@ -2373,6 +2706,10 @@ def _start_parse_job(token: str, files: List[Path], used_dir: str | None, limit_
                                 if table_html:
                                     with SNAP_LOCK:
                                         SNAPSHOTS[token] = {'fdvtable_html': table_html, 'updated': now, 'limit_key': lr or 'none'}
+                                        try:
+                                            progress['_last_snapshot_rows'] = rows_total
+                                        except Exception:
+                                            pass
                             except Exception:
                                 pass
                     # Parse the file (normal path)
@@ -3850,9 +4187,9 @@ def report_status_fdvtable(token: str):
             html_cached = snap.get('fdvtable_html') or ''
             if html_cached:
                 return Response(html_cached, mimetype='text/html')
-    rows = data.get('rows', []) or []
+    # Build from SQLite so table accumulates across all processed files even if in-memory rows were trimmed
     try:
-        stats = stats_by_fdv_with_splits(rows, limit=limit_for_stats, passfail_mode=passfail_mode) if rows else []
+        stats = _stats_from_sqlite(token, limit=limit_for_stats, passfail_mode=passfail_mode)
     except Exception:
         stats = []
     try:

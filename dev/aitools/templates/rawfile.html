@@ -23,6 +23,9 @@
       .rber-low { background: #e8f5e9; }
       .rber-mid { background: #fff8e1; }
       .rber-high { background: #ffebee; }
+  /* PASS/FAIL highlights inside raw line text */
+  .pass-tag { background: #e8f5e9; color: #1b5e20; font-weight: 700; padding: 0 2px; border-radius: 2px; }
+  .fail-tag { background: #ffebee; color: #b71c1c; font-weight: 700; padding: 0 2px; border-radius: 2px; }
       .filters { display: grid; grid-template-columns: 90px 160px 120px 220px 1fr; gap: 6px; padding: 6px; background: #f7f7f7; border-bottom: 1px solid #ddd; position: sticky; top: 0; z-index: 1; }
       .filters input { width: 100%; padding: 3px 4px; font-size: 12px; font-family: Segoe UI, Arial, sans-serif; }
       .fails .item { padding: 4px 6px; border-bottom: 1px solid #eee; font-family: Consolas, Menlo, monospace; white-space: nowrap; font-size: 11px; line-height: 1.2; }
@@ -93,6 +96,25 @@
           file: document.getElementById('fltFile'),
           raw: document.getElementById('fltRaw')
         };
+        // Highlight PASS/FAIL tokens in raw line column
+        function escapeHtml(s){
+          return String(s)
+            .replaceAll('&','&amp;')
+            .replaceAll('<','&lt;')
+            .replaceAll('>','&gt;')
+            .replaceAll('"','&quot;')
+            .replaceAll("'",'&#39;');
+        }
+        function highlightPassFail(el){
+          var txt = el.textContent || '';
+          if (!txt) return;
+          var html = escapeHtml(txt)
+            .replace(/\bFAIL(?:ED)?\b/gi, function(m){ return '<span class="fail-tag">'+m+'</span>'; })
+            .replace(/\bPASS(?:ED)?\b/gi, function(m){ return '<span class="pass-tag">'+m+'</span>'; });
+          el.innerHTML = html;
+        }
+        // Apply highlighting once on load
+        Array.prototype.forEach.call(tbody.querySelectorAll('td.col-raw'), highlightPassFail);
         function parseNum(s){ var v = parseFloat(String(s||'').trim()); return isNaN(v) ? null : v; }
         function applyFilters(){
           var qLine = (inputs.line && inputs.line.value || '').trim();
