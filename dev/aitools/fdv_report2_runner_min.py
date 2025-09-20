@@ -209,6 +209,10 @@ def _interpret_limit_mode(raw: str | None) -> tuple[bool, float | None]:
 
 def _start_job(token: str, files: List[Path], used_dir: str, *, passfail_mode: bool, limit: float | None, job_id: str | None = None, prodmode: bool = False, ledger_map: Dict[str, Path] | None = None) -> None:
 	def job():
+		# Because we assign to `files` later (when filtering for prodmode),
+		# declare it nonlocal so early reads (e.g., len(files)) refer to the
+		# outer `_start_job` parameter instead of an uninitialized local.
+		nonlocal files
 		progress = {"files_total": len(files), "files_done": 0, "current_file": "", "lines": 0, "lines_total": 0, "percent": 0.0}
 		CACHE[token].update(status='running', progress=progress, rows=[], dir=used_dir)
 		if job_id:
