@@ -4302,6 +4302,8 @@ def api_jobs():
             data = CACHE.get(token) or {}
             prog = data.get('progress', {}) or {}
             status = data.get('status','unknown')
+            # Directory entered on landing page, if available
+            dir_val = data.get('dir') or ''
             snap = SNAPSHOTS.get(token) if 'SNAPSHOTS' in globals() else None
             updated = None
             if snap:
@@ -4339,6 +4341,7 @@ def api_jobs():
                 'status_url': f"/job/{jid}/status",
                 'report_ready': report_ready,
                 'name': job_name,
+                'dir': dir_val,
             })
     jobs_out.sort(key=lambda j: (j.get('status')!='running', j.get('job_id')))
     return Response(json.dumps({'jobs': jobs_out, 'count': len(jobs_out)}), mimetype='application/json')

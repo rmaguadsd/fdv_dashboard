@@ -91,11 +91,16 @@ async function refreshJobs(){
         const progressLink = (j.status === 'done' || j.status === 'error')
           ? `<span style="color:#999;cursor:not-allowed;" title="Parsing finished">progress</span>`
           : `<a href="${j.progress_url}" target="_blank">progress</a>`;
-      const nameVal = (j.name||'');
+    const nameVal = (j.name||'');
+    const dirVal = (j.dir||'');
+    const titleTxt = (dirVal ? `${nameVal} — ${dirVal}` : nameVal).replace(/"/g,'&quot;').replace(/</g,'&lt;');
       const nameId = `name_${j.job_id}`;
       html += `<tr>`+
   `<td class="mono job-id">${j.job_id}</td>`+
-  `<td class="job-name-cell" id="${nameId}" contenteditable="true" data-job="${j.job_id}" data-last="${nameVal.replace(/"/g,'&quot;')}" style="min-width:416px;min-height:18px;padding:2px;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${nameVal.replace(/</g,'&lt;')}</td>`+
+  `<td class="job-name-cell" title="${titleTxt}" style="min-width:416px;min-height:18px;padding:2px;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">`+
+    `<span id="${nameId}" class="job-name-inline" contenteditable="true" data-job="${j.job_id}" data-last="${nameVal.replace(/"/g,'&quot;')}">${nameVal.replace(/</g,'&lt;')}</span>`+
+    `${dirVal ? ` <span class="small mono" style="color:#555;"> — ${dirVal.replace(/</g,'&lt;')}</span>` : ''}`+
+  `</td>`+
   `<td class="${cls} status-col">${statusDisplay}</td>`+
   `<td class="pct-col">${pct}</td>`+
   `<td class="files-col">${files}</td>`+
@@ -128,7 +133,7 @@ refreshJobs();
 // Debounced job name saving logic (full-cell editable)
 const _jobNameTimers = {};
 function attachNameEditors(){
-  const editable = document.querySelectorAll('td.job-name-cell[contenteditable]');
+  const editable = document.querySelectorAll('td.job-name-cell .job-name-inline[contenteditable]');
   for(const el of editable){
     if(el._hasHandler) continue;
     el._hasHandler = true;
@@ -136,7 +141,8 @@ function attachNameEditors(){
     el.addEventListener('blur', ()=>{ setTimeout(()=>{ window.JOB_NAME_EDIT_ACTIVE = false; }, 50); });
     el.addEventListener('input', ()=>{
       const job = el.getAttribute('data-job');
-      el.classList.add('saving');
+  const cell = el.closest('td.job-name-cell');
+  if(cell) cell.classList.add('saving');
       if(_jobNameTimers[job]) clearTimeout(_jobNameTimers[job]);
       const txt = el.textContent || '';
       _jobNameTimers[job] = setTimeout(()=>{ saveJobName(job, txt, el); }, 700);
@@ -199,23 +205,26 @@ async function saveJobName(jobId, val, el){
       body: JSON.stringify({name: val})
     });
     if(!res.ok){
-      el.classList.remove('saving');
-      el.classList.add('error');
+      const cell = el.closest('td.job-name-cell');
+      if(cell){ cell.classList.remove('saving'); cell.classList.add('error'); }
       return;
     }
     const js = await res.json();
     if(js.ok){
       el.setAttribute('data-last', val);
-      el.classList.remove('saving');
-      el.classList.add('saved');
-      setTimeout(()=>el.classList.remove('saved'), 1600);
+      const cell = el.closest('td.job-name-cell');
+      if(cell){
+        cell.classList.remove('saving');
+        cell.classList.add('saved');
+        setTimeout(()=>cell.classList.remove('saved'), 1600);
+      }
     }else{
-      el.classList.remove('saving');
-      el.classList.add('error');
+      const cell = el.closest('td.job-name-cell');
+      if(cell){ cell.classList.remove('saving'); cell.classList.add('error'); }
     }
   }catch(e){
-    el.classList.remove('saving');
-    el.classList.add('error');
+    const cell = el.closest('td.job-name-cell');
+    if(cell){ cell.classList.remove('saving'); cell.classList.add('error'); }
   }
 }
 </script>
