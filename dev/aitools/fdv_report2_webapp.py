@@ -2298,6 +2298,12 @@ def _start_parse_job(token: str, files: List[Path], used_dir: str | None, limit_
                     progress['file_bytes_total'] = file_size
                     progress['file_bytes_done'] = 0
                     progress['file_percent'] = 0.0
+                    # Provide an estimated files_total for streaming mode so UI can display progress
+                    try:
+                        est_total = max(1, progress.get('files_done', 0) + len(work_queue) + 1)
+                    except Exception:
+                        est_total = max(1, progress.get('files_done', 0) + 1)
+                    progress['files_total'] = est_total
                     last_lineno = {'n': 0}
                     last_snapshot_time = {'t': 0.0}
                     def _cb_stream(lineno: int, pct: float) -> None:
@@ -2309,8 +2315,22 @@ def _start_parse_job(token: str, files: List[Path], used_dir: str | None, limit_
                             bytes_curr = 0
                         total_done = bytes_done_prev + bytes_curr
                         lines_done_now = lines_done_prev + lineno
-                        # Overall percent unknown without totals; keep 0 unless we infer totals later
-                        overall_pct = progress.get('percent', 0.0)
+                        # In streaming mode totals are unknown; estimate overall percent from files_done,
+                        # number of pending files, and current file percent so the UI can reflect progress.
+                        try:
+                            files_done_now = int(progress.get('files_done', 0))
+                        except Exception:
+                            files_done_now = 0
+                        try:
+                            pending = len(work_queue)
+                        except Exception:
+                            pending = 0
+                        est_files_total = max(1, files_done_now + pending + 1)  # include current file
+                        overall_pct = ((files_done_now + (pct / 100.0)) / float(est_files_total)) * 100.0
+                        if overall_pct < 0.0:
+                            overall_pct = 0.0
+                        if overall_pct > 100.0:
+                            overall_pct = 100.0
                         progress.update({
                             'percent': overall_pct,
                             'lines': lines_done_now,
@@ -2319,6 +2339,8 @@ def _start_parse_job(token: str, files: List[Path], used_dir: str | None, limit_
                             'file_bytes_total': file_size,
                             'file_percent': pct,
                             'bytes_done': total_done,
+                            # keep an estimated files_total for UI display
+                            'files_total': est_files_total,
                             'expected_overall_lines': progress.get('expected_overall_lines', 0) or 0,
                             'expected_file_lines': file_lines_total or progress.get('expected_file_lines', 0),
                         })
