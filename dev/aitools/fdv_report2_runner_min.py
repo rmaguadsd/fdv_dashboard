@@ -457,24 +457,9 @@ def home():
 					return redirect(url_for('home'))
 				ledger_map: Dict[str, Path] = {}
 				if prodmode:
-					# Require ledger directory with .ready files; convert lingering .done -> .ready first
+					# Require ledger directory with .ready files; do NOT convert .done here
 					led_dir = root / 'ledger'
-					if led_dir.is_dir():
-						for p in led_dir.iterdir():
-							try:
-								if p.is_file() and p.suffix.lower() == '.done':
-									tgt = p.with_suffix('.ready')
-									if not tgt.exists():
-										try:
-											os.replace(str(p), str(tgt))
-										except Exception:
-											try:
-												p.rename(tgt)
-											except Exception:
-												pass
-							except Exception:
-								continue
-					# Gather .ready list and map by stem to .txt under root (excluding ledger)
+				# Gather .ready list and map by stem to .txt under root (excluding ledger)
 					ready_files = [p for p in led_dir.iterdir() if p.is_file() and p.suffix.lower() == '.ready'] if led_dir.is_dir() else []
 					all_files = _list_files(root)
 					stem_index: Dict[str, List[Path]] = {}

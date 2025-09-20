@@ -3146,12 +3146,34 @@ def report_home():
                     return redirect(url_for('report_home'))
                 used_dir = str(dp)
                 if prodmode:
-                    # Ledger-based selection: scan for *.ready files only (never rename .done to .ready)
+                    # One-time normalization: when enabling prodmode from landing page,
+                    # convert any lingering .done markers back to .ready so they can be processed again.
+                    # This is the ONLY place such renames occur.
                     led_dir = dp / 'ledger'
+                    try:
+                        if led_dir.is_dir():
+                            cnt = 0
+                            for p in led_dir.iterdir():
+                                try:
+                                    if p.is_file() and p.suffix.lower() == '.done':
+                                        target = p.with_suffix('.ready')
+                                        if not target.exists():
+                                            p.rename(target)
+                                            cnt += 1
+                                except Exception:
+                                    continue
+                            try:
+                                if cnt:
+                                    app.logger.info("prodmode normalization: renamed %d .done -> .ready in %s", cnt, str(led_dir))
+                            except Exception:
+                                pass
+                    except Exception:
+                        pass
+                    # Ledger-based selection: scan for *.ready files only
                     ready_files: List[Path] = []
                     try:
                         if led_dir.is_dir():
-                            # Only list .ready files; .done files are ignored
+                            # Only list .ready files
                             ready_files = sorted([p for p in led_dir.iterdir() if p.is_file() and p.suffix.lower() == '.ready'])
                     except Exception:
                         ready_files = []
@@ -3290,10 +3312,31 @@ def report_home():
             ledger_map: Dict[str, Path] = {}
             if prodmode_q:
                 led_dir = dp / 'ledger'
+                # One-time normalization when enabling prodmode from landing page via GET:
+                # rename any .done -> .ready in ledger (only here).
+                try:
+                    if led_dir.is_dir():
+                        cnt = 0
+                        for p in led_dir.iterdir():
+                            try:
+                                if p.is_file() and p.suffix.lower() == '.done':
+                                    target = p.with_suffix('.ready')
+                                    if not target.exists():
+                                        p.rename(target)
+                                        cnt += 1
+                            except Exception:
+                                continue
+                        try:
+                            if cnt:
+                                app.logger.info("prodmode normalization (GET): renamed %d .done -> .ready in %s", cnt, str(led_dir))
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
                 ready_files: List[Path] = []
                 try:
                     if led_dir.is_dir():
-                        # Only list .ready files; do not rename .done to .ready
+                        # Only list .ready files
                         ready_files = sorted([p for p in led_dir.iterdir() if p.is_file() and p.suffix.lower() == '.ready'])
                 except Exception:
                     ready_files = []
