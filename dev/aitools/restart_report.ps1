@@ -1,4 +1,4 @@
-param([int]$Port = 5057)
+param([int]$Port = 5057, [switch]$StopOnly)
 
 function Stop-ByPort([int]$Port) {
   try {
@@ -22,6 +22,11 @@ function Stop-ByPort([int]$Port) {
 }
 
 Stop-ByPort -Port $Port
+
+if ($StopOnly) {
+  Write-Output "StopOnly specified; exiting after stopping listeners on port $Port."
+  exit 0
+}
 
 # Prefer a repo-local venv first, else fall back to Python launcher
 $repoRoot = Split-Path $PSScriptRoot -Parent
