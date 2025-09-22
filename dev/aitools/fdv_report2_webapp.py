@@ -88,6 +88,17 @@ def _sqlite_connect(token: str) -> sqlite3.Connection:
             conn.execute('PRAGMA journal_mode=WAL;')
             conn.execute('PRAGMA synchronous=NORMAL;')
             conn.execute('PRAGMA temp_store=MEMORY;')
+            # Performance-tuning pragmas (safe on modern SQLite):
+            # - Increase mmap/cache sizes when possible to reduce I/O on large jobs.
+            #   mmap_size is in bytes; cache_size negative means KB units.
+            try:
+                conn.execute('PRAGMA mmap_size=268435456;')  # 256 MB
+            except Exception:
+                pass
+            try:
+                conn.execute('PRAGMA cache_size=-200000;')   # ~200 MB
+            except Exception:
+                pass
         except Exception:
             pass
         _SQLITE_CONNS[token] = conn
@@ -133,6 +144,8 @@ def _sqlite_init(token: str) -> None:
         con.execute("CREATE INDEX IF NOT EXISTS idx_rows_token ON rows(token);")
         con.execute("CREATE INDEX IF NOT EXISTS idx_rows_token_split ON rows(token, fdv, pr, vcc, tm, temp);")
         con.execute("CREATE INDEX IF NOT EXISTS idx_rows_token_file ON rows(token, source_file);")
+        # Help median queries: accelerate ORDER BY rber within a split by indexing rber after the split keys
+        con.execute("CREATE INDEX IF NOT EXISTS idx_rows_token_split_rber ON rows(token, fdv_file, pr, vcc, tm, temp, rber);")
         # Ensure idempotent updates per source file and line; enables fast UPSERT on reprocessing
         con.execute("CREATE UNIQUE INDEX IF NOT EXISTS ux_rows_token_src_line ON rows(token, source_file, line_number);")
         con.commit()
@@ -2691,7 +2704,9 @@ def _start_parse_job(token: str, files: List[Path], used_dir: str | None, limit_
             stream_prodmode = bool(prodmode and used_dir and Path(used_dir).is_dir())
             total_bytes = 0
             sizes: List[int] = []
-            # Pre-count lines only for non-streaming mode. In streaming mode totals stay 0 (unknown).
+            # Optional pre-count of lines for more accurate progress; disabled by default to avoid double I/O on large files.
+            # Enable by setting env FDV_PRECOUNT_LINES=1.
+            precount = str(os.environ.get('FDV_PRECOUNT_LINES', '0')).strip().lower() in ('1','true','yes','on')
             line_counts: List[int] = []
             total_lines = 0
             if not stream_prodmode:
@@ -2703,12 +2718,13 @@ def _start_parse_job(token: str, files: List[Path], used_dir: str | None, limit_
                     sizes.append(sz)
                     total_bytes += sz
                     lc = 0
-                    try:
-                        with open(fp, 'r', encoding='utf-8', errors='replace') as _lfc:
-                            for lc, _ in enumerate(_lfc, start=1):
-                                pass
-                    except Exception:
-                        lc = 0
+                    if precount:
+                        try:
+                            with open(fp, 'r', encoding='utf-8', errors='replace') as _lfc:
+                                for lc, _ in enumerate(_lfc, start=1):
+                                    pass
+                        except Exception:
+                            lc = 0
                     line_counts.append(lc)
                     total_lines += lc
             progress = {
@@ -3349,7 +3365,8 @@ def _start_parse_job(token: str, files: List[Path], used_dir: str | None, limit_
                         pass
                     # Throttled partial stats snapshot for fast table refresh (every ~1.2s)
                     now = time.time()
-                    if now - last_snapshot_time['t'] > 1.2:
+                    # Throttle snapshot rebuilds; also skip if rows grew only slightly
+                    if now - last_snapshot_time['t'] > max(1.2, _SNAPSHOT_INTERVAL_SECS):
                         last_snapshot_time['t'] = now
                         try:
                             # Build small subset stats (limit/passfail mode per current limit_raw)
@@ -3357,6 +3374,10 @@ def _start_parse_job(token: str, files: List[Path], used_dir: str | None, limit_
                             pf_mode = (lr in ('', 'none', 'default'))
                             limit_val = 1e9 if pf_mode else float(lr)
                             # Aggregate over all rows so previously processed files remain visible in the table
+                            rows_total = len(all_rows)
+                            last_rows = int(progress.get('_last_snapshot_rows', 0) or 0)
+                            if rows_total - last_rows < _SNAPSHOT_MIN_ROWS_DELTA:
+                                raise RuntimeError('skip-snapshot-small-delta')
                             stats_small = stats_by_fdv_with_splits(all_rows, limit=limit_val, passfail_mode=pf_mode) if all_rows else []
                             table_html = ''
                             try:
@@ -3366,6 +3387,10 @@ def _start_parse_job(token: str, files: List[Path], used_dir: str | None, limit_
                             if table_html:
                                 with SNAP_LOCK:
                                     SNAPSHOTS[token] = {'fdvtable_html': table_html, 'updated': now, 'limit_key': lr or 'none'}
+                                    try:
+                                        progress['_last_snapshot_rows'] = rows_total
+                                    except Exception:
+                                        pass
                         except Exception:
                             pass
 
