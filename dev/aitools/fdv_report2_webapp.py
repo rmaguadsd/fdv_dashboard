@@ -4075,8 +4075,16 @@ def report_home():
             passfail_mode = True
     if tok and tok in CACHE:
         data = CACHE.get(tok, {})
-        rows = data.get('rows', [])
-        stats = stats_by_fdv_with_splits(rows, limit=limit_for_stats, passfail_mode=passfail_mode) if rows else []
+        # Build stats from SQLite to ensure completeness even if in-memory rows were trimmed
+        try:
+            eff_limit = (1e9 if passfail_mode else float(limit_for_stats))
+        except Exception:
+            eff_limit = 1e9
+            passfail_mode = True
+        try:
+            stats = _stats_from_sqlite(tok, limit=eff_limit, passfail_mode=passfail_mode)
+        except Exception:
+            stats = []
         # Persist updated numeric limit back into session cache when user supplied one
         try:
             if tok in CACHE and lim_raw and lim_raw.lower() not in ('none','', 'default'):
@@ -4386,13 +4394,12 @@ def api_job_report_table(job_id: str):
     if not token:
         return Response(json.dumps({'error': 'job not found'}), mimetype='application/json', status=404)
     data = CACHE.get(token) or {}
-    rows = data.get('rows', []) or []
     # Use current limit rules similar to report_home (do not persist new limit modifications here)
     lim_raw = (JOBS.get(job_id, {}).get('limit_raw') if job_id in JOBS else '') or ''
     passfail_mode = (lim_raw.strip().lower() in ('', 'none', 'default'))
     try:
         if passfail_mode:
-            stats = stats_by_fdv_with_splits(rows, limit=1e9, passfail_mode=True) if rows else []
+            stats = _stats_from_sqlite(token, limit=1e9, passfail_mode=True)
             limit_template = None
         else:
             try:
@@ -4400,7 +4407,7 @@ def api_job_report_table(job_id: str):
             except Exception:
                 limit_val = 1e9
                 passfail_mode = True
-            stats = stats_by_fdv_with_splits(rows, limit=limit_val, passfail_mode=False) if rows else []
+            stats = _stats_from_sqlite(token, limit=limit_val, passfail_mode=False)
             limit_template = limit_val if not passfail_mode else None
     except Exception:
         stats = []
@@ -4414,7 +4421,7 @@ def api_job_report_table(job_id: str):
         'token': token,
         'status': data.get('status','unknown'),
         'table_html': html,
-        'rows_count': len(rows),
+    'rows_count': len(data.get('rows', []) or []),
         'stats_count': len(stats)
     }
     return Response(json.dumps(payload), mimetype='application/json')
@@ -4456,12 +4463,11 @@ def embed_job_report(job_id: str):
     if not token:
         return Response('<div>Job not found</div>', mimetype='text/html', status=404)
     data = CACHE.get(token) or {}
-    rows = data.get('rows', []) or []
     lim_raw = (JOBS.get(job_id, {}).get('limit_raw') if job_id in JOBS else '') or ''
     passfail_mode = (lim_raw.strip().lower() in ('', 'none', 'default'))
     try:
         if passfail_mode:
-            stats = stats_by_fdv_with_splits(rows, limit=1e9, passfail_mode=True) if rows else []
+            stats = _stats_from_sqlite(token, limit=1e9, passfail_mode=True)
             limit_template = None
         else:
             try:
@@ -4469,7 +4475,7 @@ def embed_job_report(job_id: str):
             except Exception:
                 limit_val = 1e9
                 passfail_mode = True
-            stats = stats_by_fdv_with_splits(rows, limit=limit_val, passfail_mode=False) if rows else []
+            stats = _stats_from_sqlite(token, limit=limit_val, passfail_mode=False)
             limit_template = limit_val if not passfail_mode else None
     except Exception:
         stats = []
