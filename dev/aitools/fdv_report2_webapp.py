@@ -333,6 +333,37 @@ def _stats_from_sqlite(token: str, *, limit: float = 0.0, passfail_mode: bool = 
                     continue
     except Exception:
         pass
+    # Pre-compute medians for all groups in one SQL using window functions (fast path).
+    median_map: Dict[Tuple[str, str, str, str, str], float] = {}
+    try:
+        if con is not None:
+            curm_all = con.cursor()
+            curm_all.execute(
+                """
+                WITH ranked AS (
+                  SELECT fdv_file, pr, vcc, tm, temp, rber,
+                         ROW_NUMBER() OVER (PARTITION BY token, fdv_file, pr, vcc, tm, temp ORDER BY rber) AS rn,
+                         COUNT(rber) OVER (PARTITION BY token, fdv_file, pr, vcc, tm, temp) AS cnt
+                  FROM rows
+                  WHERE token = ? AND rber IS NOT NULL
+                )
+                SELECT fdv_file, pr, vcc, tm, temp, AVG(rber) AS median
+                FROM ranked
+                WHERE rn IN ((cnt + 1) / 2, (cnt + 2) / 2)
+                GROUP BY fdv_file, pr, vcc, tm, temp;
+                """,
+                (token,)
+            )
+            all_meds = curm_all.fetchall()
+            for fdv_file, pr, vcc, tm, temp, med in all_meds:
+                try:
+                    if med is not None:
+                        median_map[(str(fdv_file or ''), str(pr or ''), str(vcc or ''), str(tm or ''), str(temp or ''))] = float(med)
+                except Exception:
+                    continue
+    except Exception:
+        median_map = {}
+
     # finalize aggregates
     out: List[Dict[str, object]] = []
     for k, st in agg.items():
@@ -347,45 +378,11 @@ def _stats_from_sqlite(token: str, *, limit: float = 0.0, passfail_mode: bool = 
                     var = 0.0
                 st['mean'] = mean
                 st['stdev'] = (var ** 0.5)
-                # Compute exact median using a targeted SQL query scoped to this group
+                # Median from precomputed map (fast path); fallback to blank if unavailable
                 try:
-                    if con is not None:
-                        fdv_file, pr, vcc, tm, temp = (str(st.get('fdv_file') or ''), str(st.get('pr') or ''), str(st.get('vcc') or ''), str(st.get('tm') or ''), str(st.get('temp') or ''))
-                        cur_m = con.cursor()
-                        if n_r % 2 == 1:
-                            off = n_r // 2
-                            cur_m.execute(
-                                """
-                                SELECT rber FROM rows
-                                WHERE token=? AND fdv_file=? AND pr=? AND vcc=? AND tm=? AND temp=? AND rber IS NOT NULL
-                                ORDER BY rber
-                                LIMIT 1 OFFSET ?
-                                """,
-                                (token, fdv_file, pr, vcc, tm, temp, off)
-                            )
-                            row = cur_m.fetchone()
-                            if row and row[0] is not None:
-                                st['median'] = float(row[0])
-                            else:
-                                st['median'] = ''
-                        else:
-                            off = max(0, (n_r // 2) - 1)
-                            cur_m.execute(
-                                """
-                                SELECT rber FROM rows
-                                WHERE token=? AND fdv_file=? AND pr=? AND vcc=? AND tm=? AND temp=? AND rber IS NOT NULL
-                                ORDER BY rber
-                                LIMIT 2 OFFSET ?
-                                """,
-                                (token, fdv_file, pr, vcc, tm, temp, off)
-                            )
-                            vals = cur_m.fetchall()
-                            if vals and len(vals) == 2 and vals[0][0] is not None and vals[1][0] is not None:
-                                st['median'] = (float(vals[0][0]) + float(vals[1][0])) / 2.0
-                            elif vals and len(vals) >= 1 and vals[0][0] is not None:
-                                st['median'] = float(vals[0][0])
-                            else:
-                                st['median'] = ''
+                    mval = median_map.get((str(st.get('fdv_file') or ''), str(st.get('pr') or ''), str(st.get('vcc') or ''), str(st.get('tm') or ''), str(st.get('temp') or '')))
+                    if mval is not None:
+                        st['median'] = mval
                     else:
                         st['median'] = ''
                 except Exception:

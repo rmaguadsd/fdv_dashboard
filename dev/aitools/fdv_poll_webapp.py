@@ -16,7 +16,7 @@ import tempfile
 import json
 import hashlib
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Optional
 import re
 
 from flask import Flask, render_template, request, redirect, url_for, flash, Response, send_file, jsonify
@@ -49,7 +49,8 @@ def _init_tempdir_once():
         from pathlib import Path as _Path
         # Prefer explicit env, else D:\fdv_tmp, else C:\fdv_tmp, else system temp
         override_tmp = (os.environ.get('FDV_POLL_TMPDIR') or r'D:\\fdv_tmp').strip()
-        best_path: _Path | None = None
+        # For Python <3.10 avoid PEP 604 unions; keep simple None assignment
+        best_path = None  # type: Optional[_Path]
         if override_tmp:
             p = _Path(override_tmp)
             try:
@@ -58,7 +59,7 @@ def _init_tempdir_once():
             except Exception:
                 best_path = None
         if best_path is None:
-            for pth in [r'D:\\fdv_tmp', r'C:\\fdv_tmp']:
+            for pth in [r'D:\fdv_tmp', r'C:\fdv_tmp']:
                 try:
                     p = _Path(pth)
                     p.mkdir(parents=True, exist_ok=True)
@@ -81,7 +82,8 @@ _init_tempdir_once()
 
 # In-memory cache for per-request stats (download CSV)
 # Structure: { token: { 'vt': List[Dict[str,str]] } }
-CACHE: dict[str, dict] = {}
+from typing import Any
+CACHE: Dict[str, Dict[str, Any]] = {}
 
 # Persistent snapshots: write static HTML to D:\ by default so it can be referenced later
 def _persist_base_dir() -> Path:
@@ -362,12 +364,13 @@ def group_by_fdv_vcc_temp(rows: List[Dict[str, str]]) -> List[Dict[str, str]]:
 
 
 def group_by_fdv_with_splits(rows: List[Dict[str, str]], *, split_vcc: bool, split_temp: bool, split_plane: bool = True) -> List[Dict[str, str]]:
-    """Group rows by fdv and status, with optional split on VCC, TEMP, and plane operation.
-    When a dimension isn't split, its key is set to an empty string and the output column will be blank.
+    """Group rows by (fdv_file, specname, pagemap, status, pr) and optionally split by VCC, TEMP, plane.
+    This prevents mixing different POLL spec segments or PR bins in one aggregate.
     """
-    groups: Dict[Tuple[str, str, str, str, str], List[Tuple[float, str, str, str, str, str, str]]] = {}
-    # Track invalid FuseIDs per group as (dut, site, fuseid_string)
-    ignored_by_group: Dict[Tuple[str, str, str, str, str], List[Tuple[str, str, str]]] = {}
+    # key: (fdv, spec, pagemap, pr, status, vcc?, temp?, plane?)
+    groups: Dict[Tuple[str, str, str, str, str, str, str, str], List[Tuple[float, str, str, str, str, str]]] = {}
+    ignored_by_group: Dict[Tuple[str, str, str, str, str, str, str, str], List[Tuple[str, str, str]]] = {}
+    _re_poll_spec = re.compile(r"POLL_([A-Za-z0-9]+)_")
     for r in rows:
         fdv = r.get("fdv_file", "") or ""
         vcc_full = (r.get("vcc", "") or "").strip()
@@ -379,87 +382,72 @@ def group_by_fdv_with_splits(rows: List[Dict[str, str]], *, split_vcc: bool, spl
         status = (r.get("status", "") or "").strip().upper()
         plane_full = (r.get("plane_group", "") or _plane_from_tname_or_default(r) or "").strip().upper()
         plane = plane_full if split_plane else ""
-        dut = (r.get("dut_id", "") or "").strip()
-        pr = (_first_nonempty_str(r, ['pr','PR'], '') or 'XX')
+        pr_val = (_first_nonempty_str(r, ['pr','PR'], '') or 'XX')
         fuseid = _get_fuseid(r)
         pagetype = (r.get("pagetype", "") or "").strip()
         tm = (r.get("tm", "") or "").strip()
-        # Skip PR monitor rows similar to report2
         if (tname or '').strip().upper() == 'PR':
             continue
-        # If poll__test present, require it to match fdv_file
         if polltest and polltest != fdv:
             continue
-        # Exclude poll_erase_tbers (or any poll__test containing 'tbers') data if fdv_file is not a *tbers
         if polltest and ("tbers" in polltest.lower()) and ("tbers" not in fdv.lower()):
             continue
-        # Exclude when tname mentions tbers/erase but fdv_file is not an erase test name
         if tname and ("tbers" in tname.lower() or "erase" in tname.lower()) and ("tbers" not in fdv.lower() and "erase" not in fdv.lower()):
             continue
-        v = to_float(r)
-        if v is None:
+        vnum = to_float(r)
+        if vnum is None:
             continue
-        # Accumulate into group for this row
+        # derive pagemap and spec for this row
         pagemap = _extract_pagemap_from_row(r)
-        key = (fdv, vcc, temp, status, plane)
-        # Record invalid FUSEID DUT@site info and skip adding this row to stats
+        spec_token = ''
+        try:
+            if tname.startswith('POLL_'):
+                m0 = _re_poll_spec.match(tname)
+                if m0:
+                    spec_token = (m0.group(1) or '').upper()
+            if not spec_token:
+                raw_line = (r.get('raw_line') or r.get('raw') or '')
+                if raw_line and 'POLL_' in raw_line:
+                    m1 = _re_poll_spec.search(raw_line)
+                    if m1:
+                        spec_token = (m1.group(1) or '').upper()
+        except Exception:
+            spec_token = ''
+        if not spec_token:
+            spec_token = _specname_from_fdv(fdv)
+        key = (fdv, spec_token, pagemap, pr_val, status, vcc, temp, plane)
         if not _is_valid_fuseid(fuseid):
             site = _extract_site_from_filename(fdv)
-            if dut:
-                ignored_by_group.setdefault(key, []).append((dut, site, (fuseid or '')))
+            if pr_val:
+                ignored_by_group.setdefault(key, []).append((pr_val, site, (fuseid or '')))  # reuse tuple structure
             continue
-        groups.setdefault(key, []).append((v, pr, dut, fuseid, pagetype, tm, pagemap))
-    # Load persisted specs (MinSpec/MaxSpec) indexed by composite key
+        groups.setdefault(key, []).append((vnum, pr_val, fuseid, pagetype, tm, plane))
     persisted_specs = _load_specs()
-    def _gkey(fdv: str, vcc: str, temp: str, status: str, plane: str) -> str:
-        return "||".join([fdv or '', vcc or '', temp or '', (status or '').upper(), (plane or '').upper()])
-    out = []
-    for key in sorted(groups.keys(), key=lambda kv: (kv[0] or "", kv[1] or "", kv[2] or "", kv[3] or "", kv[4] or "")):
-        fdv, vcc, temp, status, plane = key
+    def _gkey(fdv: str, spec: str, pagemap: str, pr_val: str, status: str, vcc: str, temp: str, plane: str) -> str:
+        return "||".join([
+            fdv or '', spec or '', pagemap or '', pr_val or '', (status or '').upper(),
+            vcc or '', temp or '', (plane or '').upper()
+        ])
+    out: List[Dict[str, str]] = []
+    for key in sorted(groups.keys(), key=lambda kv: (kv[0] or '', kv[1] or '', kv[2] or '', kv[3] or '', kv[4] or '', kv[5] or '', kv[6] or '', kv[7] or '')):
+        fdv, spec_token, pagemap, pr_val, status, vcc, temp, plane = key
         items = groups[key]
-        vals = [v for (v, _pr, _dut, _fid, _pt, _tm, _pm) in items]
+        vals = [v for (v, _pr, _fid, _pt, _tm, _pl) in items]
         st = compute_stats(vals)
-        specname = _specname_from_fdv(fdv)
-        # Aggregate PR values and comments (FUSEID per DUT) for this group
-        pr_set: List[str] = []
-        seen_pr: set[str] = set()
+        # collect metadata sets
         dut_fid_pairs: Dict[str, str] = {}
         pagetypes_set = set()
         tm_set = set()
-        pm_counts: Dict[str, int] = {}
         valid_ids_set: set[str] = set()
-        for (_v, _pr, _dut, _fid, _pt, _tm, _pm) in items:
-            if _pr and _pr not in seen_pr:
-                seen_pr.add(_pr)
-                pr_set.append(_pr)
-            if _dut and _fid and _dut not in dut_fid_pairs:
-                dut_fid_pairs[_dut] = _fid
+        # We no longer retain DUT id per row (simplified), so fuseid list limited
+        for (_v, _pr, _fid, _pt, _tm, _pl) in items:
             if _fid:
                 valid_ids_set.add(_fid)
             if _pt:
                 pagetypes_set.add(_pt)
             if _tm:
                 tm_set.add(_tm)
-            if _pm:
-                pm_counts[_pm] = pm_counts.get(_pm, 0) + 1
-        # Numeric-aware PR sort with 'XX' last
-        def _pr_key(p: str):
-            if p == 'XX':
-                return (1, float('inf'))
-            try:
-                return (0, int(p))
-            except Exception:
-                return (0, p)
-        pr_join = ", ".join(sorted(pr_set, key=_pr_key)) if pr_set else ""
-        # Build VALID FuseID list as DUT@site:FUSEID
-        site_label = _extract_site_from_filename(fdv)
-        valid_items = []
-        for d in sorted(dut_fid_pairs.keys(), key=lambda s: int(s) if s.isdigit() else 9999):
-            fid = dut_fid_pairs[d]
-            lbl = f"DUT{d}{('@' + site_label) if site_label else ''}:{fid}"
-            valid_items.append(lbl)
-        base_comment = ("VALID: " + ", ".join(valid_items)) if valid_items else ""
-        # Sort TM numerically when possible, else lexicographically
+        # Build comments (reduced)
         def _tm_key(s: str):
             try:
                 return (0, float(s))
@@ -467,42 +455,36 @@ def group_by_fdv_with_splits(rows: List[Dict[str, str]], *, split_vcc: bool, spl
                 return (1, s)
         tm_comment = ("TM: " + ", ".join(sorted(tm_set, key=_tm_key))) if tm_set else ""
         pt_comment = ("PAGETYPE: " + ", ".join(sorted(pagetypes_set))) if pagetypes_set else ""
-        # Append ignored DUT@site info if any
         ignored = ignored_by_group.get(key, [])
         if ignored:
-            seen_ig = set()
             ig_parts = []
-            for (d, s, fid_str) in ignored:
-                fid_show = (fid_str if fid_str else "(missing)")
-                lab = f"DUT{d}{('@site' + s) if s else ''}:{fid_show}"
+            seen_ig = set()
+            for (pr_ig, site, fid_str) in ignored:
+                lab = f"PR{pr_ig}{('@site' + site) if site else ''}:{fid_str or '(missing)'}"
                 if lab not in seen_ig:
                     seen_ig.add(lab)
                     ig_parts.append(lab)
             ig_comment = "IGNORED (invalid FUSEID): " + ", ".join(sorted(ig_parts))
         else:
             ig_comment = ""
-        comments = " | ".join([c for c in (base_comment, tm_comment, pt_comment, ig_comment) if c])
-        # Choose most common non-empty pagemap
-        pagemap_best = ''
-        if pm_counts:
-            pagemap_best = sorted(pm_counts.items(), key=lambda kv: (-kv[1], kv[0]))[0][0]
-        key_id = _gkey(fdv, vcc, temp, status, plane)
-        spec = persisted_specs.get(key_id, {}) if isinstance(persisted_specs, dict) else {}
+        comments = " | ".join([c for c in (tm_comment, pt_comment, ig_comment) if c])
+        key_id = _gkey(fdv, spec_token, pagemap, pr_val, status, vcc, temp, plane)
+        spec_persist = persisted_specs.get(key_id, {}) if isinstance(persisted_specs, dict) else {}
         out.append({
-            "fdv_file": fdv,
-            "specname": specname,
-            "vcc": vcc,
-            "temp": temp,
-            "pagemap": pagemap_best,
-            "status": status,
-            "plane_group": plane,
-            "pr": pr_join,
-            "count": str(len(vals)),
-            "valid_fuseid_count": (str(len(valid_ids_set)) if valid_ids_set else ''),
-            "MinSpec": (spec.get('MinSpec') or ''),
-            "MaxSpec": (spec.get('MaxSpec') or ''),
-            "_group_key": key_id,
-            "comments": comments,
+            'fdv_file': fdv,
+            'specname': spec_token,
+            'vcc': vcc,
+            'temp': temp,
+            'pagemap': pagemap,
+            'status': status,
+            'plane_group': plane,
+            'pr': pr_val,
+            'count': str(len(vals)),
+            'valid_fuseid_count': (str(len(valid_ids_set)) if valid_ids_set else ''),
+            'MinSpec': (spec_persist.get('MinSpec') or ''),
+            'MaxSpec': (spec_persist.get('MaxSpec') or ''),
+            '_group_key': key_id,
+            'comments': comments,
             **st
         })
     return out
