@@ -21,7 +21,7 @@
     <div class="grid">
       {% for g in groups %}
         <div class="card" id="{{ g.fdv }}">
-          <div class="hdr">{{ g.fdv }} — VCC={{ g.vcc or '-' }}, TEMP={{ g.temp or '-' }}</div>
+          <div class="hdr">{{ g.fdv }} — VCC={{ g.vcc or '-' }}, TEMP={{ g.temp or '-' }}{% if split_pagetype and g.pagetype %}, PAGETYPE={{ g.pagetype }}{% endif %}</div>
           <a href="{{ g.img_url }}" target="_blank">
             <img src="{{ g.img_url }}" alt="histogram"/>
           </a>

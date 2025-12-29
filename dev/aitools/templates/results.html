@@ -45,6 +45,7 @@
           <input type="hidden" name="split_vcc" value="{{ '1' if split_vcc else '0' }}"/>
           <input type="hidden" name="split_temp" value="{{ '1' if split_temp else '0' }}"/>
           <input type="hidden" name="split_plane" value="{{ '1' if split_plane else '0' }}"/>
+          <input type="hidden" name="split_pagetype" value="{{ '1' if split_pagetype else '0' }}"/>
           <label>Save snapshot as alias:</label>
           <input type="text" name="alias" placeholder="alias name"/>
           <button type="submit">Save</button>
@@ -54,6 +55,7 @@
           <input type="hidden" name="split_vcc" value="{{ '1' if split_vcc else '0' }}"/>
           <input type="hidden" name="split_temp" value="{{ '1' if split_temp else '0' }}"/>
           <input type="hidden" name="split_plane" value="{{ '1' if split_plane else '0' }}"/>
+          <input type="hidden" name="split_pagetype" value="{{ '1' if split_pagetype else '0' }}"/>
           <label>Update report:</label>
           <select name="alias" required>
             <option value="" selected>— select alias —</option>
@@ -74,11 +76,12 @@
       <label style="margin-left:12px;"><input id="chk-vcc" type="checkbox" {% if split_vcc %}checked{% endif %}/> by VCC</label>
       <label style="margin-left:12px;"><input id="chk-temp" type="checkbox" {% if split_temp %}checked{% endif %}/> by TEMP</label>
       <label style="margin-left:12px;"><input id="chk-plane" type="checkbox" {% if split_plane %}checked{% endif %}/> by Plane operation</label>
+      <label style="margin-left:12px;"><input id="chk-pagetype" type="checkbox" {% if split_pagetype %}checked{% endif %}/> by Pagetype</label>
       <button id="btn-apply-splits" style="margin-left:16px;">Apply</button>
     </div>
 
     <h3>
-      By FDV file{% if split_vcc %}, VCC{% endif %}{% if split_temp %}, TEMP{% endif %}, Status{% if split_plane %}, Plane operation{% endif %}
+      By FDV file{% if split_vcc %}, VCC{% endif %}{% if split_temp %}, TEMP{% endif %}, Status{% if split_plane %}, Plane operation{% endif %}{% if split_pagetype %}, Pagetype{% endif %}
     </h3>
     <p><a id="download-link" class="back" href="{{ download_vt }}">Download CSV</a></p>
     <table>
@@ -90,6 +93,7 @@
           {% if split_vcc %}<th data-col="vcc">vcc</th>{% endif %}
           {% if split_temp %}<th data-col="temp">temp</th>{% endif %}
           <th data-col="pagemap">pagemap</th>
+          {% if split_pagetype %}<th data-col="pagetype">pagetype</th>{% endif %}
           <th data-col="status">status</th>
           {% if split_plane %}<th data-col="plane">plane operation</th>{% endif %}
           <th data-col="pr">PR</th>
@@ -125,6 +129,11 @@
           <th>
             <select class="filter-select" data-col="pagemap"><option value="">All</option></select>
           </th>
+          {% if split_pagetype %}
+          <th>
+            <select class="filter-select" data-col="pagetype"><option value="">All</option></select>
+          </th>
+          {% endif %}
           <th>
             <select class="filter-select" data-col="status"><option value="">All</option></select>
           </th>
@@ -193,19 +202,20 @@
         <tr>
           <td data-col="sel">
             {% if r.fdv_file %}
-              <input type="checkbox" class="fdv-sel" value="{{ r.fdv_file }}||{{ r.vcc }}||{{ r.temp }}||{{ r.status }}||{{ r.plane_group }}" />
+              <input type="checkbox" class="fdv-sel" value="{{ r.fdv_file }}||{{ r.vcc }}||{{ r.temp }}||{{ r.status }}||{{ r.plane_group }}||{{ r.pagetype or '' }}" />
             {% else %}
               
             {% endif %}
           </td>
           <td data-col="fdv_file">
             {% if r.fdv_file %}
-            <a class="fdv-link" href="{{ url_for('hist_overview', token=token, fdv=r.fdv_file, vcc=r.vcc, temp=r.temp, status=r.status, plane=r.plane_group, split=1) }}"
+            <a class="fdv-link" href="{{ url_for('hist_overview', token=token, fdv=r.fdv_file, vcc=r.vcc, temp=r.temp, status=r.status, plane=r.plane_group, pagetype=r.pagetype, split_vcc='1' if split_vcc else '0', split_temp='1' if split_temp else '0', split_plane='1' if split_plane else '0', split_pagetype='1' if split_pagetype else '0') }}"
               data-fdv="{{ r.fdv_file }}"
               data-vcc="{{ r.vcc }}"
               data-temp="{{ r.temp }}"
               data-status="{{ r.status }}"
-              data-plane="{{ r.plane_group }}">{{ r.fdv_file }}</a>
+              data-plane="{{ r.plane_group }}"
+              data-pagetype="{{ r.pagetype or '' }}">{{ r.fdv_file }}</a>
             {% else %}
               {{ r.fdv_file }}
             {% endif %}
@@ -214,6 +224,7 @@
           {% if split_vcc %}<td data-col="vcc">{{ r.vcc }}</td>{% endif %}
           {% if split_temp %}<td data-col="temp">{{ r.temp }}</td>{% endif %}
           <td data-col="pagemap">{{ r.pagemap or '' }}</td>
+          {% if split_pagetype %}<td data-col="pagetype">{{ r.pagetype or '' }}</td>{% endif %}
           <td data-col="status">{{ r.status }}</td>
           {% if split_plane %}<td data-col="plane">{{ r.plane_group }}</td>{% endif %}
           <td data-col="pr">{{ r.pr }}</td>
@@ -381,16 +392,19 @@
           qs.set('split_vcc', document.getElementById('chk-vcc').checked ? '1' : '0');
           qs.set('split_temp', document.getElementById('chk-temp').checked ? '1' : '0');
           qs.set('split_plane', document.getElementById('chk-plane').checked ? '1' : '0');
+          qs.set('split_pagetype', document.getElementById('chk-pagetype').checked ? '1' : '0');
           window.location.href = `{{ url_for('rcdf_compare', token=token) }}?` + qs.toString();
         }
         function applySplits(){
           const vcc = document.getElementById('chk-vcc').checked ? '1' : '0';
           const temp = document.getElementById('chk-temp').checked ? '1' : '0';
           const plane = document.getElementById('chk-plane').checked ? '1' : '0';
+          const pagetype = document.getElementById('chk-pagetype').checked ? '1' : '0';
           const url = new URL(`{{ url_for('results_view', token=token) }}`, window.location.origin);
           url.searchParams.set('split_vcc', vcc);
           url.searchParams.set('split_temp', temp);
           url.searchParams.set('split_plane', plane);
+          url.searchParams.set('split_pagetype', pagetype);
           window.location.href = url.toString();
         }
         document.getElementById('btn-compare').addEventListener('click', function(){
@@ -407,7 +421,7 @@
             const sel = getSelectedRows();
             if(sel.length){
               ev.preventDefault();
-              const row = `${a.dataset.fdv}||${a.dataset.vcc || ''}||${a.dataset.temp || ''}||${a.dataset.status || ''}||${a.dataset.plane || ''}`;
+              const row = `${a.dataset.fdv}||${a.dataset.vcc || ''}||${a.dataset.temp || ''}||${a.dataset.status || ''}||${a.dataset.plane || ''}||${a.dataset.pagetype || ''}`;
               if(row && !sel.includes(row)) sel.push(row);
               goCompare(unique(sel));
             }
@@ -421,6 +435,7 @@
             split_vcc: document.getElementById('chk-vcc').checked ? '1' : '0',
             split_temp: document.getElementById('chk-temp').checked ? '1' : '0',
             split_plane: document.getElementById('chk-plane').checked ? '1' : '0',
+            split_pagetype: document.getElementById('chk-pagetype').checked ? '1' : '0',
           }).toString();
           a.href = url.toString();
         })();

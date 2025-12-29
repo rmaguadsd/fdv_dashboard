@@ -360,16 +360,23 @@ def group_by_fdv(rows: List[Dict[str, str]]) -> List[Dict[str, str]]:
 
 def group_by_fdv_vcc_temp(rows: List[Dict[str, str]]) -> List[Dict[str, str]]:
     """Legacy: group by (fdv, vcc, temp, status, plane)."""
-    return group_by_fdv_with_splits(rows, split_vcc=True, split_temp=True)
+    return group_by_fdv_with_splits(rows, split_vcc=True, split_temp=True, split_pagetype=False)
 
 
-def group_by_fdv_with_splits(rows: List[Dict[str, str]], *, split_vcc: bool, split_temp: bool, split_plane: bool = True) -> List[Dict[str, str]]:
-    """Group rows by (fdv_file, specname, pagemap, status, pr) and optionally split by VCC, TEMP, plane.
+def group_by_fdv_with_splits(
+    rows: List[Dict[str, str]],
+    *,
+    split_vcc: bool,
+    split_temp: bool,
+    split_plane: bool = True,
+    split_pagetype: bool = False,
+) -> List[Dict[str, str]]:
+    """Group rows by (fdv_file, specname, pagemap, status, pr) and optionally split by VCC, TEMP, plane, pagetype.
     This prevents mixing different POLL spec segments or PR bins in one aggregate.
     """
-    # key: (fdv, spec, pagemap, pr, status, vcc?, temp?, plane?)
-    groups: Dict[Tuple[str, str, str, str, str, str, str, str], List[Tuple[float, str, str, str, str, str]]] = {}
-    ignored_by_group: Dict[Tuple[str, str, str, str, str, str, str, str], List[Tuple[str, str, str]]] = {}
+    # key: (fdv, spec, pagemap, pagetype?, pr, status, vcc?, temp?, plane?)
+    groups: Dict[Tuple[str, str, str, str, str, str, str, str, str], List[Tuple[float, str, str, str, str, str]]] = {}
+    ignored_by_group: Dict[Tuple[str, str, str, str, str, str, str, str, str], List[Tuple[str, str, str]]] = {}
     _re_poll_spec = re.compile(r"POLL_([A-Za-z0-9]+)_")
     for r in rows:
         fdv = r.get("fdv_file", "") or ""
@@ -385,6 +392,7 @@ def group_by_fdv_with_splits(rows: List[Dict[str, str]], *, split_vcc: bool, spl
         pr_val = (_first_nonempty_str(r, ['pr','PR'], '') or 'XX')
         fuseid = _get_fuseid(r)
         pagetype = (r.get("pagetype", "") or "").strip()
+        pagetype_key = pagetype if split_pagetype else ""
         tm = (r.get("tm", "") or "").strip()
         if (tname or '').strip().upper() == 'PR':
             continue
@@ -415,7 +423,7 @@ def group_by_fdv_with_splits(rows: List[Dict[str, str]], *, split_vcc: bool, spl
             spec_token = ''
         if not spec_token:
             spec_token = _specname_from_fdv(fdv)
-        key = (fdv, spec_token, pagemap, pr_val, status, vcc, temp, plane)
+        key = (fdv, spec_token, pagemap, pagetype_key, pr_val, status, vcc, temp, plane)
         if not _is_valid_fuseid(fuseid):
             site = _extract_site_from_filename(fdv)
             if pr_val:
@@ -423,14 +431,14 @@ def group_by_fdv_with_splits(rows: List[Dict[str, str]], *, split_vcc: bool, spl
             continue
         groups.setdefault(key, []).append((vnum, pr_val, fuseid, pagetype, tm, plane))
     persisted_specs = _load_specs()
-    def _gkey(fdv: str, spec: str, pagemap: str, pr_val: str, status: str, vcc: str, temp: str, plane: str) -> str:
+    def _gkey(fdv: str, spec: str, pagemap: str, pagetype_val: str, pr_val: str, status: str, vcc: str, temp: str, plane: str) -> str:
         return "||".join([
-            fdv or '', spec or '', pagemap or '', pr_val or '', (status or '').upper(),
+            fdv or '', spec or '', pagemap or '', pagetype_val or '', pr_val or '', (status or '').upper(),
             vcc or '', temp or '', (plane or '').upper()
         ])
     out: List[Dict[str, str]] = []
-    for key in sorted(groups.keys(), key=lambda kv: (kv[0] or '', kv[1] or '', kv[2] or '', kv[3] or '', kv[4] or '', kv[5] or '', kv[6] or '', kv[7] or '')):
-        fdv, spec_token, pagemap, pr_val, status, vcc, temp, plane = key
+    for key in sorted(groups.keys(), key=lambda kv: (kv[0] or '', kv[1] or '', kv[2] or '', kv[3] or '', kv[4] or '', kv[5] or '', kv[6] or '', kv[7] or '', kv[8] or '')):
+        fdv, spec_token, pagemap, pagetype_key, pr_val, status, vcc, temp, plane = key
         items = groups[key]
         vals = [v for (v, _pr, _fid, _pt, _tm, _pl) in items]
         st = compute_stats(vals)
@@ -468,7 +476,7 @@ def group_by_fdv_with_splits(rows: List[Dict[str, str]], *, split_vcc: bool, spl
         else:
             ig_comment = ""
         comments = " | ".join([c for c in (tm_comment, pt_comment, ig_comment) if c])
-        key_id = _gkey(fdv, spec_token, pagemap, pr_val, status, vcc, temp, plane)
+        key_id = _gkey(fdv, spec_token, pagemap, pagetype_key, pr_val, status, vcc, temp, plane)
         spec_persist = persisted_specs.get(key_id, {}) if isinstance(persisted_specs, dict) else {}
         out.append({
             'fdv_file': fdv,
@@ -476,6 +484,7 @@ def group_by_fdv_with_splits(rows: List[Dict[str, str]], *, split_vcc: bool, spl
             'vcc': vcc,
             'temp': temp,
             'pagemap': pagemap,
+            'pagetype': pagetype_key,
             'status': status,
             'plane_group': plane,
             'pr': pr_val,
@@ -512,9 +521,9 @@ def detect_outliers_iqr(values: List[float]) -> Tuple[float, float, List[int]]:
     return float(low), float(high), idxs
 
 
-def _filter_poll_row(r: Dict[str, str]) -> Tuple[bool, str, str, str, str, str, float | None]:
+def _filter_poll_row(r: Dict[str, str]) -> Tuple[bool, str, str, str, str, str, str, float | None]:
     """Apply common FDV POLL filter rules and return tuple:
-    (keep, fdv, vcc, temp, status, plane, value)
+    (keep, fdv, vcc, temp, status, plane, pagetype, value)
     """
     try:
         v = float(r.get("data_token2_numeric") or r.get("data_token2") or "")
@@ -533,16 +542,17 @@ def _filter_poll_row(r: Dict[str, str]) -> Tuple[bool, str, str, str, str, str, 
     tname = (r.get("tname", "") or "").strip()
     status = (r.get("status", "") or "").strip().upper()
     plane = (r.get("plane_group", "") or _plane_from_tname_or_default(r) or "").strip().upper()
+    pagetype = (r.get("pagetype", "") or "").strip()
     # Skip PR monitor rows entirely (not measurement)
     if (tname or '').strip().upper() == 'PR':
-        return False, fdv, vcc, temp, status, plane, None
+        return False, fdv, vcc, temp, status, plane, pagetype, None
     if polltest and polltest != fdv:
-        return False, fdv, vcc, temp, status, plane, None
+        return False, fdv, vcc, temp, status, plane, pagetype, None
     if polltest and ("tbers" in polltest.lower()) and ("tbers" not in fdv.lower()):
-        return False, fdv, vcc, temp, status, plane, None
+        return False, fdv, vcc, temp, status, plane, pagetype, None
     if tname and ("tbers" in tname.lower() or "erase" in tname.lower()) and ("tbers" not in fdv.lower() and "erase" not in fdv.lower()):
-        return False, fdv, vcc, temp, status, plane, None
-    return True, fdv, vcc, temp, status, plane, v
+        return False, fdv, vcc, temp, status, plane, pagetype, None
+    return True, fdv, vcc, temp, status, plane, pagetype, v
 
 
 @app.route("/hist/<token>")
@@ -563,14 +573,18 @@ def hist_overview(token: str):
     sel_temp = (request.args.get("temp") or "").strip()
     sel_status = (request.args.get("status") or "").strip().upper()
     sel_plane = (request.args.get("plane") or "").strip().upper()
+    sel_pagetype = (request.args.get("pagetype") or "").strip()
     # Split options (independent): only create separate charts when selected
     split_vcc = (request.args.get("split_vcc") or "0").strip() not in ("0", "false", "off")
     split_temp = (request.args.get("split_temp") or "0").strip() not in ("0", "false", "off")
     split_plane = (request.args.get("split_plane") or "0").strip() not in ("0", "false", "off")
-    # Group key: (fdv, vcc?, temp?, plane?)
-    groups: Dict[Tuple[str, str, str, str], List[Tuple[int, float, str, str, str, str, str | None]]] = defaultdict(list)
+    split_pagetype = (request.args.get("split_pagetype") or "0").strip() not in ("0", "false", "off")
+    split_pagetype = (request.args.get("split_pagetype") or "0").strip() not in ("0", "false", "off")
+    split_pagetype = (request.args.get("split_pagetype") or "0").strip() not in ("0", "false", "off")
+    # Group key: (fdv, vcc?, temp?, plane?, pagetype?)
+    groups: Dict[Tuple[str, str, str, str, str], List[Tuple[int, float, str, str, str, str, str, str | None]]] = defaultdict(list)
     for r in rows:
-        keep, fdv, vcc, temp, status, plane, v = _filter_poll_row(r)
+        keep, fdv, vcc, temp, status, plane, pagetype, v = _filter_poll_row(r)
         if not keep or v is None:
             continue
         key = (
@@ -578,6 +592,7 @@ def hist_overview(token: str):
             (vcc if split_vcc else ""),
             (temp if split_temp else ""),
             (plane if split_plane else ""),
+            (pagetype if split_pagetype else ""),
         )
         # Apply filters (exact match on provided fields)
         if sel_fdv and fdv != sel_fdv:
@@ -590,19 +605,21 @@ def hist_overview(token: str):
             continue
         if sel_plane and plane != sel_plane:
             continue
+        if sel_pagetype and (pagetype or "") != sel_pagetype:
+            continue
         try:
             ln = int(r.get("line_number", "0"))
         except Exception:
             ln = 0
         src_idx = r.get("source_idx") if isinstance(r, dict) else None
-        groups[key].append((ln, v, vcc, temp, status, plane, (str(src_idx) if src_idx is not None else None)))
+        groups[key].append((ln, v, vcc, temp, status, plane, pagetype, (str(src_idx) if src_idx is not None else None)))
     # Generate plots to a temp dir and collect outliers
     out_dir = Path(tempfile.mkdtemp(prefix=f"hist_{token}_"))
     rendered = []
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
-    for (fdv, vcc_key, temp_key, plane_key), items in sorted(groups.items(), key=lambda kv: (kv[0][0] or "", kv[0][1], kv[0][2], kv[0][3])):
+    for (fdv, vcc_key, temp_key, plane_key, pagetype_key), items in sorted(groups.items(), key=lambda kv: (kv[0][0] or "", kv[0][1], kv[0][2], kv[0][3], kv[0][4])):
         vals = [v for _, v, *_ in items]
         if not vals:
             continue
@@ -617,6 +634,8 @@ def hist_overview(token: str):
             parts.append(f"status={sel_status}")
         if split_plane and plane_key:
             parts.append(f"plane={plane_key}")
+        if split_pagetype and pagetype_key:
+            parts.append(f"pagetype={pagetype_key}")
         subtitle = (" " + ", ".join(parts)) if parts else ""
         # Use keys when split is on; otherwise show '-' to denote aggregation
         title_vcc = (vcc_key if split_vcc else "-")
@@ -633,13 +652,13 @@ def hist_overview(token: str):
             plt.close(fig)
         # outliers list with links — show only top 10 farthest from IQR bounds
         candidates = []
-        for ln, v, vcc, temp, status, plane, src_idx in items:
+        for ln, v, vcc, temp, status, plane, pagetype, src_idx in items:
             if v < low or v > high:
                 # deviation from the nearest bound
                 dev = (low - v) if v < low else (v - high)
                 if dev < 0:
                     dev = -dev
-                candidates.append((dev, ln, v, vcc, temp, status, plane, src_idx))
+                candidates.append((dev, ln, v, vcc, temp, status, plane, pagetype, src_idx))
         candidates.sort(key=lambda t: t[0], reverse=True)
         top = candidates[:10]
         outlier_rows = [{
@@ -653,8 +672,9 @@ def hist_overview(token: str):
                 split_vcc=("1" if split_vcc else "0"),
                 split_temp=("1" if split_temp else "0"),
                 split_plane=("1" if split_plane else "0"),
+                split_pagetype=("1" if split_pagetype else "0"),
             ),
-        } for _dev, ln, v, _vcc, _temp, _status, _plane, src_idx in top]
+        } for _dev, ln, v, _vcc, _temp, _status, _plane, _pagetype, src_idx in top]
         try:
             img_url = url_for("download_hist_image", token=token, name=img_name)
         except Exception:
@@ -669,6 +689,7 @@ def hist_overview(token: str):
             "outliers": outlier_rows,
             "status": sel_status,
             "plane": (plane_key or ""),
+            "pagetype": (pagetype_key or ""),
         })
     # Save dir and files in cache to serve images
     data.setdefault("hist_dirs", []).append(str(out_dir))
@@ -683,6 +704,8 @@ def hist_overview(token: str):
         sel_temp=sel_temp,
         sel_status=sel_status,
         sel_plane=sel_plane,
+        sel_pagetype=sel_pagetype,
+        split_pagetype=split_pagetype,
     )
 
 
@@ -744,12 +767,12 @@ def rcdf_compare(token: str):
     series: List[tuple[str, List[float]]] = []
     for it in items:
         parts = it.split("||")
-        if len(parts) < 5:
+        if len(parts) < 6:
             continue
-        s_fdv, s_vcc, s_temp, s_status, s_plane = [p or "" for p in parts[:5]]
+        s_fdv, s_vcc, s_temp, s_status, s_plane, s_pagetype = [p or "" for p in parts[:6]]
         vals: List[float] = []
         for r in rows:
-            keep, fdv, vcc, temp, status, plane, v = _filter_poll_row(r)
+            keep, fdv, vcc, temp, status, plane, pagetype, v = _filter_poll_row(r)
             if not keep or v is None:
                 continue
             if fdv != s_fdv:
@@ -761,6 +784,8 @@ def rcdf_compare(token: str):
             if s_temp and temp != s_temp:
                 continue
             if s_plane and plane != (s_plane or "").upper():
+                continue
+            if s_pagetype and (pagetype or "") != s_pagetype:
                 continue
             vals.append(float(v))
         if not vals:
@@ -775,6 +800,8 @@ def rcdf_compare(token: str):
             lab_parts.append(f"status={s_status}")
         if split_plane and s_plane:
             lab_parts.append(f"plane={s_plane}")
+        if split_pagetype and s_pagetype:
+            lab_parts.append(f"pagetype={s_pagetype}")
         label = " | ".join(lab_parts)
         series.append((label, sorted(vals)))
 
@@ -826,6 +853,7 @@ def rcdf_compare(token: str):
         sel_temp=(request.args.get("sel_temp") or ""),
         sel_status=(request.args.get("sel_status") or ""),
         sel_plane=(request.args.get("sel_plane") or ""),
+        sel_pagetype=(request.args.get("sel_pagetype") or ""),
     )
 
 
@@ -842,6 +870,11 @@ def raw_line(token: str, line: str):
         try:
             if int(r.get("line_number", "-1")) == target:
                 # Render an HTML page with the raw line and details
+                pagetype = (r.get('pagetype','') or '').strip()
+                split_vcc = (request.args.get("split_vcc") or "0").strip() not in ("0", "false", "off")
+                split_temp = (request.args.get("split_temp") or "0").strip() not in ("0", "false", "off")
+                split_plane = (request.args.get("split_plane") or "0").strip() not in ("0", "false", "off")
+                split_pagetype = (request.args.get("split_pagetype") or "0").strip() not in ("0", "false", "off")
                 back_url = url_for(
                     "hist_overview",
                     token=token,
@@ -850,7 +883,11 @@ def raw_line(token: str, line: str):
                     temp=(r.get('temp','') or '').strip(),
                     status=(r.get('status','') or '').strip(),
                     plane=(r.get('plane_group','') or '').strip(),
-                    split=1,
+                    pagetype=pagetype,
+                    split_vcc=("1" if split_vcc else "0"),
+                    split_temp=("1" if split_temp else "0"),
+                    split_plane=("1" if split_plane else "0"),
+                    split_pagetype=("1" if split_pagetype else "0"),
                 )
                 return render_template("raw.html", row=r, token=token, back_url=back_url)
         except Exception:
@@ -905,7 +942,7 @@ def rawfile(token: str, line: str):
             "is_target": (i == target),
         })
     # Build a back link to filtered histogram if we can find the matching row
-    fdv = vcc = temp = status = plane = ""
+    fdv = vcc = temp = status = plane = pagetype = ""
     row_src_idx = None
     for r in data["rows"]:
         try:
@@ -915,6 +952,7 @@ def rawfile(token: str, line: str):
                 temp = (r.get("temp", "") or "").strip()
                 status = (r.get("status", "") or "").strip()
                 plane = (r.get("plane_group", "") or "").strip()
+                pagetype = (r.get("pagetype", "") or "").strip()
                 row_src_idx = r.get("source_idx")
                 break
         except Exception:
@@ -923,6 +961,7 @@ def rawfile(token: str, line: str):
     split_vcc = (request.args.get("split_vcc") or "0").strip() not in ("0", "false", "off")
     split_temp = (request.args.get("split_temp") or "0").strip() not in ("0", "false", "off")
     split_plane = (request.args.get("split_plane") or "0").strip() not in ("0", "false", "off")
+    split_pagetype = (request.args.get("split_pagetype") or "0").strip() not in ("0", "false", "off")
     back_url = url_for(
         "hist_overview",
         token=token,
@@ -931,9 +970,11 @@ def rawfile(token: str, line: str):
         temp=temp,
         status=status,
         plane=plane,
+        pagetype=pagetype,
         split_vcc=("1" if split_vcc else "0"),
         split_temp=("1" if split_temp else "0"),
         split_plane=("1" if split_plane else "0"),
+        split_pagetype=("1" if split_pagetype else "0"),
     )
     return render_template(
         "rawfile.html",
@@ -1122,12 +1163,25 @@ def download_csv(token: str, kind: str):
     base_rows: List[Dict[str, str]] = data.get("rows", [])
     if kind == "vt":
         # Recompute from rows to reflect flags
-        rows = group_by_fdv_with_splits(base_rows, split_vcc=split_vcc, split_temp=split_temp, split_plane=split_plane)
+        rows = group_by_fdv_with_splits(
+            base_rows,
+            split_vcc=split_vcc,
+            split_temp=split_temp,
+            split_plane=split_plane,
+            split_pagetype=split_pagetype,
+        )
         headers = [
-            "fdv_file", "specname", "vcc", "temp", "pagemap", "status", "plane_group", "pr", "count",
+            "fdv_file", "specname", "vcc", "temp", "pagemap", "pagetype", "status", "plane_group", "pr", "count",
             "valid_fuseid_count", "MinSpec", "MaxSpec", "min", "max", "mean", "stdev", "median", "comments"
         ]
-        filename = f"stats_by_fdv_{'vcc_' if split_vcc else ''}{'temp_' if split_temp else ''}{'plane_' if split_plane else ''}pagemap_status_plane.csv"
+        filename = (
+            "stats_by_fdv_"
+            f"{'vcc_' if split_vcc else ''}"
+            f"{'temp_' if split_temp else ''}"
+            f"{'plane_' if split_plane else ''}"
+            f"{'pagetype_' if split_pagetype else ''}"
+            "pagemap_status_plane.csv"
+        )
         buf = io.StringIO()
         buf.write(",".join(headers) + "\n")
         for r in rows:
@@ -1371,17 +1425,33 @@ def results_view(token: str):
     split_vcc = (request.args.get("split_vcc") or "0").strip() not in ("0", "false", "off")
     split_temp = (request.args.get("split_temp") or "0").strip() not in ("0", "false", "off")
     split_plane = (request.args.get("split_plane") or "0").strip() not in ("0", "false", "off")
-    stats_vt = group_by_fdv_with_splits(rows, split_vcc=split_vcc, split_temp=split_temp, split_plane=split_plane)
+    split_pagetype = (request.args.get("split_pagetype") or "0").strip() not in ("0", "false", "off")
+    stats_vt = group_by_fdv_with_splits(
+        rows,
+        split_vcc=split_vcc,
+        split_temp=split_temp,
+        split_plane=split_plane,
+        split_pagetype=split_pagetype,
+    )
     persist_url = url_for('poll_persist', token=token)
     html = render_template(
         "results.html",
         stats_vt=stats_vt,
         rows_count=len(rows),
-        download_vt=url_for("download_csv", token=token, kind="vt", split_vcc=("1" if split_vcc else "0"), split_temp=("1" if split_temp else "0"), split_plane=("1" if split_plane else "0")),
+        download_vt=url_for(
+            "download_csv",
+            token=token,
+            kind="vt",
+            split_vcc=("1" if split_vcc else "0"),
+            split_temp=("1" if split_temp else "0"),
+            split_plane=("1" if split_plane else "0"),
+            split_pagetype=("1" if split_pagetype else "0"),
+        ),
         token=token,
         split_vcc=split_vcc,
         split_temp=split_temp,
         split_plane=split_plane,
+        split_pagetype=split_pagetype,
         persist_url=persist_url,
         aliases=_list_aliases(),
     )
@@ -1443,17 +1513,33 @@ def alias_save():
     split_vcc = (request.form.get('split_vcc') or '0').strip() not in ('0','false','off')
     split_temp = (request.form.get('split_temp') or '0').strip() not in ('0','false','off')
     split_plane = (request.form.get('split_plane') or '0').strip() not in ('0','false','off')
+    split_pagetype = (request.form.get('split_pagetype') or '0').strip() not in ('0','false','off')
     rows = data.get('rows', [])
-    stats_vt = group_by_fdv_with_splits(rows, split_vcc=split_vcc, split_temp=split_temp, split_plane=split_plane)
+    stats_vt = group_by_fdv_with_splits(
+        rows,
+        split_vcc=split_vcc,
+        split_temp=split_temp,
+        split_plane=split_plane,
+        split_pagetype=split_pagetype,
+    )
     html = render_template(
         'results.html',
         stats_vt=stats_vt,
         rows_count=len(rows),
-        download_vt=url_for('download_csv', token=token, kind='vt', split_vcc=('1' if split_vcc else '0'), split_temp=('1' if split_temp else '0'), split_plane=('1' if split_plane else '0')),
+        download_vt=url_for(
+            'download_csv',
+            token=token,
+            kind='vt',
+            split_vcc=('1' if split_vcc else '0'),
+            split_temp=('1' if split_temp else '0'),
+            split_plane=('1' if split_plane else '0'),
+            split_pagetype=('1' if split_pagetype else '0'),
+        ),
         token=token,
         split_vcc=split_vcc,
         split_temp=split_temp,
         split_plane=split_plane,
+        split_pagetype=split_pagetype,
         persist_url=url_for('alias_view', name=alias, _external=True),
         aliases=_list_aliases(),
     )
@@ -1505,16 +1591,32 @@ def alias_update():
     split_vcc = (request.form.get('split_vcc') or '0').strip() not in ('0','false','off')
     split_temp = (request.form.get('split_temp') or '0').strip() not in ('0','false','off')
     split_plane = (request.form.get('split_plane') or '0').strip() not in ('0','false','off')
-    stats_vt = group_by_fdv_with_splits(merged, split_vcc=split_vcc, split_temp=split_temp, split_plane=split_plane)
+    split_pagetype = (request.form.get('split_pagetype') or '0').strip() not in ('0','false','off')
+    stats_vt = group_by_fdv_with_splits(
+        merged,
+        split_vcc=split_vcc,
+        split_temp=split_temp,
+        split_plane=split_plane,
+        split_pagetype=split_pagetype,
+    )
     html = render_template(
         'results.html',
         stats_vt=stats_vt,
         rows_count=len(merged),
-        download_vt=url_for('download_csv', token=token, kind='vt', split_vcc=('1' if split_vcc else '0'), split_temp=('1' if split_temp else '0'), split_plane=('1' if split_plane else '0')),
+        download_vt=url_for(
+            'download_csv',
+            token=token,
+            kind='vt',
+            split_vcc=('1' if split_vcc else '0'),
+            split_temp=('1' if split_temp else '0'),
+            split_plane=('1' if split_plane else '0'),
+            split_pagetype=('1' if split_pagetype else '0'),
+        ),
         token=token,
         split_vcc=split_vcc,
         split_temp=split_temp,
         split_plane=split_plane,
+        split_pagetype=split_pagetype,
         persist_url=url_for('alias_view', name=alias, _external=True),
         aliases=_list_aliases(),
     )

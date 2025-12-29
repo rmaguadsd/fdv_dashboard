@@ -11,7 +11,7 @@
 	</head>
 	<body>
 		<h2>RCDF Compare</h2>
-		<div style="color:#555; margin: 6px 0 12px;">FDV: {{ sel_fdvs|join(', ') }}</div>
+		<div style="color:#555; margin: 6px 0 12px;">FDV: {{ sel_fdvs|join(', ') }}{% if sel_pagetype %} | Pagetype: {{ sel_pagetype }}{% endif %}</div>
 		<img src="{{ img_url }}" alt="RCDF plot" />
 		<p><a class="back" href="{{ url_for('results_view', token=token) }}">← Back</a></p>
 	</body>
