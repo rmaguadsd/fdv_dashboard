@@ -2,65 +2,63 @@
 # -*- coding: utf-8 -*-
 """
 Launch both FDV apps:
-- FDV Report v2 on port 5057
-- FDV POLL on port 5055
+- FDV Report v2 on port 5057            cmd = [PY, script]
+            print("[{0}] starting: {1}".format(name, cmd)) FDV POLL on port 5055
 
 Features:
 - Uses workspace .venv if found; falls back to current interpreter.
 - Skips a service if its port is already in use.
 - Streams child output with prefixes and handles Ctrl+C to stop both.
 """
-from __future__ import annotations
 import os
 import sys
 import time
 import socket
 import threading
 import subprocess as sp
-from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]  # workspace root (…/dev)
-VENV_PY = ROOT / ".venv" / ("Scripts" if os.name == "nt" else "bin") / ("python.exe" if os.name == "nt" else "python")
-PY = str(VENV_PY if VENV_PY.exists() else Path(sys.executable))
-DEFAULT_TMP = Path("D:/fdv_tmp") if os.name == 'nt' else Path("/tmp/fdv_tmp")
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # workspace root (…/dev)
+VENV_PY = os.path.join(ROOT, ".venv", "Scripts" if os.name == "nt" else "bin", "python.exe" if os.name == "nt" else "python")
+PY = VENV_PY if os.path.exists(VENV_PY) else sys.executable
+DEFAULT_TMP = "D:/fdv_tmp" if os.name == 'nt' else "/tmp/fdv_tmp"
 try:
-    DEFAULT_TMP.mkdir(parents=True, exist_ok=True)
-except Exception:
+    os.makedirs(DEFAULT_TMP)
+except OSError:
     pass
 
 APPS = [
     {
         "name": "REPORT",
         # Use minimal runner variant with updated limit/none logic
-        "path": Path(__file__).parent / "fdv_report2_runner_min.py",
+        "path": os.path.join(os.path.dirname(__file__), "fdv_report2_runner_min.py"),
         "port": 5057,
         "env": {
             # Single process (no reloader) is controlled by the app's use_reloader=False
             # Direct temps to D:\fdv_tmp by default
-            "FDV_REPORT2_TMPDIR": str(DEFAULT_TMP),
-            "TMP": str(DEFAULT_TMP),
-            "TEMP": str(DEFAULT_TMP),
+            "FDV_REPORT2_TMPDIR": DEFAULT_TMP,
+            "TMP": DEFAULT_TMP,
+            "TEMP": DEFAULT_TMP,
             # Optional: FDV_REPORT2_HOST/PORT could be respected if implemented in the app
         },
     },
     {
         "name": "POLL",
-        "path": Path(__file__).parent / "fdv_poll_webapp.py",
+        "path": os.path.join(os.path.dirname(__file__), "fdv_poll_webapp.py"),
         "port": 5055,
         "env": {
             "FDV_POLL_DEBUG": "1",
             "FDV_POLL_HOST": "0.0.0.0",
             "FDV_POLL_PORT": "5055",
             # Direct temps to D:\fdv_tmp by default
-            "FDV_POLL_TMPDIR": str(DEFAULT_TMP),
-            "TMP": str(DEFAULT_TMP),
-            "TEMP": str(DEFAULT_TMP),
+            "FDV_POLL_TMPDIR": DEFAULT_TMP,
+            "TMP": DEFAULT_TMP,
+            "TEMP": DEFAULT_TMP,
         },
     },
 ]
 
 
-def port_in_use(port: int, host: str = "127.0.0.1") -> bool:
+def port_in_use(port, host="127.0.0.1"):
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.settimeout(0.2)
         try:
@@ -69,7 +67,7 @@ def port_in_use(port: int, host: str = "127.0.0.1") -> bool:
             return False
 
 
-def stream_pipe(prefix: str, pipe):
+def stream_pipe(prefix, pipe):
     try:
         for line in iter(pipe.readline, b""):
             if not line:
@@ -78,7 +76,7 @@ def stream_pipe(prefix: str, pipe):
                 txt = line.decode(errors="replace").rstrip("\r\n")
             except Exception:
                 txt = str(line).rstrip()
-            print(f"[{prefix}] {txt}")
+            print("[{0}] {1}".format(prefix, txt))
     finally:
         try:
             pipe.close()
@@ -86,30 +84,31 @@ def stream_pipe(prefix: str, pipe):
             pass
 
 
-def main() -> int:
-    print(f"Using Python: {PY}")
-    procs: list[sp.Popen] = []
-    threads: list[threading.Thread] = []
+def main():
+    print("Using Python: {0}".format(PY))
+    procs = []
+    threads = []
     try:
         for app in APPS:
             name = app["name"]
             script = app["path"]
             port = app["port"]
-            if not script.exists():
-                print(f"[{name}] skip: not found -> {script}")
+            if not os.path.exists(script):
+                print("[{0}] skip: not found -> {1}".format(name, script))
                 continue
             if port_in_use(port):
-                print(f"[{name}] port {port} already in use; skipping launch.")
+                print("[{0}] port {1} already in use; skipping launch.".format(name, port))
                 continue
             env = os.environ.copy()
             env.setdefault("MPLBACKEND", "Agg")
             for k, v in app.get("env", {}).items():
                 env[k] = v
-            cmd = [PY, str(script)]
-            print(f"[{name}] starting: {cmd}")
+            cmd = [PY, script]
+            print("[{0}] starting: {1}".format(name, cmd))
             p = sp.Popen(cmd, stdout=sp.PIPE, stderr=sp.STDOUT, env=env)
             procs.append(p)
-            t = threading.Thread(target=stream_pipe, args=(name, p.stdout), daemon=True)
+            t = threading.Thread(target=stream_pipe, args=(name, p.stdout))
+            t.daemon = True
             t.start()
             threads.append(t)
         if not procs:
@@ -121,7 +120,7 @@ def main() -> int:
             for p in list(procs):
                 ret = p.poll()
                 if ret is not None:
-                    print(f"[LAUNCHER] process exited with code {ret}")
+                    print("[LAUNCHER] process exited with code {0}".format(ret))
                     procs.remove(p)
             if not procs:
                 break
