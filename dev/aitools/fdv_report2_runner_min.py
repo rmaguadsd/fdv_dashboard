@@ -15,6 +15,8 @@ import threading as _threading
 from fdv_report2_webapp import (
 	stats_by_fdv_with_splits, stats_by_testname_selected, _parse_fdv_selector,
 	_get_split_tuple, _extract_wl_or_page, _get_rber, derive_testname,
+	_sqlite_delete_db,
+	_stats_from_sqlite,
 )
 try:  # optional accelerated parser
 	from process_fdv.core import process_file, PREFIX_DEFAULT, IGNORE_VALUE_DEFAULT  # type: ignore
@@ -29,6 +31,89 @@ CACHE: Dict[str, Dict] = {}
 # Minimal jobs registry for listing similar to full app
 JOBS: Dict[str, Dict] = {}
 JOBS_LOCK = threading.Lock()
+
+
+@app.route('/fdv/<token>/delete_db', methods=['POST', 'GET'])
+def delete_db(token: str):
+	"""Delete the per-token SQLite `rows.db` and return to the report page.
+
+	The v2 report template always renders a Delete DB button guarded by `{% if token %}`.
+	The full server implements this endpoint; the minimal runner historically didn't,
+	causing `url_for('delete_db', token=token)` to raise `BuildError` at render time.
+
+	This is safe to call multiple times; failures are ignored.
+	"""
+	if not token:
+		return redirect(url_for('report_home'))
+	try:
+		_sqlite_delete_db(token)
+		flash('Deleted rows.db for token ' + token)
+	except Exception:
+		# Don't fail the UI if deletion isn't possible.
+		flash('Delete DB failed (ignored).')
+	return redirect(url_for('report_home', token=token))
+
+
+@app.route('/fdv/<token>/table.html')
+def download_table_html(token: str):
+	"""Download the FDV tests table as a standalone HTML page.
+
+	`templates/fdv2_report.html` links to this endpoint. The full server implements it,
+	but the minimal runner needs it too to avoid `BuildError` after a report is generated.
+
+	This uses the SQLite-backed stats if available.
+	"""
+	if not token:
+		return redirect(url_for('report_home'))
+	# Reuse cached limit semantics when possible
+	lim_raw = (request.args.get('limit') or '').strip()
+	if not lim_raw:
+		try:
+			lim_raw = str((CACHE.get(token, {}) or {}).get('limit_raw') or '').strip()
+		except Exception:
+			lim_raw = ''
+
+	passfail_mode = False
+	if lim_raw.lower() in ('', 'none', 'default'):
+		limit_for_stats = 0.0
+		passfail_mode = True
+	else:
+		try:
+			limit_for_stats = float(lim_raw)
+		except Exception:
+			limit_for_stats = 0.0
+			passfail_mode = True
+	try:
+		eff_limit = (1e9 if passfail_mode else float(limit_for_stats))
+	except Exception:
+		eff_limit = 1e9
+		passfail_mode = True
+
+	try:
+		stats = _stats_from_sqlite(token, limit=eff_limit, passfail_mode=passfail_mode)
+	except Exception:
+		stats = []
+
+	inner = render_template(
+		'fdv2_report.html',
+		token=token,
+		job_id=None,
+		stats=stats,
+		used_dir=(CACHE.get(token, {}) or {}).get('dir'),
+		fdv_order=(CACHE.get(token, {}) or {}).get('fdv_order', []),
+		limit=(None if passfail_mode else limit_for_stats),
+		persist_url=None,
+		limit_raw_string=lim_raw,
+		limit_source='download',
+		comments=(CACHE.get(token, {}) or {}).get('comments', {}),
+		dispositions=(CACHE.get(token, {}) or {}).get('dispositions', {}),
+		prodmode=bool((CACHE.get(token, {}) or {}).get('prodmode', False)),
+		job_name='',
+		summary_enabled=False,
+	)
+
+	html = inner if '<html' in inner.lower() else f"<!DOCTYPE html><html><head><meta charset='utf-8'><title>FDV Report v2 table</title></head><body>{inner}</body></html>"
+	return Response(html, mimetype='text/html')
 
 _PERSIST_BASE = Path(os.environ.get('FDV_PERSIST_BASE', str(Path.home() / '.fdv_persist')))
 
@@ -292,35 +377,50 @@ def _snapshot_path(token: str) -> Path:
 	return _persist_dir(token) / 'snapshot.json'
 
 def _save_snapshot(token: str, cache_entry: Dict):
+	"""Persist only lightweight metadata; avoid huge snapshots of full rows/stats.
+
+	The minimal runner is often used for ad-hoc analysis where disk footprint matters
+	more than being able to fully restore an old session. To prevent creation of
+	very large temporary JSON files, we intentionally do NOT persist the `rows`
+	or `stats` arrays here.
+	"""
 	try:
-		snap = {
+		p = _snapshot_path(token)
+		# Write a tiny marker file so old snapshots get overwritten/shrunk.
+		tmp = p.with_suffix('.tmp')
+		meta = {
 			'status': cache_entry.get('status'),
-			'rows': cache_entry.get('rows') or [],
-			'stats': cache_entry.get('stats') or [],
-			'fdv_order': cache_entry.get('fdv_order') or [],
 			'dir': cache_entry.get('dir'),
 			'limit': cache_entry.get('limit'),
 			'passfail_mode': cache_entry.get('passfail_mode'),
-			'dispositions': cache_entry.get('dispositions') or {},
-			'comments': cache_entry.get('comments') or {},
 		}
-		p = _snapshot_path(token)
-		tmp = p.with_suffix('.tmp')
 		with open(tmp, 'w', encoding='utf-8') as f:
-			json.dump(snap, f)
+			json.dump(meta, f)
 		os.replace(tmp, p)
 	except Exception:
 		pass
 
 def _load_snapshot(token: str) -> Dict:
+	"""Load only lightweight snapshot metadata.
+
+	Older snapshots may still contain `rows`/`stats`; ignore them to avoid
+	rehydrating huge in-memory structures from disk.
+	"""
 	try:
 		p = _snapshot_path(token)
-		if p.exists():
-			with open(p, 'r', encoding='utf-8') as f:
-				return json.load(f) or {}
+		if not p.exists():
+			return {}
+		with open(p, 'r', encoding='utf-8') as f:
+			data = json.load(f) or {}
+		# Never trust persisted rows/stats/fdv_order here.
+		return {
+			'status': data.get('status'),
+			'dir': data.get('dir'),
+			'limit': data.get('limit'),
+			'passfail_mode': data.get('passfail_mode'),
+		}
 	except Exception:
-		pass
-	return {}
+		return {}
 
 def _rehydrate_jobs():
 	global _JOB_REGISTRY
@@ -338,14 +438,14 @@ def _rehydrate_jobs():
 		snap = _load_snapshot(token) if status == 'done' else {}
 		cache_entry = {
 			'status': snap.get('status', status or 'done'),
-			'rows': snap.get('rows', []),
-			'stats': snap.get('stats', []),
-			'fdv_order': snap.get('fdv_order', []),
+			'rows': [],
+			'stats': [],
+			'fdv_order': [],
 			'dir': snap.get('dir'),
 			'limit': snap.get('limit'),
 			'passfail_mode': snap.get('passfail_mode'),
-			'dispositions': snap.get('dispositions', {}),
-			'comments': snap.get('comments', {}),
+			'dispositions': {},
+			'comments': {},
 			'progress': {'percent': 100.0} if status == 'done' else {'percent': 0.0},
 		}
 		CACHE.setdefault(token, cache_entry)
@@ -1430,9 +1530,14 @@ def report_status_fdvtable(token: str):
 		comment_val = (d.get('dispositions', {}) or {}).get(key,'')
 		cls = ''
 		if count>0:
-			if pct==0: cls='pct-ok'
-			elif pct<=25: cls='pct-warn'
-			else: cls='pct-bad'
+			if pct == 0:
+				cls = 'pct-ok'   # 0% - light green
+			elif pct > 20:
+				cls = 'pct-bad'  # >20% - bright red
+			elif pct > 5:
+				cls = 'pct-mid'  # >5% - light red
+			else:
+				cls = 'pct-warn' # >0% - light orange
 		# Build FAIL cell content safely (avoid nested f-strings quoting issues)
 		try:
 			limit_q = "" if (d.get('passfail_mode') or d.get('limit') is None) else f"&limit={d.get('limit')}"
@@ -1472,8 +1577,15 @@ def report_status_fdvtable(token: str):
 			f"<td style='max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;'>{r.get('unit_info','')}</td>"
 			'</tr>'
 		)
-	# Inline minimal styles for % fail classes
-	style = "<style>.pct-ok{background:#e8f9e8;color:#167a16;font-weight:600}.pct-warn{background:#ffe6e6;color:#a11}.pct-bad{background:#ff4d4d;color:#fff;font-weight:700} table.partial{border-collapse:collapse;font-size:11px} table.partial th,table.partial td{border:1px solid #ccc;padding:2px 4px;}</style>"
+	# Inline minimal styles for % fail classes (match main FDV2 report)
+	style = ("<style>"
+			".pct-ok{background:#e8f9e8;color:#167a16;font-weight:600}"   # 0% - light green
+			".pct-warn{background:#fff4cc;color:#a66b00}"                # >0% - light orange
+			".pct-mid{background:#ffe0e0;color:#a11}"                    # >10% - light red
+			".pct-bad{background:#ff0000;color:#fff;font-weight:700}"    # >20% - bright red
+			" table.partial{border-collapse:collapse;font-size:11px}"
+			" table.partial th,table.partial td{border:1px solid #ccc;padding:2px 4px;}"
+			"</style>")
 	head_html = '<tr>' + ''.join(f'<th>{h}</th>' for h in headers) + '</tr>'
 	return style + '<table class="partial">' + '<thead>' + head_html + '</thead><tbody>' + ''.join(rows_fragments) + '</tbody></table>'
 

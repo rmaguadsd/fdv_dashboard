@@ -119,7 +119,7 @@
           {% set total = (r['count']|int if r['count'] is not none else 0) %}
           {% set f = (r.get('fail_n', r.get('fail',''))|int) %}
           {% set pct = (100.0 * f / total) if total > 0 else 0.0 %}
-          <td {% if total > 0 %}class="{% if pct == 0 %}pct-ok{% elif pct <= 25 %}pct-warn{% else %}pct-bad{% endif %}"{% endif %}>
+          <td {% if total > 0 %}class="{% if pct == 0 %}pct-ok{% elif pct > 20 %}pct-bad{% elif pct > 5 %}pct-mid{% else %}pct-warn{% endif %}"{% endif %}>
             {% if total > 0 %}{{ pct | round(1) }}%{% endif %}
           </td>
           <td>{{ r['min'] }}</td>

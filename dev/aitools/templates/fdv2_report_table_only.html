@@ -31,7 +31,7 @@
         {% set total = (r['count']|int if r['count'] is not none else 0) %}
         {% set failn = (r.get('fail_n', r.get('fail', 0))|int) %}
         {% set passn = (r.get('pass_n', r.get('pass', 0))|int) %}
-        {% set pct_fail = ( (failn / total * 100.0) if (total>0) else 0.0 ) %}
+    {% set pct_fail = ( (failn / total * 100.0) if (total>0) else 0.0 ) %}
         <tr>
           <td>{{ r['fdv_file'] }}</td>
           <td>{{ r['pr'] }}</td>
@@ -43,7 +43,7 @@
           <td>{{ r['count'] }}</td>
           <td>{{ passn }}</td>
           <td>{{ failn }}</td>
-          <td class="{% if pct_fail==0 %}pct-ok{% elif pct_fail<20 %}pct-warn{% else %}pct-bad{% endif %}">{{ '%.2f' % pct_fail }}</td>
+          <td class="{% if pct_fail==0 %}pct-ok{% elif pct_fail>20 %}pct-bad{% elif pct_fail>10 %}pct-mid{% else %}pct-warn{% endif %}">{{ '%.2f' % pct_fail }}</td>
           <td>{{ '%.3g' % r['min'] if r['min'] is not none else '' }}</td>
           <td>{{ '%.3g' % r['max'] if r['max'] is not none else '' }}</td>
           <td>{{ '%.3g' % r['mean'] if r['mean'] is not none else '' }}</td>

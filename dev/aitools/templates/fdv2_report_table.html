@@ -1,9 +1,10 @@
 {% if stats and stats|length %}
 <style>
-  /* inlined for progress view */
-  .pct-ok { background: #e8f9e8; color: #167a16; font-weight: 600; }
-  .pct-warn { background: #ffe6e6; color: #a11; }
-  .pct-bad { background: #ff4d4d; color: #fff; font-weight: 700; }
+  /* inlined for progress view - match main FDV2 report */
+  .pct-ok   { background: #e8f9e8; color: #167a16; font-weight: 600; } /* 0% - light green */
+  .pct-warn { background: #fff4cc; color: #a66b00; }                 /* >0% - light orange */
+  .pct-mid  { background: #ffe0e0; color: #a11; }                    /* >10% - light red */
+  .pct-bad  { background: #ff0000; color: #fff; font-weight: 700; }  /* >=20% - bright red */
   /* single-line, smaller Comments */
   .comments-cell {
     white-space: nowrap;
@@ -75,7 +76,7 @@
       {% else %}
         {% set pct = (100.0 * f / total) if total > 0 else 0.0 %}
       {% endif %}
-      <td class="{% if pct == 0 %}pct-ok{% elif pct <= 25 %}pct-warn{% else %}pct-bad{% endif %}">{{ '%.1f' % pct }}%</td>
+  <td class="{% if pct == 0 %}pct-ok{% elif pct > 20 %}pct-bad{% elif pct > 5 %}pct-mid{% else %}pct-warn{% endif %}">{{ '%.1f' % pct }}%</td>
   <td>{{ r.get('vector','') }}</td>
       <td>{{ r['min'] }}</td>
       <td>{{ r['max'] }}</td>

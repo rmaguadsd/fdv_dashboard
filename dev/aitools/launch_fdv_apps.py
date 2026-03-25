@@ -2,13 +2,14 @@
 # -*- coding: utf-8 -*-
 """
 Launch both FDV apps:
-- FDV Report v2 on port 5057            cmd = [PY, script]
-            print("[{0}] starting: {1}".format(name, cmd)) FDV POLL on port 5055
+- FDV Report v2 on port 5057
+- FDV POLL on port 5055
 
 Features:
 - Uses workspace .venv if found; falls back to current interpreter.
 - Skips a service if its port is already in use.
 - Streams child output with prefixes and handles Ctrl+C to stop both.
+- Compatible with both Python 2.7 and Python 3.x.
 """
 import os
 import sys
@@ -34,7 +35,7 @@ APPS = [
         "port": 5057,
         "env": {
             # Single process (no reloader) is controlled by the app's use_reloader=False
-            # Direct temps to D:\fdv_tmp by default
+            # Direct temps to D:\\fdv_tmp by default
             "FDV_REPORT2_TMPDIR": DEFAULT_TMP,
             "TMP": DEFAULT_TMP,
             "TEMP": DEFAULT_TMP,
@@ -49,7 +50,7 @@ APPS = [
             "FDV_POLL_DEBUG": "1",
             "FDV_POLL_HOST": "0.0.0.0",
             "FDV_POLL_PORT": "5055",
-            # Direct temps to D:\fdv_tmp by default
+            # Direct temps to D:\\fdv_tmp by default
             "FDV_POLL_TMPDIR": DEFAULT_TMP,
             "TMP": DEFAULT_TMP,
             "TEMP": DEFAULT_TMP,
@@ -59,12 +60,19 @@ APPS = [
 
 
 def port_in_use(port, host="127.0.0.1"):
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.settimeout(0.2)
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.settimeout(0.2)
+    try:
         try:
-            return s.connect_ex((host, port)) == 0
-        except OSError:
-            return False
+            in_use = (s.connect_ex((host, port)) == 0)
+        except socket.error:
+            in_use = False
+    finally:
+        try:
+            s.close()
+        except Exception:
+            pass
+    return in_use
 
 
 def stream_pipe(prefix, pipe):
@@ -75,7 +83,10 @@ def stream_pipe(prefix, pipe):
             try:
                 txt = line.decode(errors="replace").rstrip("\r\n")
             except Exception:
-                txt = str(line).rstrip()
+                try:
+                    txt = line.decode("utf-8", "replace").rstrip("\r\n")
+                except Exception:
+                    txt = str(line).rstrip()
             print("[{0}] {1}".format(prefix, txt))
     finally:
         try:

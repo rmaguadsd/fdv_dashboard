@@ -85,7 +85,10 @@ def _sqlite_connect(token: str) -> sqlite3.Connection:
         dbp = _sqlite_db_path(token)
         conn = sqlite3.connect(str(dbp), check_same_thread=False)
         try:
-            conn.execute('PRAGMA journal_mode=WAL;')
+            # Use DELETE journal mode to avoid creating rows.db-wal/rows.db-shm files.
+            # This keeps persistence simple and reduces filesystem clutter at the cost
+            # of slightly more I/O per transaction, which is acceptable for our usage.
+            conn.execute('PRAGMA journal_mode=DELETE;')
             conn.execute('PRAGMA synchronous=NORMAL;')
             conn.execute('PRAGMA temp_store=MEMORY;')
             # Performance-tuning pragmas (safe on modern SQLite):
@@ -103,6 +106,42 @@ def _sqlite_connect(token: str) -> sqlite3.Connection:
             pass
         _SQLITE_CONNS[token] = conn
         return conn
+
+
+def _sqlite_delete_db(token: str) -> None:
+    """Delete the on-disk rows.db (and its directory if empty) for a given token.
+
+    This is intended to run after a job has completed and the aggregated stats have
+    been computed, to reclaim disk space while keeping lightweight metadata.
+    """
+    try:
+        # Close any cached connection first
+        with _SQLITE_LOCK:
+            conn = _SQLITE_CONNS.pop(token, None)
+            if conn is not None:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+        dbp = _sqlite_db_path(token)
+        # Remove rows.db if it exists
+        try:
+            if dbp.exists():
+                dbp.unlink()
+        except Exception:
+            pass
+        # Attempt to remove the token directory if now empty
+        try:
+            token_dir = dbp.parent
+            if token_dir.is_dir():
+                # Only remove if empty to avoid deleting other artifacts
+                if not any(token_dir.iterdir()):
+                    token_dir.rmdir()
+        except Exception:
+            pass
+    except Exception:
+        # Best-effort cleanup; ignore all failures
+        pass
 
 def _sqlite_close_all() -> None:
     with _SQLITE_LOCK:
@@ -3275,6 +3314,10 @@ def _start_parse_job(token: str, files: List[Path], used_dir: str | None, limit_
                             seen.add(f)
                             fdv_order.append(f)
                     CACHE[token].update({'rows': all_rows[-20000:], 'stats': stats, 'fdv_order': fdv_order, 'status': 'done', 'limit_raw': limit_raw})
+                    # NOTE: Previously we auto-deleted the per-token rows.db here via _sqlite_delete_db(token)
+                    # to reclaim disk space. This caused surprises when users wanted to inspect the DB after
+                    # completion. Auto-deletion is now disabled; rows.db is kept by default and can be removed
+                    # explicitly via the manual /fdv/<token>/delete_db endpoint from the report UI.
                     try:
                         with JOBS_LOCK:
                             for jid, rec in JOBS.items():
@@ -3725,6 +3768,9 @@ def _start_parse_job(token: str, files: List[Path], used_dir: str | None, limit_
                     seen.add(f)
                     fdv_order.append(f)
             CACHE[token].update({'rows': all_rows[-20000:], 'stats': stats, 'fdv_order': fdv_order, 'status': 'done', 'limit_raw': limit_raw})
+            # NOTE: Previously we auto-deleted the per-token rows.db here via _sqlite_delete_db(token)
+            # to reclaim disk space. This is now disabled; rows.db is kept by default and can be removed
+            # explicitly via the manual /fdv/<token>/delete_db endpoint from the report UI.
             # Mark job end time
             try:
                 with JOBS_LOCK:
@@ -4140,8 +4186,24 @@ def report_home():
         # Persist a snapshot only once parsing is done
         if status_val == 'done':
             try:
+                # Always keep the canonical index.html snapshot
                 _persist_write('report2', tok, html)
+                # Additionally, write a second HTML file whose name includes the job name
+                # so users can easily see which snapshot belongs to which run.
+                safe_name = (job_name_val or '').strip()
+                if safe_name:
+                    # Replace characters that are unsafe or awkward in filenames
+                    # (spaces, slashes, quotes, colons, etc.) with underscores and
+                    # collapse any long name to a reasonable length.
+                    safe_name = re.sub(r"[^A-Za-z0-9._-]+", "_", safe_name)
+                    if len(safe_name) > 80:
+                        safe_name = safe_name[:77] + '...'
+                    # Avoid empty or dot-only names after sanitization
+                    if safe_name and safe_name not in {'.', '..'}:
+                        fname = f"report_{safe_name}.html"
+                        _persist_write('report2', tok, html, filename=fname)
             except Exception:
+                # Best-effort only; failures here must not break the main page render
                 pass
         return html
     try:
@@ -4240,6 +4302,23 @@ def job_report(job_id: str):
         return redirect(url_for('report_home', token=token, limit=lr))
     return redirect(url_for('report_home', token=token))
 
+
+@app.route('/fdv/<token>/delete_db', methods=['POST','GET'])
+def delete_db(token: str):
+    """Manually delete the SQLite rows.db for a given token and return to the report page.
+
+    This is a manual escape hatch on top of the automatic cleanup that already runs when
+    a job is marked done. It is safe to call multiple times; failures are ignored.
+    """
+    if not token:
+        return redirect(url_for('report_home'))
+    try:
+        _sqlite_delete_db(token)
+    except Exception:
+        pass
+    # Redirect back to the report view for this token (without changing current limit)
+    return redirect(url_for('report_home', token=token))
+
 @app.route('/api/summary/<token>', methods=['GET', 'POST'])
 def api_summary(token: str):
     """Get or trigger generation of a summary for the current token and limit.
@@ -4284,6 +4363,88 @@ def embed_summary(token: str):
         return Response(f"<div class=\"llm-summary\"><div style=\"font-weight:600;margin-bottom:4px;\">Report Summary</div><div>{body}</div>{meta}</div>", mimetype='text/html')
     # Not available yet
     return Response('<div class="small">Summary not ready…</div>', mimetype='text/html')
+
+
+@app.route('/fdv/<token>/table.html')
+def download_table_html(token: str):
+    """Return the main FDV tests table as a standalone HTML document for offline viewing.
+
+    Uses the same stats source as report_home (SQLite-backed) and current limit/pass/fail mode
+    semantics, but omits the upload form and progress UI for a slimmer snapshot.
+    """
+    if not token or token not in CACHE:
+        return redirect(url_for('report_home'))
+
+    data = CACHE.get(token, {})
+
+    # Reconstruct effective limit/passfail_mode similar to report_home
+    lim_raw = (request.args.get('limit') or '').strip()
+    if not lim_raw:
+        try:
+            cached_lr = (CACHE.get(token, {}).get('limit_raw') or '').strip()
+        except Exception:
+            cached_lr = ''
+        if cached_lr and cached_lr.lower() not in ('none', ''):
+            lim_raw = cached_lr
+
+    passfail_mode = False
+    if lim_raw.lower() in ('', 'none', 'default'):
+        limit_for_stats = 0.0
+        passfail_mode = True
+    else:
+        try:
+            limit_for_stats = float(lim_raw)
+        except Exception:
+            limit_for_stats = 0.0
+            passfail_mode = True
+
+    try:
+        eff_limit = (1e9 if passfail_mode else float(limit_for_stats))
+    except Exception:
+        eff_limit = 1e9
+        passfail_mode = True
+
+    try:
+        stats = _stats_from_sqlite(token, limit=eff_limit, passfail_mode=passfail_mode)
+    except Exception:
+        stats = []
+
+    # Load comments and dispositions for disposition column
+    try:
+        if 'comments' not in data:
+            data['comments'] = _load_comments(token)
+    except Exception:
+        pass
+    comments_map = data.get('comments', {}) or {}
+    try:
+        if 'dispositions' not in data:
+            data['dispositions'] = _load_dispositions(token)
+    except Exception:
+        pass
+    dispositions_map = data.get('dispositions', {}) or {}
+
+    # Minimal HTML shell wrapping the same fdv2_report table markup
+    inner = render_template(
+        'fdv2_report.html',
+        token=token,
+        job_id=None,
+        stats=stats,
+        used_dir=data.get('dir'),
+        fdv_order=data.get('fdv_order', []),
+        limit=(None if passfail_mode else limit_for_stats),
+        persist_url=None,
+        limit_raw_string=lim_raw,
+        limit_source='download',
+        comments=comments_map,
+        dispositions=dispositions_map,
+        prodmode=data.get('prodmode', False),
+        job_name='',
+        summary_enabled=False,
+    )
+
+    # Wrap as a minimal standalone document for download (even though fdv2_report is full HTML already)
+    html = inner if '<html' in inner.lower() else f"<!DOCTYPE html><html><head><meta charset='utf-8'><title>FDV Report v2 table</title></head><body>{inner}</body></html>"
+    return Response(html, mimetype='text/html')
 
 @app.route('/api/launch', methods=['POST'])
 def api_launch():
@@ -8268,6 +8429,11 @@ def _start_parse_job_legacy(token: str, files: List[Path], used_dir: str | None)
                     seen.add(f)
                     fdv_order.append(f)
             CACHE[token].update({'rows': all_rows, 'stats': stats, 'fdv_order': fdv_order, 'status': 'done'})
+            # Job is complete; delete per-token rows.db to reclaim disk space
+            try:
+                _sqlite_delete_db(token)
+            except Exception:
+                pass
             # Mark job end time
             try:
                 with JOBS_LOCK:

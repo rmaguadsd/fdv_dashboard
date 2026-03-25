@@ -12,9 +12,10 @@
     form.up { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; }
     .small { font-size: 12px; color: #666; }
   /* % FAIL coloring */
-  .pct-ok { background: #e8f9e8; color: #167a16; font-weight: 600; }
-  .pct-warn { background: #ffe6e6; color: #a11; }
-  .pct-bad { background: #ff4d4d; color: #fff; font-weight: 700; }
+  .pct-ok   { background: #e8f9e8; color: #167a16; font-weight: 600; } /* 0% - light green */
+  .pct-warn { background: #fff4cc; color: #a66b00; }                 /* >0% - light orange */
+  .pct-mid  { background: #ffe0e0; color: #a11; }                    /* >10% - light red */
+  .pct-bad  { background: #ff0000; color: #fff; font-weight: 700; }  /* >=20% - bright red */
   /* single-line, smaller Comments */
   .comments-cell { white-space: nowrap; font-size: 11px; max-width: 1120px; overflow: hidden; text-overflow: ellipsis; }
   /* widen editable comment (disposition) column */
@@ -32,6 +33,71 @@
   .disp-badge.saved { background:#d9f5d9; color:#186c18; display:inline-block; }
   .disp-badge.error { background:#f8d0d0; color:#a00; display:inline-block; }
   </style>
+  <script>
+    // Client-side: download the currently rendered FDV table as a standalone HTML file
+    function fdv2_sanitize_filename(name) {
+      // Keep it simple: strip path separators and characters Windows doesn't like.
+      // Also collapse whitespace.
+      try {
+        name = (name || '').toString();
+      } catch (e) {
+        name = '';
+      }
+      name = name.replace(/[\\/]+/g, '_');
+      name = name.replace(/[:*?"<>|]+/g, '_');
+      name = name.replace(/\s+/g, ' ').trim();
+      // Prevent hidden/empty / dot-only filenames.
+      if (!name || /^\.*$/.test(name)) return '';
+      return name;
+    }
+
+    function fdv2_default_table_filename() {
+      const title = document.title || 'FDV_Report_v2';
+      const ts = new Date().toISOString().replace(/[:.]/g, '-');
+      return (title || 'fdv_report_table') + '_' + ts + '.html';
+    }
+
+    function fdv2_get_table_filename_from_ui() {
+      const el = document.getElementById('fdv2SaveName');
+      if (!el) return '';
+      const raw = el.value || '';
+      let name = fdv2_sanitize_filename(raw);
+      if (!name) return '';
+      if (!/\.html?$/i.test(name)) name = name + '.html';
+      return name;
+    }
+
+    function fdv2_download_table_client() {
+      const table = document.querySelector('#fdvtests-form table');
+      if (!table) {
+        alert('FDV2 table not found on this page.');
+        return false;
+      }
+
+      const title = document.title || 'FDV_Report_v2';
+      const styleTags = Array.from(document.querySelectorAll('style, link[rel="stylesheet"]'))
+        .map(el => el.outerHTML).join('\n');
+
+      const html = '<!DOCTYPE html><html><head><meta charset="utf-8">'
+        + '<title>' + title + '</title>'
+        + styleTags
+        + '</head><body>'
+        + '<h2>' + title + '</h2>'
+        + table.outerHTML
+        + '</body></html>';
+
+      const blob = new Blob([html], { type: 'text/html' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+  a.download = fdv2_get_table_filename_from_ui() || fdv2_default_table_filename();
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      return false;
+    }
+  </script>
 </head>
 <body data-session-token="{{ token }}">
   {% with messages = get_flashed_messages() %}
@@ -94,6 +160,18 @@
   {% if persist_url %}
   <div class="small" style="margin:6px 0 12px 0; color:#444;">
     Permalink (snapshot): <a href="{{ persist_url }}" target="_blank" rel="noopener">{{ persist_url }}</a>
+    {% if token %}
+      &middot; <a href="{{ url_for('download_table_html', token=token) }}" target="_blank" rel="noopener">Download table (server HTML)</a>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  {% if token %}
+  <div class="small" style="margin:4px 0 10px 0; color:#a00;">
+    <form method="post" action="{{ url_for('delete_db', token=token) }}" style="display:inline;" onsubmit="return confirm('Delete SQLite rows.db for this job? This may limit re-analysis but frees disk.');">
+      <button type="submit" style="font-size:11px; padding:2px 6px;">Delete DB (rows.db)</button>
+    </form>
+    <span style="margin-left:6px; color:#666;">Deletes the per-job SQLite database to save disk space. Safe after reports are generated.</span>
   </div>
   {% endif %}
 
@@ -145,7 +223,15 @@
 
   {% if stats and stats|length %}
   <form id="fdvtests-form" method="post" {% if token %}action="{{ url_for('report_tests', token=token) }}"{% endif %}>
-    <div class="small" style="margin:6px 0;">Check one or more FDV tests, then click “View Testnames”.</div>
+    <div class="small" style="margin:6px 0;">
+      Check one or more FDV tests, then click View Testnames.
+  <button type="button" style="margin-left:8px;" onclick="return fdv2_download_table_client();">Save table as HTML (client)</button>
+  <span style="margin-left:8px;">Filename:</span>
+  <input type="text" id="fdv2SaveName" size="28" placeholder="fdv_report_table.html" title="Optional. If blank, an auto-generated filename is used." />
+      {% if token %}
+        <a href="{{ url_for('download_table_html', token=token) }}" class="small" style="margin-left:6px;" target="_blank" rel="noopener">Save table as HTML (server)</a>
+      {% endif %}
+    </div>
     
     <table>
       <thead>
@@ -206,7 +292,7 @@
           {% set total = (r['count']|int if r['count'] is not none else 0) %}
           {% set f = (r.get('fail_n', r.get('fail',''))|int) %}
           {% set pct = (100.0 * f / total) if total > 0 else 0.0 %}
-          <td {% if total > 0 %}class="{% if pct == 0 %}pct-ok{% elif pct <= 25 %}pct-warn{% else %}pct-bad{% endif %}"{% endif %}>
+        <td {% if total > 0 %}class="{% if pct == 0 %}pct-ok{% elif pct > 20 %}pct-bad{% elif pct > 5 %}pct-mid{% else %}pct-warn{% endif %}"{% endif %}>
             {% if total > 0 %}{{ pct | round(1) }}%{% endif %}
           </td>
           <td>{{ r.get('vector','') }}</td>
