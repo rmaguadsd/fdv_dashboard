@@ -26,6 +26,9 @@
   </head>
   <body>
     <h2>FDV POLL Stats</h2>
+    <div style="margin:12px 0; padding:10px; background:#e8f4f8; border:1px solid #4a90b3; border-radius:4px; color:#1e5a7a;">
+      <strong>📊 Data Source:</strong> {{ source_info }}
+    </div>
     <div>Rows parsed: {{ rows_count }}</div>
 
     <div class="panel" style="border:1px solid #ddd; border-radius:6px; padding:12px; margin:12px 0;">
@@ -243,10 +246,16 @@
       </tbody>
     </table>
 
-    <h3>Compare (RCDF)</h3>
+    <h3>Actions</h3>
+    <p style="margin:6px 0 12px;color:#555;">Select one or more FDV items above to view combined raw data or generate comparison plots.</p>
+    <div style="display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 20px;">
+      <button id="btn-compare" type="button">Compare selected (RCDF)</button>
+      <button id="btn-rawdata" type="button" style="background: #2e7d32;">View Raw Data</button>
+      <div id="sel-count" style="display:inline-block; margin-left:8px; color:#666;"></div>
+    </div>
+
+    <h3 style="margin-top: 24px;">Compare (RCDF)</h3>
     <p style="margin:6px 0 12px;color:#555;">Select FDV files above, then either click "Compare selected" or click any selected FDV name to open an RCDF plot. Lines are color-coded by FDV.</p>
-    <button id="btn-compare" type="button">Compare selected (RCDF)</button>
-    <div id="sel-count" style="display:inline-block; margin-left:8px; color:#666;"></div>
 
     <p>
       <a class="back" href="{{ url_for('hist_overview', token=token) }}">Open all histograms →</a>
@@ -411,6 +420,13 @@
           const rows = getSelectedRows();
           if(!rows.length){ alert('Select at least one row.'); return; }
           goCompare(rows);
+        });
+        document.getElementById('btn-rawdata').addEventListener('click', function(){
+          const rows = getSelectedRows();
+          if(!rows.length){ alert('Select at least one row to view raw data.'); return; }
+          // Build query string with selections
+          const qs = new URLSearchParams({ selections: rows.join(',') });
+          window.location.href = `{{ url_for('rawdata_view', token=token) }}?` + qs.toString();
         });
         document.querySelectorAll('input.fdv-sel').forEach(cb => cb.addEventListener('change', updateCount));
         document.getElementById('btn-apply-splits').addEventListener('click', applySplits);

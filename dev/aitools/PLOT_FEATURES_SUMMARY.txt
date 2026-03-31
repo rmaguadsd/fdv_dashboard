@@ -1,0 +1,146 @@
+# Plot Features Summary
+
+## ✨ New Interactive Plot Features (Just Added!)
+
+### 1. **Resizable Plot** ↔️ 📏
+- Adjust width (400-2000 px) and height (300-1500 px)
+- Click "Apply Size" button to resize
+- Data points automatically adjust and reflow
+- Direct CSS resize also supported
+
+### 2. **Legend Controls** 📋
+- **Show Legend** checkbox → Toggle legend visibility
+- **Legend Clickable** checkbox → Click legend entries to:
+  - Toggle visibility of a data series
+  - Double-click to isolate series
+  - Right-click for other options
+  - Hover to highlight related points
+
+### 3. **Interactive Toolbar** 🛠️
+- **📷 Download**: Save plot as PNG
+- **🔍 Zoom**: Box select and zoom to region
+- **🔄 Pan**: Click-drag to move around
+- **↺ Reset**: Return to full view
+- **Scroll wheel**: Quick zoom in/out
+
+### 4. **Hover Tooltips** 💬
+- Position cursor over data point
+- Shows exact X, Y, and color dimension values
+- No more estimating from grid lines
+
+### 5. **Responsive Plot**
+- Automatically reflows when resized
+- Data points scale with container
+- Maintains aspect ratio
+
+### 6. **Color-Code by Any Field** 🎨
+- Dropdown: vcc, temp, status, plane, pagetype, pr, wl, blk, tm, fdv, value
+- Each unique value gets distinct color
+- Legend shows color → value mapping
+
+### 7. **Split by Selection** 📊
+- Create separate subplots for each selected item
+- Cleaner, less cluttered visualization
+- Easier to spot individual patterns
+
+---
+
+## Quick Start
+
+1. **Generate Plot**
+   - Select X and Y fields
+   - Optional: Choose color-by field
+   - Optional: Check "Split plots by selection"
+   - Click "Generate Plot"
+
+2. **Resize Plot** (if needed)
+   - Enter Width: e.g., 1200
+   - Enter Height: e.g., 800
+   - Click "Apply Size"
+
+3. **Use Legend**
+   - Uncheck "Show Legend" to hide (more space)
+   - Check "Legend Clickable" to filter by clicking
+   - Hover legend entry to highlight data
+
+4. **Explore Data**
+   - Hover over points to see values
+   - Click zoom 🔍 to zoom to region
+   - Scroll wheel to zoom in/out
+   - Click reset ↺ to return to full view
+
+5. **Export**
+   - Click 📷 button to download PNG
+
+---
+
+## Files Modified
+
+- **Backend**: `dev/aitools/fdv_poll_webapp.py`
+  - Plot generation now uses Plotly instead of Matplotlib
+  - Generates interactive HTML plots
+  - Enhanced hover text with all data dimensions
+
+- **Frontend**: `dev/aitools/templates/rawdata.html`
+  - Added plot size controls (width/height inputs)
+  - Added legend visibility checkbox
+  - Added legend interactivity checkbox
+  - Added interactive container with resizable styling
+  - Enhanced JavaScript for real-time resize handling
+
+---
+
+## Features Implemented ✅
+
+✅ Resizable plot with auto-scaling data points  
+✅ Legend show/hide toggle  
+✅ Legend click-to-toggle interactivity  
+✅ Hover tooltips with exact values  
+✅ Zoom and pan via toolbar  
+✅ Download plot as PNG  
+✅ Color-coding by any field  
+✅ Split plots by selection  
+✅ Responsive container  
+
+---
+
+## User Tips
+
+| Task | How To |
+|------|--------|
+| See better details | Increase Width/Height in size controls |
+| Focus on one data series | Click it in legend (or double-click to isolate) |
+| Hide legend to maximize plot | Uncheck "Show Legend" |
+| Know what each color means | Hover over color entry in legend |
+| Save plot for later | Click 📷 button in toolbar |
+| Undo zoom | Click ↺ reset button |
+| Compare two selections | Split by selection OR color by FDV |
+
+---
+
+## How It Works
+
+1. **Generation**: User clicks "Generate Plot"
+2. **Backend**: Plotly creates interactive HTML visualization
+3. **Frontend**: HTML embedded in iframe for isolation
+4. **Interactivity**: 
+   - Hover → Shows custom tooltip
+   - Click legend → Toggles visibility
+   - Resize controls → Updates iframe height/width
+   - Toolbar → Native Plotly tools (zoom, pan, download)
+
+---
+
+## Next Steps / Possible Enhancements
+
+- [ ] Add export to CSV of visible points
+- [ ] Add trend line overlays
+- [ ] Add correlation coefficient display
+- [ ] Add statistical analysis panel
+- [ ] Save plot preferences (size, colors)
+- [ ] Add animation between plot configurations
+- [ ] Add text annotations to interesting points
+
+---
+
+For detailed guide, see: `PLOT_FEATURES_GUIDE.md`

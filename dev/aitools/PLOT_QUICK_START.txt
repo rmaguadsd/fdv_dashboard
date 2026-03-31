@@ -1,0 +1,210 @@
+╔════════════════════════════════════════════════════════════════════════════╗
+║                    INTERACTIVE PLOT - QUICK START                           ║
+║                         FDV Poll Webapp v2.0                                ║
+╚════════════════════════════════════════════════════════════════════════════╝
+
+┌─ GENERATE A PLOT ─────────────────────────────────────────────────────────┐
+│                                                                             │
+│  1. Select X Axis Field:      [dropdown list]                             │
+│  2. Select Y Axis Field:      [dropdown list]                             │
+│  3. Color Data Points By:     [optional dropdown]                         │
+│  4. ☑ Split plots by selection (optional)                                │
+│  5. Click: [Generate Plot] button                                         │
+│                                                                             │
+│  ⏳ Plot appears in ~2-5 seconds                                          │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌─ RESIZE THE PLOT ─────────────────────────────────────────────────────────┐
+│                                                                             │
+│  After plot appears, you'll see size controls:                            │
+│                                                                             │
+│  ┌─ Plot Size Controls ──────────────────────────────────────────────┐    │
+│  │ Width:  [1000] px      Height: [600] px     [Apply Size]          │    │
+│  └───────────────────────────────────────────────────────────────────┘    │
+│                                                                             │
+│  How to resize:                                                            │
+│   • Change Width value (400-2000)                                          │
+│   • Change Height value (300-1500)                                         │
+│   • Click "Apply Size" button                                              │
+│   • ✨ Plot smoothly resizes with data points scaling automatically       │
+│                                                                             │
+│  OR drag resize handle on plot corner (direct CSS resize)                 │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌─ CONTROL LEGEND ──────────────────────────────────────────────────────────┐
+│                                                                             │
+│  After plot appears, you'll see legend controls:                          │
+│                                                                             │
+│  ┌─ Legend Controls ─────────────────────────────────────────────────┐    │
+│  │ ☑ Show Legend    ☑ Legend Clickable                              │    │
+│  └───────────────────────────────────────────────────────────────────┘    │
+│                                                                             │
+│  Features:                                                                 │
+│                                                                             │
+│  ☑ Show Legend (checked)      → Legend is visible                         │
+│  ☐ Show Legend (unchecked)    → Legend hidden (more plot space)           │
+│                                                                             │
+│  ☑ Legend Clickable (checked) → Click legend items to filter              │
+│    • Click:  Hide/show that data series                                    │
+│    • Double-click: Isolate that series (hide all others)                  │
+│    • Right-click: Additional options                                       │
+│                                                                             │
+│  ☐ Legend Clickable (unchecked) → Read-only legend                        │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌─ USE INTERACTIVE FEATURES ────────────────────────────────────────────────┐
+│                                                                             │
+│  Hover Over Data Points:                                                   │
+│  ├─ Move mouse over any point                                             │
+│  ├─ Tooltip appears showing:                                              │
+│  │  • Selection name (e.g., "THES_QLC")                                   │
+│  │  • Color dimension (e.g., "vcc=1.2")                                   │
+│  │  • X value (exact number)                                              │
+│  │  • Y value (exact number)                                              │
+│  └─ Move away to hide tooltip                                             │
+│                                                                             │
+│  Zoom In:                                                                  │
+│  ├─ Option 1: Scroll wheel on plot                                        │
+│  ├─ Option 2: Click 🔍 button in toolbar, drag box                       │
+│  └─ Option 3: Click 🔍+ repeatedly                                        │
+│                                                                             │
+│  Pan Around:                                                               │
+│  ├─ Option 1: Click-drag on plot background                              │
+│  ├─ Option 2: Click 🔄 button, then drag                                  │
+│  └─ Option 3: Use keyboard arrows if available                            │
+│                                                                             │
+│  Reset Zoom:                                                               │
+│  ├─ Click ↺ button                                                        │
+│  ├─ Double-click on plot                                                  │
+│  └─ Use Plotly menu (⚙️ → Reset)                                          │
+│                                                                             │
+│  Download Plot:                                                            │
+│  ├─ Click 📷 button (top-right of plot)                                   │
+│  ├─ PNG file downloads to your computer                                   │
+│  └─ Use in reports, emails, presentations                                 │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌─ TOOLBAR BUTTONS (Top-Right Corner) ──────────────────────────────────────┐
+│                                                                             │
+│  Icon    Name              Function                                        │
+│  ────────────────────────────────────────────────────────────────────      │
+│  📷      Download          Save plot as PNG image                          │
+│  🔍      Zoom              Select region to zoom                           │
+│  🔍+     Zoom In           Zoom in by one step                             │
+│  🔍-     Zoom Out          Zoom out by one step                            │
+│  🔄      Pan               Click-drag to move around                       │
+│  ↺       Reset             Return to original zoom/view                    │
+│  ⚙️      Settings          Advanced Plotly options                         │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌─ COMMON TASKS ────────────────────────────────────────────────────────────┐
+│                                                                             │
+│  ❓ Q: Plot is too small, can't see details                               │
+│  ✓ A: Increase Width/Height in size controls, click "Apply Size"          │
+│                                                                             │
+│  ❓ Q: Too many colors, legend takes up space                             │
+│  ✓ A: Uncheck "☑ Show Legend" to hide legend                              │
+│                                                                             │
+│  ❓ Q: Need to focus on specific data series                              │
+│  ✓ A: Check "☑ Legend Clickable", double-click legend item               │
+│                                                                             │
+│  ❓ Q: Want to know what each color represents                            │
+│  ✓ A: Hover mouse over legend entry, points of that color highlight       │
+│                                                                             │
+│  ❓ Q: Zoomed in too far                                                  │
+│  ✓ A: Click ↺ button to reset, or scroll wheel to zoom out               │
+│                                                                             │
+│  ❓ Q: Need to save plot for presentation                                 │
+│  ✓ A: Click 📷 button, PNG downloads, insert into slides                  │
+│                                                                             │
+│  ❓ Q: Want to compare two selections side-by-side                        │
+│  ✓ A: Check "☑ Split plots by selection" before generating               │
+│                                                                             │
+│  ❓ Q: How do I see exact X,Y values?                                     │
+│  ✓ A: Hover mouse over data point, tooltip shows all values               │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌─ PLOT SIZE PRESETS ───────────────────────────────────────────────────────┐
+│                                                                             │
+│  📱 Mobile/Tablet:   Width: 800    Height: 500                            │
+│  💻 Standard:        Width: 1000   Height: 600  (DEFAULT)                 │
+│  🖥️  Large Desktop:  Width: 1200   Height: 800                            │
+│  🎬 Presentation:    Width: 1400   Height: 900                            │
+│  📊 Print/Report:    Width: 1600   Height: 1000                           │
+│                                                                             │
+│  Just set values above and click "Apply Size"                             │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌─ KEYBOARD SHORTCUTS ──────────────────────────────────────────────────────┐
+│                                                                             │
+│  Action                  Shortcut                                          │
+│  ──────────────────────────────────────────────────────────────────────    │
+│  Zoom in                 Scroll wheel UP                                   │
+│  Zoom out                Scroll wheel DOWN                                 │
+│  Pan                     Click + Drag on plot                              │
+│  Reset zoom              Double-click on plot                              │
+│  Box zoom                Shift + Drag to create box                        │
+│                                                                             │
+│  Note: Keyboard shortcuts depend on plot focus                             │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌─ EXAMPLE WORKFLOW ────────────────────────────────────────────────────────┐
+│                                                                             │
+│  Goal: Analyze temperature effects on failures                            │
+│                                                                             │
+│  Step 1: Generate Initial Plot                                            │
+│  ┌──────────────────────────────────────────────────────────────┐         │
+│  │ X Axis: value                                                │         │
+│  │ Y Axis: fail_count                                           │         │
+│  │ Color by: TEMP                                               │         │
+│  │ [Generate Plot]                                              │         │
+│  └──────────────────────────────────────────────────────────────┘         │
+│                                                                             │
+│  Step 2: Resize for Better View                                           │
+│  ┌──────────────────────────────────────────────────────────────┐         │
+│  │ Width: 1200    Height: 800    [Apply Size]                  │         │
+│  └──────────────────────────────────────────────────────────────┘         │
+│                                                                             │
+│  Step 3: Explore Data                                                     │
+│  • Hover over high-fail points → See which temperature                    │
+│  • Notice: Higher temp = more failures (pattern emerges)                  │
+│                                                                             │
+│  Step 4: Isolate Temperature                                              │
+│  ┌──────────────────────────────────────────────────────────────┐         │
+│  │ ☑ Legend Clickable                                           │         │
+│  │ (Double-click "TEMP=40C" in legend)                          │         │
+│  └──────────────────────────────────────────────────────────────┘         │
+│  • Only 40C data shows now                                                │
+│                                                                             │
+│  Step 5: Export                                                           │
+│  • Click 📷 button → PNG downloads                                        │
+│  • Use in report → Evidence of temperature correlation                    │
+│                                                                             │
+│  ✅ Analysis complete!                                                    │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+╔════════════════════════════════════════════════════════════════════════════╗
+║  💡 PRO TIP: Combine features for maximum insight!                         ║
+║                                                                             │
+║  Example: Split by selection + Color by TEMP + Legend Clickable            ║
+║  • See each test type in separate subplot                                  ║
+║  • Each subplot shows temperature effects                                  ║
+║  • Click legend to focus on specific temperature                           ║
+║  • Result: Rich, multi-dimensional data exploration!                       ║
+║                                                                             │
+║  🎯 Master users: Try all checkboxes together for full power! 🚀          ║
+╚════════════════════════════════════════════════════════════════════════════╝
+
+Need more help? See:
+  • PLOT_FEATURES_GUIDE.md (comprehensive guide)
+  • PLOT_QUICK_REFERENCE.txt (quick lookup)
+  • PLOT_FEATURES_SUMMARY.txt (overview)

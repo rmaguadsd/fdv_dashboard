@@ -1,0 +1,1039 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>FDV POLL - Raw Data Viewer & XY Plotter</title>
+    <script src="https://cdn.plot.ly/plotly-2.28.0.min.js"></script>
+    <style>
+      body { 
+        font-family: Segoe UI, Arial, sans-serif; 
+        margin: 24px; 
+        background: #f9fafb;
+      }
+      .header {
+        background: white;
+        padding: 20px;
+        border-radius: 6px;
+        margin-bottom: 20px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+      }
+      h1 { 
+        margin: 0 0 10px 0; 
+        color: #333;
+      }
+      .filter-info {
+        font-size: 0.95em;
+        color: #666;
+        padding: 10px;
+        background: #f0f4f8;
+        border-left: 3px solid #0066cc;
+        border-radius: 3px;
+      }
+      .controls {
+        background: white;
+        padding: 20px;
+        border-radius: 6px;
+        margin-bottom: 20px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+      }
+      .control-group {
+        margin-bottom: 15px;
+      }
+      .control-group label {
+        display: block;
+        font-weight: 600;
+        margin-bottom: 6px;
+        color: #333;
+      }
+      select {
+        padding: 8px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        font-size: 1em;
+        min-width: 200px;
+      }
+      button {
+        padding: 10px 16px;
+        background: #0066cc;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        font-size: 1em;
+        cursor: pointer;
+        transition: background 0.2s;
+      }
+      button:hover {
+        background: #0052a3;
+      }
+      button:disabled {
+        background: #ccc;
+        cursor: not-allowed;
+      }
+      .plot-section {
+        background: white;
+        padding: 20px;
+        border-radius: 6px;
+        margin-bottom: 20px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+      }
+      .plot-img {
+        max-width: 100%;
+        border-radius: 4px;
+        margin-top: 15px;
+      }
+      .plot-container {
+        position: relative;
+        width: 100%;
+        margin-top: 15px;
+        border: 2px solid #ddd;
+        border-radius: 4px;
+        background: white;
+        resize: both;
+        overflow: hidden;
+        min-width: 400px;
+        min-height: 300px;
+        box-sizing: border-box;
+      }
+      .plot-container::after {
+        content: '⤡';
+        position: absolute;
+        bottom: 2px;
+        right: 2px;
+        font-size: 18px;
+        color: #999;
+        pointer-events: none;
+        z-index: 10;
+      }
+      .plot-iframe {
+        width: 100%;
+        height: 100%;
+        border: none;
+        border-radius: 0;
+        margin-top: 0;
+      }
+      .plot-controls {
+        display: flex;
+        gap: 12px;
+        margin-bottom: 12px;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+      .plot-size-controls {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        padding: 10px;
+        background: #f9fafb;
+        border-radius: 4px;
+      }
+      .plot-size-controls label {
+        font-size: 0.9em;
+        color: #666;
+        margin: 0;
+        font-weight: normal;
+      }
+      .plot-size-controls input {
+        width: 70px;
+        padding: 6px;
+        border: 1px solid #ddd;
+        border-radius: 3px;
+        font-size: 0.9em;
+      }
+      .legend-controls {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        padding: 10px;
+        background: #f9fafb;
+        border-radius: 4px;
+      }
+      .legend-controls label {
+        font-size: 0.9em;
+        color: #666;
+        margin: 0;
+        font-weight: normal;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .legend-controls input[type="checkbox"] {
+        cursor: pointer;
+      }
+      .axis-titles-section {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12px;
+        padding: 10px;
+        background: #f9fafb;
+        border-radius: 4px;
+      }
+      .axis-title-group {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+      .axis-title-group label {
+        font-size: 0.9em;
+        color: #666;
+        font-weight: 600;
+        margin: 0;
+      }
+      .axis-title-group input {
+        padding: 6px;
+        border: 1px solid #ddd;
+        border-radius: 3px;
+        font-size: 0.9em;
+      }
+      .custom-legends-section {
+        padding: 10px;
+        background: #f9fafb;
+        border-radius: 4px;
+        margin-top: 8px;
+      }
+      .custom-legends-section label {
+        font-size: 0.9em;
+        color: #333;
+        font-weight: 600;
+        display: block;
+        margin-bottom: 8px;
+      }
+      .legend-inputs {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+        gap: 8px;
+        max-height: 150px;
+        overflow-y: auto;
+        padding: 8px;
+        background: white;
+        border-radius: 3px;
+        border: 1px solid #ddd;
+      }
+      .legend-input-item {
+        display: flex;
+        gap: 6px;
+        align-items: center;
+      }
+      .legend-input-item input {
+        flex: 1;
+        padding: 4px;
+        border: 1px solid #ddd;
+        border-radius: 2px;
+        font-size: 0.85em;
+      }
+      .legend-input-item small {
+        color: #999;
+        font-size: 0.8em;
+        flex-shrink: 0;
+        width: 120px;
+        white-space: nowrap;
+      }
+      .data-table {
+        background: white;
+        border-radius: 6px;
+        overflow: hidden;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+      th, td {
+        padding: 10px;
+        text-align: left;
+        border-bottom: 1px solid #eee;
+      }
+      th {
+        background: #f4f4f4;
+        font-weight: 600;
+        color: #333;
+        position: sticky;
+        top: 0;
+      }
+      tr:hover {
+        background: #f9f9f9;
+      }
+      .loading {
+        text-align: center;
+        padding: 20px;
+        color: #666;
+      }
+      .error {
+        padding: 12px;
+        background: #ffebee;
+        color: #c62828;
+        border-left: 3px solid #c62828;
+        border-radius: 3px;
+        margin: 10px 0;
+      }
+      .success {
+        padding: 12px;
+        background: #e8f5e9;
+        color: #2e7d32;
+        border-left: 3px solid #2e7d32;
+        border-radius: 3px;
+        margin: 10px 0;
+      }
+      .back-link {
+        display: inline-block;
+        margin-top: 16px;
+        color: #0066cc;
+        text-decoration: none;
+      }
+      .back-link:hover {
+        text-decoration: underline;
+      }
+      .row-count {
+        color: #666;
+        font-size: 0.95em;
+        margin-top: 10px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="header">
+      <h1>📊 Raw Data Viewer & XY Plotter</h1>
+      <div class="filter-info">
+        <strong>Selection:</strong> {{ selection_info }}
+      </div>
+      <div class="row-count">Total rows: <strong>{{ row_count }}</strong></div>
+    </div>
+
+    <div class="controls">
+      <h3 style="margin-top: 0; color: #333;">Generate XY Plot</h3>
+      <form id="plotForm">
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+          <div class="control-group">
+            <label for="x_field">X Axis Field:</label>
+            <select id="x_field" name="x_field" required onchange="onFieldChange('x')">
+              <option value="">-- Select X field --</option>
+              {% for field in available_fields %}
+                <option value="{{ field }}">{{ field }}</option>
+              {% endfor %}
+              <option value="tname_custom">tname (custom regex)</option>
+            </select>
+            <div id="x_custom_container" style="margin-top: 8px;">
+              <label for="x_custom" style="font-size: 0.9em; color: #666;">Regex pattern to extract from tname:</label>
+              <input type="text" id="x_custom" name="x_custom" placeholder="e.g., POLL_(\w+)_" size="30" />
+              <small style="color: #888;">Use group 1 or full match</small>
+            </div>
+          </div>
+          <div class="control-group">
+            <label for="y_field">Y Axis Field:</label>
+            <select id="y_field" name="y_field" required onchange="onFieldChange('y')">
+              <option value="">-- Select Y field --</option>
+              {% for field in available_fields %}
+                <option value="{{ field }}">{{ field }}</option>
+              {% endfor %}
+              <option value="tname_custom">tname (custom regex)</option>
+            </select>
+            <div id="y_custom_container" style="margin-top: 8px;">
+              <label for="y_custom" style="font-size: 0.9em; color: #666;">Regex pattern to extract from tname:</label>
+              <input type="text" id="y_custom" name="y_custom" placeholder="e.g., POLL_(\w+)_" size="30" />
+              <small style="color: #888;">Use group 1 or full match</small>
+            </div>
+          </div>
+        </div>
+        
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 20px;">
+          <div class="control-group">
+            <label for="split_by_selection">
+              <input type="checkbox" id="split_by_selection" name="split_by_selection" />
+              Split plots by selection
+            </label>
+            <small style="color: #888; display: block; margin-top: 4px;">Create separate subplots for each selected item</small>
+          </div>
+          
+          <div class="control-group">
+            <label for="color_by_field">Color data points by (optional):</label>
+            <select id="color_by_field" name="color_by_field" onchange="onFieldChange('color')">
+              <option value="">-- No color coding --</option>
+              <option value="fdv">FDV</option>
+              <option value="vcc">VCC</option>
+              <option value="temp">TEMP</option>
+              <option value="status">Status</option>
+              <option value="plane">Plane</option>
+              <option value="pagetype">Pagetype</option>
+              <option value="pr">PR</option>
+              <option value="wl">WL</option>
+              <option value="blk">BLK</option>
+              <option value="tm">TM</option>
+              <option value="value">Value</option>
+              <option value="tname_custom">tname (custom regex)</option>
+            </select>
+            <small style="color: #888; display: block; margin-top: 4px;">Points will be colored by selected field values</small>
+          </div>
+          
+          <!-- Custom tname regex for color field -->
+          <div id="color_custom_container" class="control-group">
+            <label for="color_custom">Regex pattern for tname:</label>
+            <input type="text" id="color_custom" name="color_custom" placeholder="e.g., (\d+) or test_(\w+)" 
+                   style="width: 100%; padding: 6px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 3px;" />
+            <small style="color: #888; display: block; margin-top: 4px;">Use parentheses to capture a group, or matches entire pattern</small>
+          </div>
+          
+          <!-- Legend Base Field Selection -->
+          <div style="margin-top: 16px;">
+            <label for="legend_base_field">Legend Based On:</label>
+            <select id="legend_base_field" style="width: 100%; padding: 6px; margin: 4px 0; border: 1px solid #ccc; border-radius: 3px;" onchange="onFieldChange('legend')">
+              <option value="">None (use selection)</option>
+              <option value="dut">DUT</option>
+              <option value="fdv">FDV</option>
+              <option value="vcc">VCC</option>
+              <option value="temp">TEMP</option>
+              <option value="status">Status</option>
+              <option value="plane">Plane</option>
+              <option value="pagetype">Pagetype</option>
+              <option value="pr">PR</option>
+              <option value="wl">WL</option>
+              <option value="blk">BLK</option>
+              <option value="tm">TM</option>
+              <option value="value">Value</option>
+              <option value="tname_custom">tname (custom regex)</option>
+            </select>
+            <small style="color: #888; display: block; margin-top: 4px;">Legend entries will be based on selected field (instead of selection names)</small>
+          </div>
+          
+          <!-- Custom tname regex for legend field -->
+          <div id="legend_custom_container" class="control-group">
+            <label for="legend_custom">Regex pattern for tname:</label>
+            <input type="text" id="legend_custom" name="legend_custom" placeholder="e.g., (\d+) or test_(\w+)" 
+                   style="width: 100%; padding: 6px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 3px;" />
+            <small style="color: #888; display: block; margin-top: 4px;">Use parentheses to capture a group, or matches entire pattern</small>
+          </div>
+        </div>
+        
+        <!-- Editable Axis Titles -->
+        <div class="axis-titles-section">
+          <div class="axis-title-group">
+            <label for="custom_x_title">Custom X Axis Title:</label>
+            <input type="text" id="custom_x_title" name="custom_x_title" placeholder="Leave empty to auto-detect" />
+            <small style="color: #888;">Optional: Override default X axis label</small>
+          </div>
+          <div class="axis-title-group">
+            <label for="custom_y_title">Custom Y Axis Title:</label>
+            <input type="text" id="custom_y_title" name="custom_y_title" placeholder="Leave empty to auto-detect" />
+            <small style="color: #888;">Optional: Override default Y axis label</small>
+          </div>
+        </div>
+        
+        <!-- Custom Legends for Multiple Selections -->
+        <div class="custom-legends-section">
+          <label>Custom Legend Names (for each selection):</label>
+          <div class="legend-inputs" id="legend-inputs-container">
+            <p style="color: #999; margin: 0; padding: 8px;">Generate plot first to see selections</p>
+          </div>
+          <small style="color: #888; display: block; margin-top: 6px;">💡 Tip: Leave empty to use default selection names. Custom names will override defaults in the legend.</small>
+        </div>
+        
+        <button type="button" id="plotBtn" onclick="generatePlot()" style="margin-top: 16px;">Generate Plot</button>
+      </form>
+      <div id="plotMsg"></div>
+    </div>
+
+    <div class="plot-section" id="plotSection" style="display: none;">
+      <h3 style="margin-top: 0; color: #333;">XY Plot Result</h3>
+      <div id="plotStatus" class="loading">Generating plot...</div>
+      
+      <div class="plot-controls" id="plotControls" style="display: none;">
+        <div class="plot-size-controls">
+          <label for="plotWidth">Width:</label>
+          <input type="number" id="plotWidth" min="400" max="2000" value="800" step="50" />
+          <span style="color: #999;">px</span>
+          
+          <label for="plotHeight" style="margin-left: 16px;">Height:</label>
+          <input type="number" id="plotHeight" min="300" max="1500" value="1000" step="50" />
+          <span style="color: #999;">px</span>
+          
+          <button type="button" id="applyResizeBtn" onclick="applyPlotResize()" style="margin-left: 12px; padding: 6px 12px; font-size: 0.9em;">Apply Size</button>
+        </div>
+        
+        <div class="legend-controls">
+          <label>
+            <input type="checkbox" id="showLegend" checked />
+            Show Legend
+          </label>
+          <label>
+            <input type="checkbox" id="legendClickable" checked />
+            Legend Clickable
+          </label>
+        </div>
+      </div>
+      
+      <div class="plot-container" id="plotContainer" style="display: none; height: 1000px;">
+        <div id="plotDiv" style="width: 100%; height: 100%;"></div>
+      </div>
+      <img id="plotImg" class="plot-img" style="display: none;" />
+    </div>
+
+    <div class="data-table">
+      <h3 style="padding: 20px 20px 10px 20px; margin: 0; color: #333;">Combined Raw Data Table</h3>
+      <div style="padding: 0 20px; margin-bottom: 10px; font-size: 0.9em;">
+        <button id="excludeSelectedBtn" style="padding: 6px 12px; background-color: #ff6b6b; color: white; border: none; border-radius: 3px; cursor: pointer; font-size: 0.9em;">
+          Exclude Selected
+        </button>
+        <button id="includeAllBtn" style="padding: 6px 12px; background-color: #51cf66; color: white; border: none; border-radius: 3px; cursor: pointer; margin-left: 8px; font-size: 0.9em;">
+          Include All
+        </button>
+        <span id="excludedCount" style="margin-left: 20px; color: #666; font-weight: bold;"></span>
+      </div>
+      
+      <!-- Quick Exclude Filter Section -->
+      <div style="padding: 0 20px; margin-bottom: 15px; background-color: #f5f5f5; border-left: 3px solid #ff6b6b; padding: 12px 15px; border-radius: 3px;">
+        <div style="font-weight: bold; margin-bottom: 8px; color: #333;">Quick Exclude by tname Pattern:</div>
+        <div style="display: flex; gap: 10px; align-items: flex-end;">
+          <div style="flex: 1;">
+            <label style="font-size: 0.85em; color: #666; display: block; margin-bottom: 4px;">Regex Pattern (matches tname):</label>
+            <input type="text" id="excludeByTnamePattern" placeholder="e.g., test_\d+_C0 or POLL_.*_E4" 
+                   style="width: 100%; padding: 6px; border: 1px solid #ccc; border-radius: 3px; font-size: 0.9em;">
+            <small style="color: #888;">Use regular expression to match tname values. Leave empty to show all rows.</small>
+          </div>
+          <button id="applyExcludeFilterBtn" style="padding: 8px 16px; background-color: #ffa94d; color: white; border: none; border-radius: 3px; cursor: pointer; font-size: 0.9em; white-space: nowrap;">
+            Apply Exclusion Filter
+          </button>
+        </div>
+      </div>
+      
+      {% if table_data %}
+      <table>
+        <thead>
+          <tr>
+            <th><input type="checkbox" id="selectAllCheckbox" title="Select all rows" /></th>
+            <th>Line</th>
+            <th>FDV</th>
+            <th>Specname</th>
+            <th>Pagemap</th>
+            <th>VCC</th>
+            <th>TEMP</th>
+            <th>Status</th>
+            <th>Plane</th>
+            <th>Pagetype</th>
+            <th>Value</th>
+            <th>PR</th>
+            <th>DUT ID</th>
+            <th>WL</th>
+            <th>BLK</th>
+            <th>Page</th>
+            <th>PhyPage</th>
+            <th>TM</th>
+            <th>TName</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in table_data %}
+          <tr class="data-row" data-line="{{ row.line }}">
+            <td><input type="checkbox" class="row-checkbox" data-line="{{ row.line }}" /></td>
+            <td>{{ row.line }}</td>
+            <td>{{ row.fdv }}</td>
+            <td>{{ row.specname }}</td>
+            <td>{{ row.pagemap }}</td>
+            <td>{{ row.vcc }}</td>
+            <td>{{ row.temp }}</td>
+            <td>{{ row.status }}</td>
+            <td>{{ row.plane }}</td>
+            <td>{{ row.pagetype }}</td>
+            <td style="font-weight: 600; color: #0066cc;">{{ row.value }}</td>
+            <td>{{ row.pr }}</td>
+            <td>{{ row.dut_id }}</td>
+            <td>{{ row.wl }}</td>
+            <td>{{ row.blk }}</td>
+            <td>{{ row.page }}</td>
+            <td>{{ row.phypage }}</td>
+            <td>{{ row.tm }}</td>
+            <td>{{ row.tname }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <div style="padding: 20px; text-align: center; color: #999;">
+        <em>No data rows found for the selected items.</em>
+      </div>
+      {% endif %}
+    </div>
+
+    <a class="back-link" href="{{ url_for('results_view', token=token) }}">← Back to Results</a>
+
+    <script>
+      let currentPlotUrl = null;
+      let currentPlotJson = null;
+      let lastContainerSize = { width: 0, height: 0 };
+      let resizeCheckInterval = null;
+      let excludedRows = new Set();  // Track excluded row line numbers
+      
+      function initializeRowExclusion() {
+        const selectAllCheckbox = document.getElementById('selectAllCheckbox');
+        const excludeBtn = document.getElementById('excludeSelectedBtn');
+        const includeAllBtn = document.getElementById('includeAllBtn');
+        const applyFilterBtn = document.getElementById('applyExcludeFilterBtn');
+        
+        if (selectAllCheckbox) {
+          selectAllCheckbox.addEventListener('change', function() {
+            const checkboxes = document.querySelectorAll('.row-checkbox');
+            checkboxes.forEach(cb => cb.checked = this.checked);
+          });
+        }
+        
+        if (excludeBtn) {
+          excludeBtn.addEventListener('click', function() {
+            const checkboxes = document.querySelectorAll('.row-checkbox:checked');
+            checkboxes.forEach(cb => {
+              const lineNum = cb.getAttribute('data-line');
+              excludedRows.add(lineNum);
+              cb.closest('tr').style.opacity = '0.5';
+              cb.closest('tr').style.backgroundColor = '#ffebee';
+            });
+            updateExcludedCount();
+          });
+        }
+        
+        if (includeAllBtn) {
+          includeAllBtn.addEventListener('click', function() {
+            excludedRows.clear();
+            const rows = document.querySelectorAll('.data-row');
+            rows.forEach(row => {
+              row.style.opacity = '1';
+              row.style.backgroundColor = '';
+              row.querySelector('.row-checkbox').checked = false;
+            });
+            updateExcludedCount();
+          });
+        }
+        
+        // Handle apply filter button
+        if (applyFilterBtn) {
+          applyFilterBtn.addEventListener('click', function() {
+            applyTnameExcludeFilter();
+          });
+        }
+        
+        updateExcludedCount();
+      }
+      
+      function applyTnameExcludeFilter() {
+        const patternInput = document.getElementById('excludeByTnamePattern');
+        const pattern = patternInput.value.trim();
+        
+        if (!pattern) {
+          alert('Please enter a regex pattern to exclude');
+          return;
+        }
+        
+        let regex;
+        try {
+          regex = new RegExp(pattern);
+        } catch (e) {
+          alert('Invalid regex pattern: ' + e.message);
+          return;
+        }
+        
+        const rows = document.querySelectorAll('.data-row');
+        let excludedCount = 0;
+        
+        rows.forEach(row => {
+          const cells = row.querySelectorAll('td');
+          if (cells.length >= 19) {
+            // tname is the last column (index 19, but 0-indexed so -1 = index 18, but accounting for checkbox column it's at index 19)
+            const tnameCell = cells[cells.length - 1];  // Get last cell which is tname
+            const tnameValue = tnameCell.textContent.trim();
+            
+            if (regex.test(tnameValue)) {
+              const lineNum = row.getAttribute('data-line');
+              excludedRows.add(lineNum);
+              row.style.opacity = '0.5';
+              row.style.backgroundColor = '#ffebee';
+              row.querySelector('.row-checkbox').checked = true;
+              excludedCount++;
+            }
+          }
+        });
+        
+        updateExcludedCount();
+        alert(`Excluded ${excludedCount} row(s) matching the pattern: ${pattern}`);
+      }
+      
+      function updateExcludedCount() {
+        const countSpan = document.getElementById('excludedCount');
+        if (countSpan) {
+          const count = excludedRows.size;
+          if (count > 0) {
+            countSpan.textContent = `${count} row(s) excluded from plot`;
+            countSpan.style.color = '#ff6b6b';
+          } else {
+            countSpan.textContent = '';
+          }
+        }
+      }
+      
+      function onFieldChange(axis) {
+        let fieldSelect, customContainer;
+        
+        // Handle different axis naming conventions
+        if (axis === 'x' || axis === 'y') {
+          fieldSelect = document.getElementById(axis + '_field');
+          customContainer = document.getElementById(axis + '_custom_container');
+        } else if (axis === 'color') {
+          fieldSelect = document.getElementById('color_by_field');
+          customContainer = document.getElementById('color_custom_container');
+        } else if (axis === 'legend') {
+          fieldSelect = document.getElementById('legend_base_field');
+          customContainer = document.getElementById('legend_custom_container');
+        }
+        
+        if (fieldSelect && customContainer) {
+          if (fieldSelect.value === 'tname_custom') {
+            customContainer.style.display = 'block';
+          } else {
+            customContainer.style.display = 'none';
+          }
+        }
+      }
+
+      function applyPlotResize() {
+        if (!currentPlotUrl) {
+          alert('Please generate a plot first.');
+          return;
+        }
+        
+        const width = parseInt(document.getElementById('plotWidth').value);
+        const height = parseInt(document.getElementById('plotHeight').value);
+        
+        const container = document.getElementById('plotContainer');
+        container.style.height = height + 'px';
+        container.style.width = width + 'px';
+        
+        // Trigger Plotly window resize event
+        triggerPlotlyResize();
+      }
+      
+      function triggerPlotlyResize() {
+        // With direct rendering, update the plot to match container size
+        if (window.Plotly && currentPlotJson) {
+          try {
+            const plotDiv = document.getElementById('plotDiv');
+            const container = document.getElementById('plotContainer');
+            
+            if (plotDiv && container) {
+              const rect = container.getBoundingClientRect();
+              const newWidth = Math.round(rect.width);
+              const newHeight = Math.round(rect.height);
+              
+              console.log('Resizing chart to:', newWidth, 'x', newHeight);
+              
+              // Update the layout with new dimensions
+              Plotly.relayout(plotDiv, {
+                width: newWidth,
+                height: newHeight
+              });
+              
+              // Also call Plots.resize for good measure
+              Plotly.Plots.resize(plotDiv);
+              console.log('Resize successful');
+            }
+          } catch (e) {
+            console.log('Resize error:', e.message);
+          }
+        } else {
+          console.log('Cannot resize - Plotly:', !!window.Plotly, 'PlotJson:', !!currentPlotJson);
+        }
+      }
+      
+      function onPlotFrameLoad() {
+        // No longer using iframe, but keep for compatibility
+        startResizeCheck();
+      }
+      
+      function renderPlotDirectly(plotJson) {
+        // Parse the JSON if it's a string
+        const data = typeof plotJson === 'string' ? JSON.parse(plotJson) : plotJson;
+        const plotDiv = document.getElementById('plotDiv');
+        
+        console.log('renderPlotDirectly called. Plotly available:', !!window.Plotly, 'PlotDiv:', !!plotDiv);
+        
+        if (plotDiv && window.Plotly) {
+          try {
+            Plotly.newPlot(plotDiv, data.data, data.layout, { responsive: true, displayModeBar: true });
+            currentPlotJson = data;
+            console.log('Plot rendered successfully');
+          } catch (e) {
+            console.error('Error rendering plot:', e);
+          }
+        } else {
+          console.error('Cannot render plot - Plotly:', !!window.Plotly, 'PlotDiv:', !!plotDiv);
+        }
+      }
+      
+      function startResizeCheck() {
+        // Stop any existing interval
+        if (resizeCheckInterval) {
+          clearInterval(resizeCheckInterval);
+        }
+        
+        console.log('Starting resize check interval');
+        
+        // Check for size changes every 100ms while dragging
+        resizeCheckInterval = setInterval(() => {
+          if (currentPlotUrl) {
+            const container = document.getElementById('plotContainer');
+            if (container) {
+              const rect = container.getBoundingClientRect();
+              const width = Math.round(rect.width);
+              const height = Math.round(rect.height);
+              
+              if (width !== lastContainerSize.width || height !== lastContainerSize.height) {
+                console.log('Container resized:', lastContainerSize, '->', { width, height });
+                lastContainerSize = { width: width, height: height };
+                
+                // Update the input fields to reflect actual size
+                const widthInput = document.getElementById('plotWidth');
+                const heightInput = document.getElementById('plotHeight');
+                if (widthInput) widthInput.value = width;
+                if (heightInput) heightInput.value = height;
+                
+                triggerPlotlyResize();
+              }
+            }
+          }
+        }, 100);
+      }
+      
+      // Set up MutationObserver to detect when container size attribute changes
+      function setupMutationObserver() {
+        const container = document.getElementById('plotContainer');
+        if (!container) return;
+        
+        const observer = new MutationObserver(() => {
+          if (currentPlotUrl) {
+            triggerPlotlyResize();
+          }
+        });
+        
+        observer.observe(container, {
+          attributes: true,
+          attributeFilter: ['style']
+        });
+      }
+      
+      function updateLegendVisibility() {
+        if (!currentPlotUrl) return;
+        
+        const showLegend = document.getElementById('showLegend').checked;
+        const frame = document.getElementById('plotFrame');
+        
+        if (frame && frame.contentWindow && frame.contentWindow.Plotly) {
+          try {
+            const plotDiv = frame.contentWindow.document.querySelector('.plotly-graph-div');
+            if (plotDiv) {
+              frame.contentWindow.Plotly.relayout(plotDiv, {
+                'showlegend': showLegend
+              });
+            }
+          } catch (e) {
+            console.log('Could not update legend');
+          }
+        }
+      }
+
+      function generatePlot() {
+        const xField = document.getElementById('x_field').value;
+        const yField = document.getElementById('y_field').value;
+        const splitBySelection = document.getElementById('split_by_selection').checked;
+        const colorByField = document.getElementById('color_by_field').value;
+        const legendBaseField = document.getElementById('legend_base_field').value;
+        const xCustom = document.getElementById('x_custom').value;
+        const yCustom = document.getElementById('y_custom').value;
+        const colorCustom = document.getElementById('color_custom').value;
+        const legendCustom = document.getElementById('legend_custom').value;
+        const customXTitle = document.getElementById('custom_x_title').value;
+        const customYTitle = document.getElementById('custom_y_title').value;
+        const msgDiv = document.getElementById('plotMsg');
+        
+        // Collect custom legend names
+        const customLegends = {};
+        const legendInputs = document.querySelectorAll('.legend-input-item input');
+        legendInputs.forEach((input, idx) => {
+          const value = input.value.trim();
+          if (value) {
+            const key = input.getAttribute('data-selection');
+            if (key) customLegends[key] = value;
+          }
+        });
+        
+        if (!xField || !yField) {
+          msgDiv.innerHTML = '<div class="error">Please select both X and Y fields.</div>';
+
+          return;
+        }
+        
+        if (xField === yField) {
+          msgDiv.innerHTML = '<div class="error">X and Y fields must be different.</div>';
+          return;
+        }
+        
+        if (xField === 'tname_custom' && !xCustom) {
+          msgDiv.innerHTML = '<div class="error">Please provide a regex pattern for X custom extraction.</div>';
+          return;
+        }
+        
+        if (yField === 'tname_custom' && !yCustom) {
+          msgDiv.innerHTML = '<div class="error">Please provide a regex pattern for Y custom extraction.</div>';
+          return;
+        }
+        
+        if (colorByField === 'tname_custom' && !colorCustom) {
+          msgDiv.innerHTML = '<div class="error">Please provide a regex pattern for color custom extraction.</div>';
+          return;
+        }
+        
+        if (legendBaseField === 'tname_custom' && !legendCustom) {
+          msgDiv.innerHTML = '<div class="error">Please provide a regex pattern for legend custom extraction.</div>';
+          return;
+        }
+        
+        msgDiv.innerHTML = '';
+        document.getElementById('plotBtn').disabled = true;
+        document.getElementById('plotStatus').style.display = 'block';
+        document.getElementById('plotContainer').style.display = 'none';
+        document.getElementById('plotControls').style.display = 'none';
+        
+        const formData = new FormData();
+        formData.append('selections', '{{ selections|join(",") }}');
+        formData.append('x_field', xField);
+        formData.append('y_field', yField);
+        formData.append('split_by_selection', splitBySelection ? 'true' : 'false');
+        formData.append('color_by_field', colorByField);
+        formData.append('legend_base_field', legendBaseField);
+        formData.append('custom_x_title', customXTitle);
+        formData.append('custom_y_title', customYTitle);
+        formData.append('custom_legends', JSON.stringify(customLegends));
+        formData.append('excluded_rows', JSON.stringify(Array.from(excludedRows)));
+        if (xField === 'tname_custom') formData.append('x_custom', xCustom);
+        if (yField === 'tname_custom') formData.append('y_custom', yCustom);
+        if (colorByField === 'tname_custom') formData.append('color_custom', colorCustom);
+        if (legendBaseField === 'tname_custom') formData.append('legend_custom', legendCustom);
+        
+        // Add tname exclusion pattern if specified
+        const tnamePattern = document.getElementById('excludeByTnamePattern').value.trim();
+        if (tnamePattern) {
+          formData.append('excluded_rows_tname_pattern', tnamePattern);
+        }
+        
+        fetch('{{ url_for("rawdata_plot", token=token) }}', {
+          method: 'POST',
+          body: formData
+        })
+        .then(r => {
+          if (r.ok) return r.json();
+          return r.json().then(e => { throw new Error(e.error || 'Plot generation failed'); });
+        })
+        .then(data => {
+          document.getElementById('plotSection').style.display = 'block';
+          document.getElementById('plotStatus').style.display = 'none';
+          document.getElementById('plotControls').style.display = 'flex';
+          
+          // Use direct Plotly rendering for interactive plots
+          if (data.is_interactive) {
+            currentPlotUrl = data.img_url;
+            
+            // Render plot directly using the JSON data
+            if (data.plot_json) {
+              renderPlotDirectly(data.plot_json);
+              onPlotFrameLoad(); // Start resize monitoring
+            }
+            
+            const plotContainer = document.getElementById('plotContainer');
+            plotContainer.style.display = 'block';
+            
+            // Apply default dimensions from input fields (1000 x 600)
+            const widthInput = document.getElementById('plotWidth');
+            const heightInput = document.getElementById('plotHeight');
+            const width = widthInput ? parseInt(widthInput.value) || 1000 : 1000;
+            const height = heightInput ? parseInt(heightInput.value) || 600 : 600;
+            
+            plotContainer.style.width = width + 'px';
+            plotContainer.style.height = height + 'px';
+            
+            document.getElementById('plotImg').style.display = 'none';
+          } else {
+            const img = document.getElementById('plotImg');
+            img.src = data.img_url;
+            img.style.display = 'block';
+            document.getElementById('plotContainer').style.display = 'none';
+          }
+          
+          let msg = `✓ Plot generated with ${data.point_count} points across ${data.selections_count} selection(s).`;
+          if (data.split_by_selection) {
+            msg += ` Created ${data.selections_count} subplot(s).`;
+          }
+          if (data.color_by_field) {
+            msg += ` Color-coded by: ${data.color_by_field}`;
+          }
+          if (data.is_interactive) {
+            msg += ' <br><small style="color: #666;">💡 <strong>Interactive Features:</strong> Hover over points to see values • Click legend to toggle • Resize plot using controls • Zoom & pan with toolbar</small>';
+          }
+          msgDiv.innerHTML = `<div class="success">${msg}</div>`;
+        })
+        .catch(err => {
+          msgDiv.innerHTML = `<div class="error">Error: ${err.message}</div>`;
+          document.getElementById('plotSection').style.display = 'none';
+        })
+        .finally(() => {
+          document.getElementById('plotBtn').disabled = false;
+        });
+      }
+      
+      // Event listener for legend checkbox
+      document.addEventListener('DOMContentLoaded', function() {
+        const showLegendCheckbox = document.getElementById('showLegend');
+        if (showLegendCheckbox) {
+          showLegendCheckbox.addEventListener('change', updateLegendVisibility);
+        }
+        
+        // Initialize exclusion handling
+        initializeRowExclusion();
+        
+        // Initialize custom regex input visibility for all fields on page load
+        function initializeCustomRegexVisibility() {
+          // All regex inputs are always enabled and editable
+          // No initialization needed - inputs are ready to use immediately
+        }
+        
+        // Call initialization on page load
+        initializeCustomRegexVisibility();
+        
+        // Populate custom legend inputs for each selection
+        populateCustomLegendInputs();
+        
+        // Add listener for manual resize (dragging the corner)
+        const plotContainer = document.getElementById('plotContainer');
+        if (plotContainer) {
+          plotContainer.addEventListener('mouseup', () => {
+            if (currentPlotUrl) {
+              triggerPlotlyResize();
+            }
+          });
+        }
+      });
+      
+      function populateCustomLegendInputs() {
+        const selectionsStr = '{{ selections|join(",") }}';
+        const selections = selectionsStr ? selectionsStr.split(',').map(s => s.trim()).filter(s => s) : [];
+        const container = document.getElementById('legend-inputs-container');
+        
+        if (selections.length === 0) {
+          container.innerHTML = '<p style="color: #999; margin: 0; padding: 8px;">No selections</p>';
+          return;
+        }
+        
+        let html = '';
+        selections.forEach((sel, idx) => {
+          const label = sel.split('||')[0] || sel;
+          html += `<div class="legend-input-item">
+            <input type="text" data-selection="${sel}" placeholder="Custom name" />
+            <small>${label}</small>
+          </div>`;
+        });
+        container.innerHTML = html;
+      }
+    </script>
+  </body>
+</html>

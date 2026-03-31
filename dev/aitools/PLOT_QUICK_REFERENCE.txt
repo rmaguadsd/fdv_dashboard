@@ -1,0 +1,302 @@
+# Quick Reference: Plot Features
+
+## 🎯 Getting Started (30 seconds)
+
+1. Select X & Y fields → Click "Generate Plot"
+2. ✅ Plot appears with interactive toolbar
+
+---
+
+## 📏 Resizing Your Plot
+
+### Method 1: Size Controls (Recommended)
+```
+Width:  [1000] px     Height: [600] px     [Apply Size]
+```
+- Change values
+- Click "Apply Size"
+- Plot resizes smoothly
+- Data points auto-adjust
+
+### Method 2: Direct Resize
+- Grab plot edge/corner
+- Drag to resize
+- Plot responds in real-time
+
+### Recommended Sizes
+- **Small**: 800×500 (compact view)
+- **Medium**: 1000×600 (default)
+- **Large**: 1200×800 (detailed view)
+- **XL**: 1400×900 (presentation)
+
+---
+
+## 📋 Working with Legends
+
+### What's a Legend?
+Shows what each color means (e.g., "vcc=1.2", "temp=25C")
+
+### Control Visibility
+```
+☑ Show Legend       (legend visible)
+☐ Show Legend       (legend hidden - more plot area)
+```
+
+### Make It Interactive
+```
+☑ Legend Clickable
+```
+Then you can:
+- **Click** entry → Hide that data series
+- **Double-click** → Isolate that series (hide all others)
+- **Right-click** → Other options
+
+### How to Read It
+- Each line = one data group
+- Color square = plot color for that group
+- Text = group name (e.g., "THES_QLC - vcc=3.3")
+
+---
+
+## 🎨 Color-Coding Options
+
+```
+Color data points by: [-- No color coding --]
+                      FDV | VCC | TEMP | Status | Plane | Pagetype | PR | WL | BLK | TM | Value
+```
+
+| Option | Shows |
+|--------|-------|
+| **No color coding** | All points same color |
+| **FDV** | Different colors per test type |
+| **VCC** | Voltage variation |
+| **TEMP** | Temperature groups |
+| **Status** | Pass/Fail or device status |
+| **Value** | Numeric range (heat map) |
+
+---
+
+## 🔄 Toolbar Actions
+
+Top-right corner of plot:
+
+| Icon | Name | How To Use |
+|------|------|-----------|
+| 📷 | **Download** | Click to save plot as PNG |
+| 🔍 | **Zoom** | Click, then drag box to zoom |
+| 🔍- | **Zoom Out** | Click to zoom out step |
+| 🔍+ | **Zoom In** | Click to zoom in step |
+| 🔄 | **Pan** | Click-drag to move around |
+| ↺ | **Reset** | Return to full view |
+| ⚙️ | **Settings** | Advanced options |
+
+### Keyboard + Mouse
+| Action | Result |
+|--------|--------|
+| Scroll wheel | Zoom in/out |
+| Click-drag | Pan (move around) |
+| Double-click | Reset zoom |
+| Shift-drag | Box zoom |
+
+---
+
+## 💬 Hover Tooltips
+
+**What to do:** Move mouse over a data point
+
+**What you see:**
+```
+Selection: THES_QLC
+Color Field: vcc=1.2
+X Axis: 2500
+Y Axis: 45
+```
+
+**Why useful:**
+- See exact values (no guessing)
+- Identify outliers quickly
+- Verify data grouping
+
+---
+
+## ✨ Special Modes
+
+### Mode 1: Split Plots by Selection
+```
+☑ Split plots by selection
+```
+**Result:** One subplot per selected item (cleaner, less overlap)
+
+### Mode 2: Color by Field
+```
+Color by: TEMP
+```
+**Result:** Each temperature gets its own color
+
+### Mode 3: Combined
+- Split by selection (subplots)
+- Color by field (temperature)
+- Result: Multiple subplots, each with temperature coloring
+
+---
+
+## 🎯 Common Tasks
+
+### "I can't see the details"
+1. Increase Width/Height values
+2. Click "Apply Size"
+3. Or scroll wheel to zoom
+
+### "There are too many colors"
+1. Check "Legend Clickable"
+2. Click legend entries to hide non-essential colors
+3. Focus on most important data
+
+### "What does this red color mean?"
+1. Hover mouse over red entry in legend
+2. All red points highlight
+
+### "Compare two test types only"
+1. Select color-by field: FDV
+2. Double-click one FDV type in legend to isolate
+3. Only that FDV's data shows
+
+### "Need to save plot"
+1. Click 📷 button (top-right corner)
+2. PNG file downloads
+3. Use in reports, emails, presentations
+
+### "Zoom got messed up"
+1. Click ↺ button (reset)
+2. Back to full view
+
+### "Hide legend to see full plot"
+1. Uncheck "☑ Show Legend"
+2. More plot area, less legend
+
+---
+
+## 🚀 Power User Tips
+
+### Tip 1: Isolate Data Series
+1. Enable "Legend Clickable"
+2. Double-click legend entry
+3. All other data hidden temporarily
+4. Click same entry again to show all
+
+### Tip 2: Compare Across Sizes
+1. Generate plot once
+2. Export as PNG (Size A)
+3. Change size to larger
+4. Export again (Size B)
+5. Compare on same page
+
+### Tip 3: Focus on Outliers
+1. Generate plot
+2. Zoom into region with outliers
+3. Hover over points to see values
+4. Export zoomed view
+
+### Tip 4: Multi-Selection Splitting
+1. Select 3-4 items in results table
+2. Check "Split plots by selection"
+3. Check "Legend Clickable"
+4. Color by your field of interest
+5. Each subplot has interactivity
+
+### Tip 5: Presentation Mode
+1. Set Width: 1400, Height: 900
+2. Uncheck "Show Legend" (if too many colors)
+3. Zoom to region of interest
+4. Export PNG
+5. Looks professional in slideshow
+
+---
+
+## ⚙️ Configuration Settings
+
+### Size Ranges
+- Min Width: 400 px
+- Max Width: 2000 px
+- Min Height: 300 px
+- Max Height: 1500 px
+
+### Color Palette
+- Automatically selects distinct colors
+- Up to 20 distinct colors per field
+- Plotly's built-in color schemes
+
+### Legend Behavior
+- Auto-hide if >20 entries
+- Show for split plots
+- Clickable when enabled
+- Interactive on hover
+
+---
+
+## 🆘 Troubleshooting
+
+| Problem | Fix |
+|---------|-----|
+| Plot won't load | Refresh page, try smaller selection |
+| Resize not working | Click "Apply Size" button |
+| Legend won't hide | Uncheck "☑ Show Legend" |
+| Can't click legend | Check "☑ Legend Clickable" |
+| Hover tooltip missing | Move over data point (not background) |
+| Download button missing | Wait for plot to fully load |
+| Plot too small | Increase Width/Height values |
+| Zoom took forever | Try smaller dataset or narrower zoom area |
+
+---
+
+## 📊 Example Workflows
+
+### Workflow A: Quick Review
+```
+1. Select X: value, Y: fail_count
+2. Color by: TEMP
+3. Generate Plot
+4. Hover over interesting points
+5. Download PNG
+```
+⏱️ Time: ~30 seconds
+
+### Workflow B: Detailed Analysis
+```
+1. Select 3 FDV types
+2. X: value, Y: fail_count
+3. Color by: TEMP
+4. Split by selection ✓
+5. Apply size: 1200×800
+6. Legend clickable ✓
+7. Generate Plot
+8. Zoom to high-fail region
+9. Click legend entries to filter
+10. Export PNG
+```
+⏱️ Time: ~2 minutes
+
+### Workflow C: Presentation Ready
+```
+1. Generate plot with best settings
+2. Zoom to key region
+3. Set size: 1400×900
+4. Uncheck legend (if needed)
+5. Export PNG
+6. Insert in slideshow
+```
+⏱️ Time: ~1 minute
+
+---
+
+## 📚 Additional Resources
+
+- Full Guide: `PLOT_FEATURES_GUIDE.md`
+- Summary: `PLOT_FEATURES_SUMMARY.txt`
+- This Reference: Quick lookup for common tasks
+
+---
+
+**Last Updated:** March 30, 2026  
+**Version:** 1.0  
+**Platform:** FDV Poll Webapp v2.0
