@@ -1,0 +1,1081 @@
+"""Write virtual-scroll version of fdv_chart.html"""
+import os
+
+TARGET = r'd:\FDV\git\fdv_dashboard\dev\aitools\fdv_chart\fdv_chart.html'
+
+HTML = r"""<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>FDV Chart Parser</title>
+    <style>
+        * { box-sizing: border-box; }
+        html, body {
+            height: 100%;
+            margin: 0;
+            padding: 0;
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* TOP CONTROL PANEL */
+        #top-panel {
+            flex: 0 0 auto;
+            padding: 10px 16px 6px 16px;
+            background: #f8f9fa;
+            border-bottom: 2px solid #dee2e6;
+        }
+        #top-panel h1 { margin: 0 0 6px 0; font-size: 1.2em; color: #333; }
+        .ctrl-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 5px; }
+        .ctrl-label { font-size: 0.82em; color: #555; white-space: nowrap; }
+        #file-input { font-size: 0.9em; }
+        #regex-input {
+            flex: 1 1 300px; padding: 5px 8px;
+            font-family: monospace; font-size: 0.9em;
+            border: 1px solid #ccc; border-radius: 4px; min-width: 200px;
+        }
+        .radio-group { display: flex; gap: 12px; font-size: 0.88em; }
+        .btn { padding: 6px 16px; background: #007bff; color: white; border: none;
+               border-radius: 4px; cursor: pointer; font-size: 0.9em; white-space: nowrap; }
+        .btn:hover { background: #0056b3; }
+        .btn.sec { background: #6c757d; } .btn.sec:hover { background: #545b62; }
+        .btn.grn { background: #28a745; } .btn.grn:hover { background: #1e7e34; }
+        #status-bar { font-size: 0.82em; padding: 3px 0; min-height: 22px; color: #155724; }
+        #status-bar.error { color: #721c24; }
+        #status-bar.info  { color: #0c5460; }
+
+        /* PLOT PANEL */
+        #plot-panel {
+            flex: 0 0 auto; display: none; flex-direction: column;
+            border-bottom: 2px solid #dee2e6; background: #fff; min-height: 60px;
+        }
+        #plot-bar {
+            flex: 0 0 auto; display: flex; align-items: center; gap: 8px;
+            flex-wrap: wrap; padding: 5px 12px; background: #e9ecef;
+            border-bottom: 1px solid #ced4da; font-size: 0.82em;
+        }
+        #plot-bar select, #plot-bar input[type=text], #plot-bar input[type=number] {
+            padding: 3px 6px; font-size: 0.88em; border: 1px solid #ccc; border-radius: 3px;
+        }
+        #plot-bar label { white-space: nowrap; color: #555; }
+        #plot-area { flex: 1 1 0; position: relative; min-height: 220px; max-height: 340px; }
+        #plot-area canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
+
+        /* BOTTOM TABLE PANEL */
+        #bottom-panel { flex: 1 1 0; display: flex; flex-direction: column; overflow: hidden; background: #fff; }
+        #table-bar {
+            flex: 0 0 auto; display: flex; align-items: center;
+            justify-content: space-between; padding: 4px 12px;
+            background: #e9ecef; border-bottom: 1px solid #ced4da;
+            font-size: 0.82em; color: #495057; min-height: 28px;
+        }
+
+        /* VIRTUAL SCROLL TABLE */
+        #table-scroller {
+            flex: 1 1 0;
+            overflow-y: scroll;
+            overflow-x: auto;
+            position: relative;
+        }
+        /* Spacer makes the scrollbar reflect total row count */
+        #vt-spacer {
+            position: absolute;
+            top: 0; left: 0;
+            width: 1px;
+            pointer-events: none;
+        }
+        /* Table is sticky at top; tbody rows are absolutely positioned */
+        #result-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.82em;
+            position: sticky;
+            top: 0;
+            z-index: 0;
+        }
+        #result-table thead th {
+            background: #343a40; color: #fff; padding: 6px 8px;
+            text-align: left; white-space: nowrap;
+        }
+        #result-table tbody {
+            position: relative;   /* anchor for absolutely-placed rows */
+        }
+        #result-table tbody tr {
+            position: absolute;
+            left: 0; right: 0;
+            display: flex;
+        }
+        #result-table tbody td {
+            padding: 4px 8px; border-bottom: 1px solid #e9ecef;
+            white-space: nowrap; flex: 1 1 0; min-width: 60px;
+            overflow: hidden; text-overflow: ellipsis;
+        }
+        #result-table tbody tr:hover td { background: #fff3cd; }
+        #result-table tbody tr.row-even td { background: #f8f9fa; }
+        #result-table tbody tr.row-even:hover td { background: #fff3cd; }
+
+        #empty-state { display: flex; align-items: center; justify-content: center;
+                       height: 100%; color: #aaa; font-size: 1.1em; }
+
+        /* FILTER ROW */
+        #filter-row th {
+            background: #495057; padding: 3px 4px;
+        }
+        #filter-row th input {
+            width: 100%; padding: 2px 4px; font-size: 0.78em;
+            border: 1px solid #adb5bd; border-radius: 2px;
+            background: #fff; box-sizing: border-box; min-width: 40px;
+        }
+        #filter-row th input.active  { border-color: #ffc107; background: #fff9e6; }
+        #filter-row th input.invalid { border-color: #dc3545; background: #fff0f0; }
+        #filter-row th input.op      { border-color: #17a2b8; background: #e8f7fb; }
+
+        /* DRAG HANDLE */
+        #drag-handle { flex: 0 0 6px; cursor: ns-resize; background: #dee2e6;
+                       border-top: 1px solid #ced4da; border-bottom: 1px solid #ced4da; }
+        #drag-handle:hover { background: #adb5bd; }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+</head>
+<body>
+
+<!-- TOP PANEL -->
+<div id="top-panel">
+    <h1>&#128202; FDV Chart Parser</h1>
+    <div class="ctrl-row">
+        <span class="ctrl-label">File&nbsp;path:</span>
+        <input type="text" id="path-input"
+               placeholder="e.g. D:\FDV\logs\site114\Output_site114_4_01_2026_20_01_45.txt"
+               style="flex:2 1 400px;min-width:200px">
+        <span class="ctrl-label">or&nbsp;upload:</span>
+        <input type="file" id="file-input" accept=".txt,.log,.csv">
+        <span class="ctrl-label">Regex:</span>
+        <input type="text" id="regex-input"
+               placeholder="optional -- e.g. ^FDV POLL or ^FDV OUTPUT"
+               style="flex:1 1 260px">
+        <span class="ctrl-label">Mode:</span>
+        <div class="radio-group">
+            <label><input type="radio" name="filter-mode" value="include" checked> Include</label>
+            <label><input type="radio" name="filter-mode" value="exclude"> Exclude</label>
+        </div>
+        <button class="btn" onclick="parseFile()">&#9654; Parse</button>
+        <button class="btn sec" onclick="resetAll()">&#10006; Clear</button>
+        <button class="btn grn" id="download-btn" onclick="downloadCSV()" style="display:none">&#8595; CSV</button>
+    </div>
+    <div id="status-bar">Ready -- select a file and click Parse.</div>
+</div>
+
+<!-- PLOT PANEL -->
+<div id="plot-panel" style="display:none">
+    <div id="plot-bar">
+        <label>X:<select id="x-col"></select></label>
+        <label style="margin-left:4px">X&nbsp;regex:
+            <input type="text" id="x-regex" placeholder="e.g. ([0-9]+)" style="width:110px"></label>
+        <label id="y-col-label" style="margin-left:8px">Y:<select id="y-col"></select></label>
+        <label id="y-regex-label" style="margin-left:4px">Y&nbsp;regex:
+            <input type="text" id="y-regex" placeholder="e.g. ([0-9]+)" style="width:110px"></label>
+        <label id="color-col-label" style="margin-left:8px">Color&nbsp;by:
+            <select id="color-col"><option value="">-- none --</option></select></label>
+        <label id="color-rx-label" style="margin-left:4px">Color&nbsp;regex:
+            <input type="text" id="color-regex" placeholder="e.g. DUT(\d+)" style="width:110px"></label>
+        <label style="margin-left:8px">Type:
+            <select id="chart-type" onchange="onChartTypeChange()">
+                <option value="scatter">Scatter</option>
+                <option value="line">Line</option>
+                <option value="histogram">Histogram</option>
+                <option value="cumproba">Cum Proba</option>
+            </select>
+        </label>
+        <label id="bins-label" style="margin-left:4px;display:none">Bins:
+            <input type="number" id="hist-bins" min="2" max="500" placeholder="auto" style="width:60px"></label>
+        <label id="split-label" style="margin-left:8px;display:none">Split&nbsp;by:
+            <select id="split-col"><option value="">-- none --</option></select></label>
+        <label id="split-rx-label" style="margin-left:4px;display:none">Split&nbsp;regex:
+            <input type="text" id="split-regex" placeholder="e.g. DUT(\d+)" style="width:110px"></label>
+        <button id="plot-btn" class="btn" style="padding:4px 12px" onclick="drawPlot()">&#9654; Plot</button>
+        <label style="margin-left:8px;font-size:0.82em;color:#555">
+            <input type="checkbox" id="x-log"> X&nbsp;log</label>
+        <label style="margin-left:4px;font-size:0.82em;color:#555">
+            <input type="checkbox" id="y-log"> Y&nbsp;log</label>
+        <label id="x-min-label" style="margin-left:8px;font-size:0.82em;color:#555">X&nbsp;min:
+            <input type="number" id="x-min" placeholder="auto" style="width:70px;font-size:0.9em"></label>
+        <label id="x-max-label" style="margin-left:2px;font-size:0.82em;color:#555">max:
+            <input type="number" id="x-max" placeholder="auto" style="width:70px;font-size:0.9em"></label>
+        <label id="y-min-label" style="margin-left:8px;font-size:0.82em;color:#555">Y&nbsp;min:
+            <input type="number" id="y-min" placeholder="auto" style="width:70px;font-size:0.9em"></label>
+        <label id="y-max-label" style="margin-left:2px;font-size:0.82em;color:#555">max:
+            <input type="number" id="y-max" placeholder="auto" style="width:70px;font-size:0.9em"></label>
+        <span id="plot-status" style="color:#555;font-size:0.85em;margin-left:6px"></span>
+    </div>
+    <div id="plot-area">
+        <div id="plot-cover-banner" style="display:none;position:absolute;top:0;left:0;right:0;
+             z-index:10;background:rgba(255,193,7,0.92);color:#333;font-size:0.82em;
+             font-weight:bold;padding:4px 10px;text-align:center;pointer-events:none;
+             border-bottom:1px solid #e0a800;">
+            &#9203; PARTIAL DATA &mdash; <span id="plot-cover-pct"></span>
+        </div>
+        <canvas id="plot-canvas"></canvas>
+    </div>
+    <div id="drag-handle" title="Drag to resize plot"></div>
+</div>
+
+<!-- BOTTOM PANEL -->
+<div id="bottom-panel">
+    <div id="table-bar">
+        <span id="table-info">No data loaded</span>
+        <button id="filter-toggle-btn" onclick="toggleFilters()"
+                style="display:none;padding:2px 10px;font-size:0.8em;background:#6c757d;
+                       color:#fff;border:none;border-radius:3px;cursor:pointer">
+            &#128269; Filters</button>
+    </div>
+    <div id="empty-state">Parse a file to see results here</div>
+    <!-- Virtual-scroll container: only ~50 DOM rows exist at any time -->
+    <div id="table-scroller" style="display:none">
+        <div id="vt-spacer"></div>
+        <table id="result-table">
+            <thead id="table-head"></thead>
+            <tbody id="table-body"></tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+'use strict';
+
+/* ================================================================
+   GLOBALS
+================================================================ */
+var currentCsvId      = null;
+var currentHeaders    = [];
+var chartInst         = null;
+var filtersVisible    = false;
+var domFullyLoaded    = false;
+var allRows           = [];   // ALL rows in memory -- primary source of truth
+var filteredIndices   = [];   // indices into allRows[] that pass current filters
+var totalExpectedRows = 0;
+
+/* Virtual-scroll state */
+var ROW_H       = 22;   // estimated row height px (recalibrated after first render)
+var VS_OVERSCAN = 8;    // extra rows above/below viewport
+var vsFirstRow  = 0;    // first rendered row index (into filteredIndices)
+
+var PALETTE = [
+    '#007bff','#e83e8c','#28a745','#fd7e14','#6610f2',
+    '#17a2b8','#dc3545','#20c997','#ffc107','#6f42c1'
+];
+
+/* ================================================================
+   UTILITIES
+================================================================ */
+function setStatus(msg, cls) {
+    var el = document.getElementById('status-bar');
+    el.textContent = msg; el.className = cls || '';
+}
+function setTableInfo(msg) { document.getElementById('table-info').textContent = msg; }
+function sleep(ms) { return new Promise(function(r){ setTimeout(r, ms); }); }
+function escHtml(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;')
+                    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function _updatePlotCoverBanner() {
+    var pct    = totalExpectedRows > 0
+                 ? Math.round(allRows.length / totalExpectedRows * 100) : 100;
+    var banner = document.getElementById('plot-cover-banner');
+    var lbl    = document.getElementById('plot-cover-pct');
+    if (!domFullyLoaded && totalExpectedRows > 0) {
+        lbl.textContent = allRows.length.toLocaleString() + ' / ' +
+            totalExpectedRows.toLocaleString() + ' rows loaded (' + pct + '%)';
+        banner.style.display = '';
+    } else {
+        banner.style.display = 'none';
+    }
+}
+
+function _setPlotBtnLoading(loading) {
+    var btn = document.getElementById('plot-btn');
+    if (!btn) return;
+    btn.disabled         = loading;
+    btn.style.opacity    = loading ? '0.5' : '';
+    btn.style.cursor     = loading ? 'not-allowed' : '';
+    btn.title = loading
+        ? 'Data still loading \u2014 wait for full load or click to plot partial data'
+        : '';
+}
+
+/* ================================================================
+   VIRTUAL SCROLL ENGINE
+   Only renders rows visible in the viewport + VS_OVERSCAN.
+   #vt-spacer is sized to total height so the scrollbar is correct.
+================================================================ */
+function _vtTotalHeight() {
+    return filteredIndices.length * ROW_H;
+}
+
+function _vtRender() {
+    var scroller = document.getElementById('table-scroller');
+    var spacer   = document.getElementById('vt-spacer');
+    var tbody    = document.getElementById('table-body');
+    if (!scroller || !tbody || !spacer) return;
+    if (filteredIndices.length === 0) { tbody.innerHTML = ''; return; }
+
+    /* Keep spacer sized to full dataset so scrollbar is accurate */
+    spacer.style.height = _vtTotalHeight() + 'px';
+
+    var scrollTop    = scroller.scrollTop;
+    var viewH        = scroller.clientHeight;
+    var headerH      = (document.getElementById('result-table').querySelector('thead') || {offsetHeight:33}).offsetHeight || 33;
+    var contentTop   = Math.max(0, scrollTop - headerH);
+    var firstVisible = Math.max(0, Math.floor(contentTop / ROW_H) - VS_OVERSCAN);
+    var lastVisible  = Math.min(
+        filteredIndices.length - 1,
+        Math.ceil((contentTop + viewH) / ROW_H) + VS_OVERSCAN
+    );
+
+    /* Skip re-render if the window hasn't shifted */
+    if (firstVisible === vsFirstRow && tbody.children.length === (lastVisible - firstVisible + 1)) return;
+    vsFirstRow = firstVisible;
+
+    var frag = document.createDocumentFragment();
+    for (var r = firstVisible; r <= lastVisible; r++) {
+        var row = allRows[filteredIndices[r]];
+        var tr  = document.createElement('tr');
+        if (r % 2 === 1) tr.className = 'row-even';
+        tr.style.top = (headerH + r * ROW_H) + 'px';
+        var cells = '';
+        for (var c = 0; c < row.length; c++) {
+            cells += '<td>' + escHtml(row[c] != null ? String(row[c]) : '') + '</td>';
+        }
+        tr.innerHTML = cells;
+        frag.appendChild(tr);
+    }
+    tbody.innerHTML = '';
+    tbody.appendChild(frag);
+
+    /* Calibrate ROW_H from actual rendered row height */
+    if (tbody.children.length > 0 && tbody.children[0].offsetHeight > 0) {
+        var measured = tbody.children[0].offsetHeight;
+        if (measured !== ROW_H) { ROW_H = measured; spacer.style.height = _vtTotalHeight() + 'px'; }
+    }
+}
+
+/* Wire scroll event once DOM is ready */
+document.addEventListener('DOMContentLoaded', function() {
+    var scroller = document.getElementById('table-scroller');
+    if (scroller) {
+        scroller.addEventListener('scroll', function() { _vtRender(); }, { passive: true });
+    }
+});
+
+/* ================================================================
+   FILTER ENGINE  (operates on allRows[], no DOM row scanning)
+================================================================ */
+function parseFilterExpr(raw) {
+    if (!raw) return null;
+    /* /regex/flags */
+    var rxLit = raw.match(/^\/(.+)\/([gimsuy]*)$/);
+    if (rxLit) {
+        try {
+            var re = new RegExp(rxLit[1], rxLit[2] || 'i');
+            return { fn: function(s){ return re.test(s); }, type: 'regex' };
+        } catch(e) {
+            return { fn: function(){ return false; }, type: 'invalid' };
+        }
+    }
+    /* comparison operator */
+    var cmp = raw.match(/^(==?|!=|<>|>=?|<=?)(.*)/);
+    if (cmp) {
+        var op = cmp[1], rhs = cmp[2].trim();
+        var rhsN = parseFloat(rhs), rhsIsN = !isNaN(rhsN) && rhs !== '';
+        return { type: 'op', fn: function(s) {
+            var lN = parseFloat(s);
+            if (rhsIsN && !isNaN(lN)) {
+                if (op==='>')  return lN>rhsN;   if (op==='>=') return lN>=rhsN;
+                if (op==='<')  return lN<rhsN;   if (op==='<=') return lN<=rhsN;
+                if (op==='=='||op==='=')  return lN===rhsN;
+                if (op==='!='||op==='<>') return lN!==rhsN;
+            }
+            var sl=s.toLowerCase(), rl=rhs.toLowerCase();
+            if (op==='=='||op==='=')  return sl===rl;
+            if (op==='!='||op==='<>') return sl!==rl;
+            if (op==='>') return s>rhs;  if (op==='>=') return s>=rhs;
+            if (op==='<') return s<rhs;  if (op==='<=') return s<=rhs;
+            return false;
+        }};
+    }
+    /* fallback: try regex, then substring */
+    try {
+        var re2 = new RegExp(raw, 'i');
+        return { fn: function(s){ return re2.test(s); }, type: 'regex' };
+    } catch(e) {
+        var low = raw.toLowerCase();
+        return { fn: function(s){ return s.toLowerCase().indexOf(low)!==-1; }, type: 'sub' };
+    }
+}
+
+function buildActiveFilters() {
+    var result = [];
+    document.querySelectorAll('#filter-row input').forEach(function(inp) {
+        var val = inp.value.trim();
+        if (!val) return;
+        var parsed = parseFilterExpr(val);
+        if (parsed && parsed.type !== 'invalid')
+            result.push({ idx: parseInt(inp.dataset.colidx), fn: parsed.fn });
+    });
+    return result;
+}
+
+function hasActiveFilters() {
+    var inputs = document.querySelectorAll('#filter-row input');
+    for (var i = 0; i < inputs.length; i++)
+        if (inputs[i].value.trim() !== '') return true;
+    return false;
+}
+
+/* Rebuild filteredIndices[] by scanning allRows[] -- pure JS, no DOM */
+function recomputeFilteredIndices() {
+    var filters = buildActiveFilters();
+    filteredIndices = [];
+    for (var r = 0; r < allRows.length; r++) {
+        if (filters.length === 0) { filteredIndices.push(r); continue; }
+        var row = allRows[r], pass = true;
+        for (var f = 0; f < filters.length; f++) {
+            var cell = row[filters[f].idx];
+            if (!filters[f].fn(cell != null ? String(cell) : '')) { pass = false; break; }
+        }
+        if (pass) filteredIndices.push(r);
+    }
+}
+
+var _filterTimer = null;
+function applyFilters() {
+    clearTimeout(_filterTimer);
+    _filterTimer = setTimeout(_doApplyFilters, 100);
+}
+
+function _doApplyFilters() {
+    var inputs = document.querySelectorAll('#filter-row input');
+    var activeCount = 0;
+    inputs.forEach(function(inp) {
+        var val = inp.value.trim();
+        inp.className = '';
+        if (!val) return;
+        var parsed = parseFilterExpr(val);
+        activeCount++;
+        if (!parsed || parsed.type === 'invalid') { inp.classList.add('invalid'); return; }
+        inp.classList.add(parsed.type === 'op' ? 'op' : 'active');
+    });
+    recomputeFilteredIndices();
+    vsFirstRow = 0;
+    _vtRender();
+    _updateFilterInfo(activeCount);
+}
+
+function _updateFilterInfo(activeCount) {
+    var info = document.getElementById('table-info');
+    if (!info) return;
+    var base = info.textContent.replace(/ \u2014 \d.*$/, '');
+    info.textContent = activeCount > 0
+        ? base + ' \u2014 ' + filteredIndices.length.toLocaleString() +
+          ' shown (' + activeCount + ' filter' + (activeCount > 1 ? 's' : '') + ')'
+        : base;
+}
+
+function toggleFilters() {
+    filtersVisible = !filtersVisible;
+    var row = document.getElementById('filter-row');
+    if (row) row.style.display = filtersVisible ? '' : 'none';
+    document.getElementById('filter-toggle-btn').style.background =
+        filtersVisible ? '#0056b3' : '#6c757d';
+    if (!filtersVisible) {
+        document.querySelectorAll('#filter-row input').forEach(function(inp) {
+            inp.value = ''; inp.className = '';
+        });
+        recomputeFilteredIndices();
+        vsFirstRow = 0;
+        _vtRender();
+        _updateFilterInfo(0);
+    }
+}
+
+/* ================================================================
+   PARSE  (async job pattern -- unchanged)
+================================================================ */
+async function parseFile() {
+    var filePath   = document.getElementById('path-input').value.trim();
+    var fileUpload = document.getElementById('file-input').files[0];
+    var regex      = document.getElementById('regex-input').value.trim();
+    var mode       = document.querySelector('input[name="filter-mode"]:checked').value;
+    if (!filePath && !fileUpload) {
+        setStatus('Enter a file path or select a file to upload.', 'error'); return;
+    }
+    setStatus('Submitting\u2026', 'info');
+    setTableInfo('Parsing \u2026');
+
+    var jobResp;
+    try {
+        var resp;
+        if (filePath) {
+            resp = await fetch('/parse_path', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ path: filePath, regex: regex, mode: mode })
+            });
+        } else {
+            var form = new FormData();
+            form.append('file', fileUpload);
+            form.append('regex', regex);
+            form.append('mode', mode);
+            resp = await fetch('/parse', { method: 'POST', body: form });
+        }
+        jobResp = await resp.json();
+    } catch(e) { setStatus('Network error: ' + e, 'error'); setTableInfo('Error'); return; }
+
+    if (jobResp.success) { _onParseResult(jobResp, filePath, fileUpload, Date.now()); return; }
+    if (!jobResp.job_id) { setStatus('Error: ' + (jobResp.error || 'Unknown'), 'error'); return; }
+
+    var jobId  = jobResp.job_id;
+    var t0     = Date.now();
+    var ticker = setInterval(function() {
+        setStatus('Parsing \u2026 ' + ((Date.now()-t0)/1000).toFixed(1) + 's', 'info');
+    }, 500);
+    while (true) {
+        await sleep(1000);
+        var sr;
+        try { var r2 = await fetch('/parse_status?job='+jobId); sr = await r2.json(); }
+        catch(e) { clearInterval(ticker); setStatus('Poll error: '+e,'error'); return; }
+        if (sr.state==='pending'||sr.state==='running') continue;
+        clearInterval(ticker);
+        if (!sr.success) { setStatus('Error: '+(sr.error||'Parse failed'),'error'); return; }
+        _onParseResult(sr, filePath, fileUpload, t0);
+        return;
+    }
+}
+
+function _onParseResult(result, filePath, fileUpload, t0) {
+    currentCsvId      = result.csv_id;
+    currentHeaders    = result.headers;
+    domFullyLoaded    = false;
+    totalExpectedRows = result.total_rows;
+    allRows           = result.rows.slice();
+
+    var total = result.total_rows;
+    var fname = filePath || (fileUpload ? fileUpload.name : '');
+    var tSecs = ((Date.now()-t0)/1000).toFixed(1);
+    setStatus('Parsed ' + total.toLocaleString() + ' rows \u2022 ' +
+              result.headers.length + ' columns \u2022 ' + tSecs + 's');
+
+    _buildTableHeader(result.headers);
+    recomputeFilteredIndices();   /* no active filters yet -- filteredIndices = all */
+    vsFirstRow = 0;
+
+    document.getElementById('empty-state').style.display       = 'none';
+    document.getElementById('table-scroller').style.display    = '';
+    document.getElementById('filter-toggle-btn').style.display = '';
+    document.getElementById('download-btn').style.display      = 'inline-block';
+    document.getElementById('plot-panel').style.display        = 'flex';
+
+    _vtRender();   /* show first viewport immediately */
+
+    populatePlotSelectors(result.headers);
+    _setPlotBtnLoading(true);
+    setTableInfo(total.toLocaleString() + ' rows \u00b7 ' + result.headers.length +
+                 ' columns \u00b7 ' + fname + ' \u2014 loading\u2026');
+
+    loadMoreRows(result.csv_id, result.headers.length, result.rows.length, total, fname);
+}
+
+function _buildTableHeader(headers) {
+    var hhtml = '<tr>';
+    headers.forEach(function(h){ hhtml += '<th>' + escHtml(h) + '</th>'; });
+    hhtml += '</tr><tr id="filter-row" style="display:none">';
+    headers.forEach(function(h, i){
+        hhtml += '<th><input type="text" data-colidx="' + i + '" placeholder="\u26b2"' +
+                 ' oninput="applyFilters()"' +
+                 ' title="Filter: substring / /regex/ / ==val / !=val / >=N / <=N"></th>';
+    });
+    hhtml += '</tr>';
+    document.getElementById('table-head').innerHTML = hhtml;
+}
+
+/* ================================================================
+   PROGRESSIVE LOADER -- feeds allRows[] only; no DOM row appending
+================================================================ */
+async function loadMoreRows(csv_id, ncols, offset, total, fname) {
+    var CHUNK = 10000;   /* larger chunks safe now -- zero DOM cost per row */
+    while (offset < total) {
+        var resp = await fetch('/rows?csv_id=' + csv_id +
+                               '&offset=' + offset + '&limit=' + CHUNK);
+        var d = await resp.json();
+        if (!d.success) break;
+
+        for (var i = 0; i < d.rows.length; i++) allRows.push(d.rows[i]);
+        offset += d.rows.length;
+
+        /* Recompute filtered view (pure JS array scan) */
+        recomputeFilteredIndices();
+
+        /* Keep spacer height accurate so scrollbar moves during load */
+        var spacer = document.getElementById('vt-spacer');
+        if (spacer) spacer.style.height = _vtTotalHeight() + 'px';
+
+        var pct = Math.round(offset / total * 100);
+        setTableInfo(total.toLocaleString() + ' rows \u00b7 ' + ncols +
+                     ' columns \u00b7 ' + fname +
+                     ' \u2014 loading ' + offset.toLocaleString() +
+                     ' / ' + total.toLocaleString() + ' (' + pct + '%)');
+
+        if (!d.has_more) break;
+        await sleep(0);   /* yield to event loop between network chunks */
+    }
+
+    domFullyLoaded = true;
+    recomputeFilteredIndices();
+    _vtRender();
+    _setPlotBtnLoading(false);
+    _updatePlotCoverBanner();
+    setTableInfo(total.toLocaleString() + ' rows \u00b7 ' + ncols +
+                 ' columns \u00b7 ' + fname);
+    if (hasActiveFilters()) _updateFilterInfo(buildActiveFilters().length);
+    drawPlot();
+}
+
+/* ================================================================
+   RESET / DOWNLOAD
+================================================================ */
+function resetAll() {
+    document.getElementById('file-input').value  = '';
+    document.getElementById('regex-input').value = '';
+    document.getElementById('path-input').value  = '';
+    document.getElementById('table-head').innerHTML = '';
+    document.getElementById('table-body').innerHTML = '';
+    document.getElementById('table-scroller').style.display = 'none';
+    document.getElementById('empty-state').style.display   = 'flex';
+    document.getElementById('download-btn').style.display  = 'none';
+    document.getElementById('filter-toggle-btn').style.display = 'none';
+    document.getElementById('plot-panel').style.display    = 'none';
+    var banner = document.getElementById('plot-cover-banner');
+    if (banner) banner.style.display = 'none';
+    if (chartInst) { chartInst.destroy(); chartInst = null; }
+    setStatus('Ready \u2014 select a file and click Parse.');
+    setTableInfo('No data loaded');
+    currentCsvId = null; currentHeaders = []; allRows = []; filteredIndices = [];
+    totalExpectedRows = 0; domFullyLoaded = false; filtersVisible = false; vsFirstRow = 0;
+    _setPlotBtnLoading(false);
+}
+
+function downloadCSV() {
+    if (!currentCsvId) { setStatus('No data to download','error'); return; }
+    window.location.href = '/download/' + currentCsvId;
+}
+
+/* ================================================================
+   PLOT DATA SOURCE
+   Iterates filteredIndices[] (indices into allRows[]).
+   Filter logic is already applied -- no re-evaluation needed.
+================================================================ */
+function readFilteredFromMemory(xCol, yCol, groupCol, xRx, yRx) {
+    var xi = currentHeaders.indexOf(xCol);
+    var yi = yCol     ? currentHeaders.indexOf(yCol)     : -1;
+    var gi = groupCol ? currentHeaders.indexOf(groupCol) : -1;
+    if (xi < 0) return { points: [], skipped: 0 };
+
+    var points = [], skipped = 0;
+    for (var r = 0; r < filteredIndices.length; r++) {
+        var row  = allRows[filteredIndices[r]];
+        var xRaw = row[xi] != null ? String(row[xi]) : '';
+        var yRaw = yi >= 0 && row[yi] != null ? String(row[yi]) : xRaw;
+        var gRaw = gi >= 0 && row[gi] != null ? String(row[gi]) : null;
+        var xv   = extractNum(xRaw, xRx);
+        var yv   = yi >= 0 ? extractNum(yRaw, yRx) : xv;
+        if (xv === null || (yi >= 0 && yv === null)) { skipped++; continue; }
+        var pt = { x: xv, y: yv };
+        if (gRaw !== null) pt.group = gRaw;
+        points.push(pt);
+    }
+    return { points: points, skipped: skipped };
+}
+
+/* ================================================================
+   PLOT CONTROLS
+================================================================ */
+function onChartTypeChange() {
+    var ct      = document.getElementById('chart-type').value;
+    var isXOnly = ct === 'histogram' || ct === 'cumproba';
+    var isCum   = ct === 'cumproba';
+    var isHist  = ct === 'histogram';
+    function show(id, vis) { var el=document.getElementById(id); if(el) el.style.display=vis?'':'none'; }
+    show('y-col-label',    !isXOnly);
+    show('y-regex-label',  !isXOnly);
+    show('color-col-label',!isXOnly);
+    show('color-rx-label', !isXOnly);
+    show('bins-label',      isHist);
+    show('split-label',     isCum);
+    show('split-rx-label',  isCum);
+    show('y-min-label',    !isXOnly);
+    show('y-max-label',    !isXOnly);
+}
+
+function populatePlotSelectors(headers) {
+    currentHeaders = headers;
+    ['x-col','y-col','color-col','split-col'].forEach(function(id) {
+        var sel = document.getElementById(id), prev = sel.value;
+        sel.innerHTML = (id==='color-col'||id==='split-col')
+            ? '<option value="">-- none --</option>' : '';
+        headers.forEach(function(h) {
+            var o = document.createElement('option');
+            o.value = h; o.textContent = h; sel.appendChild(o);
+        });
+        if (prev) sel.value = prev;
+    });
+    function tryDefault(id, candidates) {
+        var sel = document.getElementById(id);
+        for (var ci=0; ci<candidates.length; ci++)
+            for (var i=0; i<sel.options.length; i++)
+                if (sel.options[i].value.toUpperCase()===candidates[ci].toUpperCase()) {
+                    sel.value=sel.options[i].value; return;
+                }
+    }
+    tryDefault('x-col',    ['WL','BLK','SB','BL','LINE#']);
+    tryDefault('y-col',    ['RBER','BYBER','RBER_LIMIT','Measurement']);
+    tryDefault('color-col',['DUT','RESULT','PAGETYPE','Type']);
+}
+
+function extractNum(val, rxStr) {
+    if (rxStr) {
+        try {
+            var m = new RegExp(rxStr).exec(String(val));
+            if (m) val = (m[1] !== undefined ? m[1] : m[0]);
+        } catch(e) {}
+    }
+    var n = parseFloat(String(val).replace(/[^0-9.eE+\-]/g,''));
+    return isNaN(n) ? null : n;
+}
+
+function getAxisScale(minId, maxId) {
+    var opts = {};
+    var mn = parseFloat(document.getElementById(minId).value);
+    var mx = parseFloat(document.getElementById(maxId).value);
+    if (!isNaN(mn)) opts.min = mn;
+    if (!isNaN(mx)) opts.max = mx;
+    return opts;
+}
+
+function drawPlot() {
+    _updatePlotCoverBanner();
+    var ct = document.getElementById('chart-type').value;
+    if (ct === 'histogram') { drawHistogram(); return; }
+    if (ct === 'cumproba')  { drawCumProba();  return; }
+    drawScatterLine();
+}
+
+/* ── Scatter / Line ──────────────────────────────────────────────────── */
+function drawScatterLine() {
+    var xCol    = document.getElementById('x-col').value;
+    var yCol    = document.getElementById('y-col').value;
+    var xRx     = document.getElementById('x-regex').value.trim();
+    var yRx     = document.getElementById('y-regex').value.trim();
+    var colCol  = document.getElementById('color-col').value;
+    var colorRx = document.getElementById('color-regex').value.trim();
+    var ct      = document.getElementById('chart-type').value;
+    var xLog    = document.getElementById('x-log').checked;
+    var yLog    = document.getElementById('y-log').checked;
+    var status  = document.getElementById('plot-status');
+
+    if (!currentCsvId) { status.textContent = 'Session expired \u2014 re-parse file.'; return; }
+    status.textContent = 'Computing\u2026';
+
+    var res     = readFilteredFromMemory(xCol, yCol, colCol || null, xRx, yRx);
+    var points  = res.points;
+    var skipped = res.skipped;
+
+    var MAX_PTS = 10000, plotPts = points, sampled = false;
+    if (points.length > MAX_PTS && ct !== 'line') {
+        var step = Math.ceil(points.length / MAX_PTS);
+        plotPts = points.filter(function(_, i){ return i % step === 0; });
+        sampled = true;
+    }
+
+    function colorKey(pt) {
+        if (!colCol) return '(all)';
+        var raw = pt.group != null ? String(pt.group) : '(blank)';
+        if (!colorRx) return raw;
+        try {
+            var m = new RegExp(colorRx).exec(raw);
+            return m ? (m[1] !== undefined ? m[1] : m[0]) : '(no match)';
+        } catch(e) { return raw; }
+    }
+
+    var groups = {};
+    plotPts.forEach(function(pt) {
+        var g = colorKey(pt);
+        if (!groups[g]) groups[g] = [];
+        groups[g].push({ x: pt.x, y: pt.y });
+    });
+
+    var datasets = Object.keys(groups).map(function(g, i) {
+        return {
+            label: g,
+            data: groups[g],
+            backgroundColor: PALETTE[i % PALETTE.length] + '99',
+            borderColor:     PALETTE[i % PALETTE.length],
+            borderWidth: ct === 'line' ? 1.5 : 0,
+            pointRadius: ct === 'line' ? 2 : 3,
+            showLine: ct === 'line'
+        };
+    });
+
+    if (chartInst) chartInst.destroy();
+    chartInst = new Chart(document.getElementById('plot-canvas').getContext('2d'), {
+        type: 'scatter',
+        data: { datasets: datasets },
+        options: {
+            animation: false,
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    display: datasets.length > 1,
+                    position: 'right',
+                    labels: { boxWidth: 12, font: { size: 10 } }
+                },
+                tooltip: { callbacks: {
+                    label: function(ctx) {
+                        return ctx.dataset.label + ': (' + ctx.parsed.x + ', ' + ctx.parsed.y + ')';
+                    }
+                }}
+            },
+            scales: {
+                x: Object.assign({
+                    type: xLog ? 'logarithmic' : 'linear',
+                    title: { display: true,
+                             text: xCol + (xRx ? ' [' + xRx + ']' : '') + (xLog ? ' (log)' : '') }
+                }, getAxisScale('x-min', 'x-max')),
+                y: Object.assign({
+                    type: yLog ? 'logarithmic' : 'linear',
+                    title: { display: true,
+                             text: yCol + (yRx ? ' [' + yRx + ']' : '') + (yLog ? ' (log)' : '') }
+                }, getAxisScale('y-min', 'y-max'))
+            }
+        }
+    });
+
+    var filtNote = hasActiveFilters() ? ' \u2014 filtered' : '';
+    var sampNote = sampled
+        ? ' (sampled ' + plotPts.length.toLocaleString() + '/' + points.length.toLocaleString() + ')' : '';
+    status.textContent = points.length.toLocaleString() + ' pts' + sampNote +
+        (skipped > 0 ? ', ' + skipped + ' skipped' : '') + filtNote;
+}
+
+/* ── Histogram ───────────────────────────────────────────────────────── */
+function autoBins(n) { return Math.min(200, Math.max(2, Math.ceil(Math.log2(n) + 1))); }
+
+function buildHistBins(values, nBins) {
+    if (!values.length) return { bins: [], counts: [], width: 0 };
+    var mn = Math.min.apply(null, values);
+    var mx = Math.max.apply(null, values);
+    var w  = (mx - mn || 1) / nBins;
+    var bins = [], counts = [];
+    for (var i = 0; i < nBins; i++) { bins.push(mn + i*w + w/2); counts.push(0); }
+    values.forEach(function(v) {
+        var idx = Math.min(nBins - 1, Math.floor((v - mn) / w));
+        counts[idx]++;
+    });
+    return { bins: bins, counts: counts, width: w };
+}
+
+function drawHistogram() {
+    var xCol   = document.getElementById('x-col').value;
+    var xRx    = document.getElementById('x-regex').value.trim();
+    var yLog   = document.getElementById('y-log').checked;
+    var binsEl = document.getElementById('hist-bins');
+    var status = document.getElementById('plot-status');
+
+    if (!currentCsvId) { status.textContent = 'Session expired \u2014 re-parse file.'; return; }
+    status.textContent = 'Computing\u2026';
+
+    var res     = readFilteredFromMemory(xCol, null, null, xRx, null);
+    var vals    = res.points.map(function(p){ return p.x; });
+    var skipped = res.skipped;
+
+    if (!vals.length) { status.textContent = 'No numeric values in column ' + xCol; return; }
+
+    var userBins = parseInt(binsEl.value);
+    var nBins    = userBins >= 2 ? userBins : autoBins(vals.length);
+    var autoLbl  = userBins >= 2 ? '' : ' (auto)';
+    var h = buildHistBins(vals, nBins);
+
+    if (chartInst) chartInst.destroy();
+    chartInst = new Chart(document.getElementById('plot-canvas').getContext('2d'), {
+        type: 'bar',
+        data: {
+            labels: h.bins.map(function(b){ return b.toFixed(4); }),
+            datasets: [{
+                label: xCol,
+                data: h.counts,
+                backgroundColor: PALETTE[0] + 'bb',
+                borderColor: PALETTE[0],
+                borderWidth: 1,
+                barPercentage: 1.0,
+                categoryPercentage: 1.0
+            }]
+        },
+        options: {
+            animation: false,
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { display: false },
+                tooltip: { callbacks: {
+                    title: function(items){ return 'Centre: ' + items[0].label; },
+                    label: function(item) { return 'Count: ' + item.parsed.y; }
+                }}
+            },
+            scales: {
+                x: Object.assign({
+                    title: { display: true, text: xCol + (xRx ? ' [' + xRx + ']' : '') },
+                    ticks: { maxTicksLimit: 12, maxRotation: 45 }
+                }, getAxisScale('x-min', 'x-max')),
+                y: {
+                    type: yLog ? 'logarithmic' : 'linear',
+                    title: { display: true, text: 'Count' + (yLog ? ' (log)' : '') },
+                    beginAtZero: !yLog
+                }
+            }
+        }
+    });
+
+    var filtNote = hasActiveFilters() ? ' \u2014 filtered' : '';
+    status.textContent = vals.length.toLocaleString() + ' values, ' + nBins + ' bins' + autoLbl +
+        (skipped > 0 ? ', ' + skipped + ' skipped' : '') + filtNote;
+}
+
+/* ── Cumulative Probability ──────────────────────────────────────────── */
+function drawCumProba() {
+    var xCol     = document.getElementById('x-col').value;
+    var xRx      = document.getElementById('x-regex').value.trim();
+    var splitCol = document.getElementById('split-col').value;
+    var splitRx  = document.getElementById('split-regex').value.trim();
+    var xLog     = document.getElementById('x-log').checked;
+    var status   = document.getElementById('plot-status');
+
+    if (!currentCsvId) { status.textContent = 'Session expired \u2014 re-parse file.'; return; }
+    status.textContent = 'Computing\u2026';
+
+    var res     = readFilteredFromMemory(xCol, null, splitCol || null, xRx, null);
+    var points  = res.points;
+    var skipped = res.skipped;
+
+    if (!points.length) { status.textContent = 'No numeric values in column ' + xCol; return; }
+
+    function groupKey(pt) {
+        if (!splitCol) return '(all)';
+        var raw = pt.group != null ? String(pt.group) : '(blank)';
+        if (!splitRx) return raw;
+        try {
+            var m = new RegExp(splitRx).exec(raw);
+            return m ? (m[1] !== undefined ? m[1] : m[0]) : '(no match)';
+        } catch(e) { return raw; }
+    }
+
+    var groups = {};
+    points.forEach(function(pt) {
+        var g = groupKey(pt);
+        if (!groups[g]) groups[g] = [];
+        groups[g].push(pt.x);
+    });
+
+    var datasets = Object.keys(groups).sort().map(function(g, i) {
+        var vals = groups[g].slice().sort(function(a,b){ return a-b; });
+        var n    = vals.length;
+        return {
+            label: g + ' (n=' + n.toLocaleString() + ')',
+            data:  vals.map(function(v, j){ return { x: v, y: (j+1)/n }; }),
+            borderColor:     PALETTE[i % PALETTE.length],
+            backgroundColor: 'transparent',
+            borderWidth: 1.8,
+            pointRadius: n <= 2000 ? 2 : 0,
+            showLine: true,
+            tension: 0
+        };
+    });
+
+    if (chartInst) chartInst.destroy();
+    chartInst = new Chart(document.getElementById('plot-canvas').getContext('2d'), {
+        type: 'scatter',
+        data: { datasets: datasets },
+        options: {
+            animation: false,
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { display: true, position: 'right',
+                          labels: { boxWidth: 12, font: { size: 10 } } },
+                tooltip: { callbacks: {
+                    label: function(item) {
+                        return item.dataset.label + ': x=' + item.parsed.x.toFixed(6) +
+                               ', P=' + (item.parsed.y * 100).toFixed(2) + '%';
+                    }
+                }}
+            },
+            scales: {
+                x: Object.assign({
+                    type: xLog ? 'logarithmic' : 'linear',
+                    title: { display: true,
+                             text: xCol + (xRx ? ' [' + xRx + ']' : '') + (xLog ? ' (log)' : '') }
+                }, getAxisScale('x-min', 'x-max')),
+                y: {
+                    title: { display: true, text: 'Cumulative Probability' },
+                    min: 0, max: 1,
+                    ticks: { callback: function(v){ return (v*100).toFixed(0)+'%'; } }
+                }
+            }
+        }
+    });
+
+    var filtNote  = hasActiveFilters() ? ' \u2014 filtered' : '';
+    var nGroups   = Object.keys(groups).length;
+    var splitDesc = splitCol
+        ? (' split by ' + splitCol + (splitRx ? ' [' + splitRx + ']' : '')) : '';
+    status.textContent = points.length.toLocaleString() + ' values' + splitDesc +
+        (nGroups > 1 ? ', ' + nGroups + ' groups' : '') +
+        (skipped > 0 ? ', ' + skipped + ' skipped' : '') + filtNote;
+}
+
+/* ── Drag-to-resize plot ─────────────────────────────────────────────── */
+(function() {
+    var handle   = document.getElementById('drag-handle');
+    var dragging = false, startY = 0, startH = 0;
+    handle.addEventListener('mousedown', function(e) {
+        dragging = true;
+        startY   = e.clientY;
+        startH   = document.getElementById('plot-area').offsetHeight;
+        document.body.style.cursor = 'ns-resize';
+        e.preventDefault();
+    });
+    document.addEventListener('mousemove', function(e) {
+        if (!dragging) return;
+        var newH = Math.max(80, Math.min(700, startH + e.clientY - startY));
+        var area = document.getElementById('plot-area');
+        area.style.maxHeight = newH + 'px';
+        area.style.minHeight = newH + 'px';
+        if (chartInst) chartInst.resize();
+    });
+    document.addEventListener('mouseup', function() {
+        dragging = false;
+        document.body.style.cursor = '';
+    });
+})();
+</script>
+</body>
+</html>
+"""
+
+with open(TARGET, 'w', encoding='utf-8') as f:
+    f.write(HTML)
+
+size  = os.path.getsize(TARGET)
+lines = HTML.count('\n')
+print(f'Written: {TARGET}')
+print(f'Size:    {size:,} bytes  |  ~{lines} lines')

@@ -1,0 +1,10 @@
+=== FDV Chart Regex Filter Test ===
+File : D:\FDV\logs\A1\PLC\Output_site114_4_01_2026_20_01_45.txt
+Regex: ^FDV OUT.*WL.*SB.*BL.*
+Mode : include
+
+[Direct regex] First match at line 1698: FDV OUTPUT [D:\NAND\150S\N59A\FDV\STAGING\RMAGUAD\PLC_BASIC_ERASE_PROGRAM_PAGE_READ/BASIC_PROGRAM_PA
+[Direct regex] Total lines matching pattern: 184992
+
+Starting server...
+ERROR: Server did not start in time

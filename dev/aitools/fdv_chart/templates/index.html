@@ -1,0 +1,1166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FDV Chart - Log Parser & Visualizer</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            height: 100vh;
+            padding: 0;
+            overflow: hidden;
+        }
+
+        .container {
+            width: 100%;
+            height: 100%;
+            margin: 0;
+            background: white;
+            border-radius: 0;
+            box-shadow: none;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px 30px;
+            text-align: center;
+            flex-shrink: 0;
+        }
+
+        header h1 {
+            font-size: 2em;
+            margin-bottom: 5px;
+        }
+
+        header p {
+            font-size: 0.95em;
+            opacity: 0.9;
+            margin: 0;
+        }
+
+        .nav-tabs {
+            display: flex;
+            border-bottom: 2px solid #e0e0e0;
+            background: #f5f5f5;
+            flex-shrink: 0;
+        }
+
+        .nav-tabs button {
+            flex: 1;
+            padding: 12px;
+            border: none;
+            background: none;
+            cursor: pointer;
+            font-size: 0.95em;
+            transition: all 0.3s;
+            font-weight: 500;
+            color: #666;
+        }
+
+        .nav-tabs button:hover {
+            background: #e8e8e8;
+        }
+
+        .nav-tabs button.active {
+            color: #667eea;
+            border-bottom: 3px solid #667eea;
+            background: white;
+        }
+
+        .content {
+            flex: 1;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .content.fullscreen {
+            padding: 0;
+        }
+
+        .tab-content {
+            display: none;
+            flex: 1;
+            overflow: auto;
+            padding: 30px;
+        }
+
+        .tab-content.active {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .tab-content.active#data {
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+            padding: 0;
+            overflow: hidden;
+            min-height: 0;
+        }
+
+        .section {
+            margin-bottom: 30px;
+        }
+
+        .section#dataSection {
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+            width: 100%;
+            margin-bottom: 0;
+            padding: 0;
+            position: relative;
+            min-height: 0;
+        }
+
+        .section h2 {
+            color: #333;
+            margin-bottom: 0;
+            font-size: 1.5em;
+            border-bottom: 2px solid #667eea;
+            padding: 15px 20px 10px 20px;
+            flex-shrink: 0;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            color: #333;
+            font-weight: 500;
+        }
+
+        input[type="file"],
+        input[type="text"],
+        select,
+        textarea {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 1em;
+            font-family: inherit;
+        }
+
+        input[type="file"] {
+            padding: 5px;
+        }
+
+        select:focus,
+        input[type="text"]:focus,
+        textarea:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 5px rgba(102, 126, 234, 0.3);
+        }
+
+        button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 12px 30px;
+            border: none;
+            border-radius: 5px;
+            font-size: 1em;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-weight: 600;
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        button:active {
+            transform: translateY(0);
+        }
+
+        button.secondary {
+            background: #666;
+            margin-left: 10px;
+        }
+
+        button.secondary:hover {
+            background: #555;
+        }
+
+        .button-group {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .alert {
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            display: none;
+        }
+
+        .alert.show {
+            display: block;
+        }
+
+        .alert.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .alert.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .alert.info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+
+        .spinner {
+            display: none;
+            text-align: center;
+            padding: 20px;
+            flex-shrink: 0;
+        }
+
+        .spinner.show {
+            display: block;
+        }
+
+        .spinner::after {
+            content: "";
+            display: inline-block;
+            width: 30px;
+            height: 30px;
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+            background: white;
+        }
+
+        #data table {
+            margin-top: 0;
+            flex: 1;
+            overflow: auto;
+        }
+
+        #dataTableContainer {
+            flex: 1;
+            overflow-y: auto;
+            overflow-x: auto;
+            border: 1px solid #ddd;
+            margin: 0;
+            min-height: 0;
+            width: 100%;
+        }
+
+        #dataTableContainer table {
+            margin: 0;
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        table thead {
+            background: #f5f5f5;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+
+        table th {
+            padding: 12px;
+            text-align: left;
+            font-weight: 600;
+            color: #333;
+            border-bottom: 2px solid #ddd;
+            cursor: pointer;
+            user-select: none;
+            background: #f5f5f5;
+        }
+
+        table th:hover {
+            background: #e8e8e8;
+        }
+
+        table td {
+            padding: 12px;
+            border-bottom: 1px solid #eee;
+        }
+
+        table tr:hover {
+            background: #f9f9f9;
+        }
+
+        .pagination {
+            display: flex;
+            gap: 5px;
+            justify-content: center;
+            margin-top: 0;
+            padding: 10px 20px;
+            background: #f9f9f9;
+            border-top: 1px solid #ddd;
+            flex-wrap: wrap;
+            flex-shrink: 0;
+        }
+
+        .pagination-floating {
+            position: absolute;
+            bottom: 10px;
+            right: 10px;
+            background: rgba(255, 255, 255, 0.95);
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            padding: 10px 15px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            z-index: 20;
+            display: flex;
+            gap: 10px;
+            flex-direction: column;
+            max-width: none;
+            margin-top: 0;
+            border-top: 1px solid #ddd;
+            flex-wrap: nowrap;
+            flex-shrink: 1;
+        }
+
+        #dataPaginationFloating {
+            position: absolute;
+            bottom: 10px;
+            right: 10px;
+            background: rgba(255, 255, 255, 0.95);
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+
+        .pagination button {
+            padding: 6px 10px;
+            font-size: 0.85em;
+            min-width: 35px;
+        }
+
+        .pagination button.active {
+            background: #667eea;
+            cursor: default;
+        }
+
+        .controls {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-bottom: 0;
+            margin-top: 0;
+            padding: 10px 20px;
+            background: #f9f9f9;
+            border-bottom: 1px solid #ddd;
+            align-items: center;
+            flex-shrink: 0;
+            min-height: 45px;
+        }
+
+        .controls input,
+        .controls select {
+            flex: 1;
+            min-width: 150px;
+            padding: 8px;
+            font-size: 0.9em;
+        }
+
+        .controls button {
+            padding: 8px 20px;
+            font-size: 0.9em;
+            flex-shrink: 0;
+        }
+
+        .controls select,
+        .controls input {
+            min-width: 150px;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+
+        .stat-card {
+            background: #f9f9f9;
+            padding: 20px;
+            border-radius: 8px;
+            border-left: 4px solid #667eea;
+        }
+
+        .stat-card h3 {
+            color: #667eea;
+            margin-bottom: 10px;
+            font-size: 0.9em;
+            text-transform: uppercase;
+        }
+
+        .stat-card .value {
+            font-size: 1.8em;
+            font-weight: bold;
+            color: #333;
+        }
+
+        .stat-card .unit {
+            color: #999;
+            font-size: 0.9em;
+            margin-top: 5px;
+        }
+
+        .plot-container {
+            margin-top: 20px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            padding: 10px;
+            text-align: center;
+        }
+
+        .plot-image {
+            max-width: 100%;
+            max-height: 600px;
+            border-radius: 5px;
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal.show {
+            display: flex;
+        }
+
+        .modal-content {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            max-width: 600px;
+            width: 90%;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .modal-header h2 {
+            margin: 0;
+        }
+
+        .close-btn {
+            background: none;
+            border: none;
+            font-size: 28px;
+            cursor: pointer;
+            color: #666;
+            padding: 0;
+            width: 30px;
+            height: 30px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .close-btn:hover {
+            color: #333;
+            transform: none;
+        }
+
+        @media (max-width: 768px) {
+            .nav-tabs {
+                flex-direction: column;
+            }
+
+            header h1 {
+                font-size: 1.8em;
+            }
+
+            .controls {
+                flex-direction: column;
+            }
+
+            .controls select,
+            .controls input {
+                min-width: 100%;
+            }
+
+            .button-group {
+                flex-direction: column;
+            }
+
+            button, .button-group button {
+                width: 100%;
+            }
+        }
+
+        .loading-table {
+            text-align: center;
+            padding: 40px;
+            color: #999;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>📊 FDV Chart - Log Parser & Visualizer</h1>
+        <p>Parse FDV log files, generate CSV, and create interactive visualizations</p>
+    </header>
+
+    <div class="nav-tabs">
+        <button class="tab-btn active" data-tab="upload">📤 Upload & Parse</button>
+        <button class="tab-btn" data-tab="data">📋 View Data</button>
+        <button class="tab-btn" data-tab="scatter">📈 Scatter Plot</button>
+        <button class="tab-btn" data-tab="cdf">📊 CDF Plot</button>
+        <button class="tab-btn" data-tab="stats">📉 Statistics</button>
+        <button class="tab-btn" data-tab="help">ℹ️ Help</button>
+    </div>
+
+    <div class="content">
+            <!-- UPLOAD TAB -->
+            <div id="upload" class="tab-content active">
+                <div class="section">
+                    <h2>Upload FDV Log File</h2>
+                    <p style="margin-bottom: 20px; color: #666;">Upload an FDV log file to parse and convert it to CSV format.</p>
+                    
+                    <div class="form-group">
+                        <label for="logFile">Select FDV Log File (.txt or .log)</label>
+                        <input type="file" id="logFile" accept=".txt,.log" required>
+                    </div>
+
+                    <div class="button-group">
+                        <button onclick="uploadAndParse()">Parse File</button>
+                        <button class="secondary" onclick="resetForm()">Reset</button>
+                    </div>
+
+                    <div class="spinner" id="uploadSpinner"></div>
+                    <div class="alert" id="uploadAlert"></div>
+
+                    <div id="uploadResult" style="display: none;">
+                        <div class="section" style="margin-top: 30px; border: 2px solid #667eea; padding: 20px; border-radius: 5px;">
+                            <h3 style="color: #667eea; margin-top: 0;">✅ File Parsed Successfully!</h3>
+                            <div class="stats-grid">
+                                <div class="stat-card">
+                                    <h3>Total Rows</h3>
+                                    <div class="value" id="rowCount">-</div>
+                                </div>
+                                <div class="stat-card">
+                                    <h3>Total Columns</h3>
+                                    <div class="value" id="colCount">-</div>
+                                </div>
+                            </div>
+                            <h3 style="margin-top: 20px;">Preview (First 10 Rows)</h3>
+                            <div id="previewTable"></div>
+                            <button style="margin-top: 20px;" onclick="downloadCSV()">⬇️ Download CSV</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- DATA TAB -->
+            <div id="data" class="tab-content">
+                <div class="section" id="dataSection">
+                    <div style="display: flex; justify-content: space-between; align-items: center; flex-shrink: 0; padding: 15px 20px 0 20px; border-bottom: 2px solid #667eea;">
+                        <h2 style="margin: 0; padding: 0; border: none; font-size: 1.5em; color: #333;">View CSV Data</h2>
+                    </div>
+
+                    <div class="controls">
+                        <input type="text" id="searchFilter" placeholder="Search all columns...">
+                        <select id="columnFilter">
+                            <option value="">-- Filter by Column --</option>
+                        </select>
+                        <input type="text" id="columnFilterValue" placeholder="Filter value...">
+                        <button onclick="filterData()">🔍 Filter</button>
+                        <button class="secondary" onclick="resetDataFilters()">Reset</button>
+                    </div>
+
+                    <div class="alert" id="dataAlert"></div>
+
+                    <div id="dataTableContainer">
+                        <div class="loading-table">Load a CSV file to view data</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- SCATTER PLOT TAB -->
+            <div id="scatter" class="tab-content">
+                <div class="section">
+                    <h2>Create Scatter Plot</h2>
+                    <p style="margin-bottom: 20px; color: #666;">Generate X-Y scatter plots from selected columns.</p>
+
+                    <div class="form-group">
+                        <label for="scatterX">X-Axis Column</label>
+                        <select id="scatterX">
+                            <option value="">-- Select Column --</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="scatterY">Y-Axis Column</label>
+                        <select id="scatterY">
+                            <option value="">-- Select Column --</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="scatterHue">Color By (Optional)</label>
+                        <select id="scatterHue">
+                            <option value="">-- None --</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="scatterTitle">Plot Title</label>
+                        <input type="text" id="scatterTitle" placeholder="Enter plot title..." value="Scatter Plot">
+                    </div>
+
+                    <div class="button-group">
+                        <button onclick="generateScatterPlot()">📈 Generate Plot</button>
+                    </div>
+
+                    <div class="spinner" id="scatterSpinner"></div>
+                    <div class="alert" id="scatterAlert"></div>
+                    <div id="scatterPlot" class="plot-container" style="display: none;">
+                        <img id="scatterImage" class="plot-image" src="" alt="Scatter Plot">
+                    </div>
+                </div>
+            </div>
+
+            <!-- CDF PLOT TAB -->
+            <div id="cdf" class="tab-content">
+                <div class="section">
+                    <h2>Create CDF Plot</h2>
+                    <p style="margin-bottom: 20px; color: #666;">Generate cumulative distribution plots with category coloring.</p>
+
+                    <div class="form-group">
+                        <label for="cdfValue">Value Column (Distribution)</label>
+                        <select id="cdfValue">
+                            <option value="">-- Select Column --</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="cdfCategory">Category Column (Color)</label>
+                        <select id="cdfCategory">
+                            <option value="">-- Select Column --</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="cdfSplit">Split By (Optional)</label>
+                        <select id="cdfSplit">
+                            <option value="">-- None --</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="cdfTitle">Plot Title</label>
+                        <input type="text" id="cdfTitle" placeholder="Enter plot title..." value="CDF Plot">
+                    </div>
+
+                    <div class="button-group">
+                        <button onclick="generateCDFPlot()">📊 Generate Plot</button>
+                    </div>
+
+                    <div class="spinner" id="cdfSpinner"></div>
+                    <div class="alert" id="cdfAlert"></div>
+                    <div id="cdfPlot" class="plot-container" style="display: none;">
+                        <img id="cdfImage" class="plot-image" src="" alt="CDF Plot">
+                    </div>
+                </div>
+            </div>
+
+            <!-- STATISTICS TAB -->
+            <div id="stats" class="tab-content">
+                <div class="section">
+                    <h2>Data Statistics</h2>
+                    <p style="margin-bottom: 20px; color: #666;">View statistical summaries of your data.</p>
+
+                    <div class="spinner" id="statsSpinner"></div>
+                    <div class="alert" id="statsAlert"></div>
+                    <div id="statsContainer" class="stats-grid"></div>
+                </div>
+            </div>
+
+            <!-- HELP TAB -->
+            <div id="help" class="tab-content">
+                <div class="section">
+                    <h2>Help & Documentation</h2>
+                    
+                    <h3 style="margin-top: 20px; color: #333;">🚀 Getting Started</h3>
+                    <ol style="line-height: 1.8;">
+                        <li>Upload your FDV log file using the <strong>Upload & Parse</strong> tab</li>
+                        <li>The app will parse the log file and generate a CSV with extracted data</li>
+                        <li>View and filter the data in the <strong>View Data</strong> tab</li>
+                        <li>Create visualizations using the <strong>Scatter Plot</strong> and <strong>CDF Plot</strong> tabs</li>
+                        <li>Download the generated CSV or plots for further analysis</li>
+                    </ol>
+
+                    <h3 style="margin-top: 20px; color: #333;">📝 Supported Log Formats</h3>
+                    <p>The parser supports FDV log files with the following formats:</p>
+                    <ul style="line-height: 1.8; margin-left: 20px;">
+                        <li><strong>FDV OUTPUT</strong> - Functional test data with pass/fail results</li>
+                        <li><strong>FDV POLL</strong> - Parametric/characterization data with measurements</li>
+                    </ul>
+
+                    <h3 style="margin-top: 20px; color: #333;">📊 Available Plots</h3>
+                    <ul style="line-height: 1.8; margin-left: 20px;">
+                        <li><strong>Scatter Plot</strong> - X-Y scatter with optional category coloring</li>
+                        <li><strong>CDF Plot</strong> - Cumulative distribution with split capability</li>
+                    </ul>
+
+                    <h3 style="margin-top: 20px; color: #333;">🔑 Key Features</h3>
+                    <ul style="line-height: 1.8; margin-left: 20px;">
+                        <li>Automatic parsing of complex FDV log file formats</li>
+                        <li>Extraction of test parameters (VCC, TEMP, WL, BLK, PAGE, etc.)</li>
+                        <li>CSV generation with comprehensive data</li>
+                        <li>Interactive data browsing and filtering</li>
+                        <li>Publication-quality plot generation</li>
+                        <li>Statistical summaries of parsed data</li>
+                    </ul>
+
+                    <h3 style="margin-top: 20px; color: #333;">📚 Extracted Fields</h3>
+                    <p>The parser extracts the following fields from FDV logs:</p>
+                    <ul style="line-height: 1.8; margin-left: 20px;">
+                        <li>DUT (Device Under Test)</li>
+                        <li>Test Name & Test Conditions</li>
+                        <li>Pagetype (SLC, MLC, TLC, QLC, etc.)</li>
+                        <li>WL (Wordline) and BLK (Block) addresses</li>
+                        <li>RBER/Value (Raw Bit Error Rate)</li>
+                        <li>VCC, VCCQ, TEMP (Power and Temperature)</li>
+                        <li>Status codes and plane operations</li>
+                        <li>Deck information (LD, MD, UP)</li>
+                        <li>And more...</li>
+                    </ul>
+
+                    <h3 style="margin-top: 20px; color: #333;">⚙️ Technical Details</h3>
+                    <p>
+                        <strong>Port:</strong> 5058<br>
+                        <strong>Framework:</strong> Flask + Pandas + Matplotlib<br>
+                        <strong>Formats:</strong> TXT, LOG<br>
+                        <strong>Output:</strong> CSV, PNG plots
+                    </p>
+                </div>
+            </div>
+        </div>
+
+    <script>
+        let currentCsvId = null;
+        let currentData = null;
+        let currentPage = 0;
+        let currentColumns = [];
+
+        // Tab switching
+        document.querySelectorAll('.tab-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const tabName = btn.getAttribute('data-tab');
+                switchTab(tabName);
+            });
+        });
+
+        function switchTab(tabName) {
+            // Hide all tabs
+            document.querySelectorAll('.tab-content').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            document.querySelectorAll('.tab-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+
+            // Show selected tab
+            document.getElementById(tabName).classList.add('active');
+            event.target.classList.add('active');
+
+            // Load data if switching to data tab
+            if (tabName === 'data' && currentCsvId) {
+                loadDataPage(0);
+            }
+
+            // Load stats if switching to stats tab
+            if (tabName === 'stats' && currentCsvId) {
+                loadStats();
+            }
+        }
+
+        function showAlert(containerId, message, type = 'info') {
+            const alert = document.getElementById(containerId);
+            alert.textContent = message;
+            alert.className = `alert ${type} show`;
+            setTimeout(() => alert.classList.remove('show'), 5000);
+        }
+
+        function showSpinner(spinnerId, show = true) {
+            document.getElementById(spinnerId).classList.toggle('show', show);
+        }
+
+        // UPLOAD FUNCTIONS
+        async function uploadAndParse() {
+            const fileInput = document.getElementById('logFile');
+            if (!fileInput.files.length) {
+                showAlert('uploadAlert', 'Please select a file', 'error');
+                return;
+            }
+
+            showSpinner('uploadSpinner', true);
+
+            const formData = new FormData();
+            formData.append('file', fileInput.files[0]);
+
+            try {
+                const response = await fetch('/api/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const data = await response.json();
+
+                if (!response.ok || !data.success) {
+                    showAlert('uploadAlert', data.error || 'Upload failed', 'error');
+                    return;
+                }
+
+                currentCsvId = data.csv_id;
+                currentColumns = data.columns;
+
+                // Update column selects
+                updateColumnSelects(data.columns);
+
+                // Display results
+                document.getElementById('rowCount').textContent = data.row_count;
+                document.getElementById('colCount').textContent = data.columns.length;
+
+                // Display preview table
+                displayPreviewTable(data.preview, data.columns);
+
+                document.getElementById('uploadResult').style.display = 'block';
+                showAlert('uploadAlert', `✅ Successfully parsed ${data.row_count} rows with ${data.columns.length} columns!`, 'success');
+
+            } catch (error) {
+                showAlert('uploadAlert', `Error: ${error.message}`, 'error');
+            } finally {
+                showSpinner('uploadSpinner', false);
+            }
+        }
+
+        function displayPreviewTable(data, columns) {
+            const table = document.createElement('table');
+            const thead = document.createElement('thead');
+            const tbody = document.createElement('tbody');
+
+            const headerRow = document.createElement('tr');
+            columns.forEach(col => {
+                const th = document.createElement('th');
+                th.textContent = col;
+                headerRow.appendChild(th);
+            });
+            thead.appendChild(headerRow);
+
+            data.forEach(row => {
+                const tr = document.createElement('tr');
+                columns.forEach(col => {
+                    const td = document.createElement('td');
+                    const val = row[col];
+                    td.textContent = val !== null && val !== undefined ? val : '-';
+                    tr.appendChild(td);
+                });
+                tbody.appendChild(tr);
+            });
+
+            table.appendChild(thead);
+            table.appendChild(tbody);
+
+            document.getElementById('previewTable').innerHTML = '';
+            document.getElementById('previewTable').appendChild(table);
+        }
+
+        function updateColumnSelects(columns) {
+            const selects = ['scatterX', 'scatterY', 'scatterHue', 'cdfValue', 'cdfCategory', 'cdfSplit', 'columnFilter'];
+            
+            selects.forEach(selectId => {
+                const select = document.getElementById(selectId);
+                const currentValue = select.value;
+                
+                // Keep first option
+                const firstOption = select.querySelector('option:first-child');
+                select.innerHTML = '';
+                if (firstOption) {
+                    select.appendChild(firstOption);
+                }
+                
+                columns.forEach(col => {
+                    const option = document.createElement('option');
+                    option.value = col;
+                    option.textContent = col;
+                    select.appendChild(option);
+                });
+            });
+        }
+
+        async function downloadCSV() {
+            if (!currentCsvId) return;
+            window.location.href = `/api/csv/${currentCsvId}/download`;
+        }
+
+        function resetForm() {
+            document.getElementById('logFile').value = '';
+            document.getElementById('uploadResult').style.display = 'none';
+            currentCsvId = null;
+        }
+
+        // DATA TABLE FUNCTIONS - SIMPLIFIED
+        async function loadDataPage(page) {
+            if (!currentCsvId) return;
+
+            try {
+                const response = await fetch(`/api/csv/${currentCsvId}/data`);
+                const data = await response.json();
+
+                if (!response.ok || !data.success) {
+                    showAlert('dataAlert', data.error || 'Failed to load data', 'error');
+                    return;
+                }
+
+                displayDataTable(data.data, data.columns, data.total_rows);
+
+            } catch (error) {
+                showAlert('dataAlert', `Error: ${error.message}`, 'error');
+            }
+        }
+
+        function displayDataTable(data, columns, totalRows) {
+            const container = document.getElementById('dataTableContainer');
+            
+            // Create table
+            let html = '<table><thead><tr>';
+            
+            // Add header
+            columns.forEach(col => {
+                html += `<th>${col}</th>`;
+            });
+            html += '</tr></thead><tbody>';
+            
+            // Add rows
+            data.forEach(row => {
+                html += '<tr>';
+                columns.forEach(col => {
+                    const val = row[col] !== null && row[col] !== undefined ? row[col] : '-';
+                    html += `<td>${val}</td>`;
+                });
+                html += '</tr>';
+            });
+            
+            html += '</tbody></table>';
+            container.innerHTML = html;
+            
+            // Show total rows info
+            showAlert('dataAlert', `Loaded ${totalRows} rows`, 'info');
+        }
+
+        function filterData() {
+            loadDataPage(0);
+        }
+
+        function resetDataFilters() {
+            document.getElementById('columnFilter').value = '';
+            document.getElementById('columnFilterValue').value = '';
+            loadDataPage(0);
+        }
+
+        // PLOT FUNCTIONS
+        async function generateScatterPlot() {
+            const xCol = document.getElementById('scatterX').value;
+            const yCol = document.getElementById('scatterY').value;
+            const hueCol = document.getElementById('scatterHue').value;
+            const title = document.getElementById('scatterTitle').value;
+
+            if (!xCol || !yCol) {
+                showAlert('scatterAlert', 'Please select X and Y columns', 'error');
+                return;
+            }
+
+            showSpinner('scatterSpinner', true);
+
+            try {
+                const response = await fetch('/api/plot/scatter', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        csv_id: currentCsvId,
+                        x_col: xCol,
+                        y_col: yCol,
+                        hue_col: hueCol || null,
+                        title: title
+                    })
+                });
+
+                const data = await response.json();
+
+                if (!response.ok || !data.success) {
+                    showAlert('scatterAlert', data.error || 'Failed to generate plot', 'error');
+                    return;
+                }
+
+                document.getElementById('scatterImage').src = data.plot_url + '?' + Date.now();
+                document.getElementById('scatterPlot').style.display = 'block';
+                showAlert('scatterAlert', '✅ Scatter plot generated successfully!', 'success');
+
+            } catch (error) {
+                showAlert('scatterAlert', `Error: ${error.message}`, 'error');
+            } finally {
+                showSpinner('scatterSpinner', false);
+            }
+        }
+
+        async function generateCDFPlot() {
+            const valueCol = document.getElementById('cdfValue').value;
+            const categoryCol = document.getElementById('cdfCategory').value;
+            const splitCol = document.getElementById('cdfSplit').value;
+            const title = document.getElementById('cdfTitle').value;
+
+            if (!valueCol || !categoryCol) {
+                showAlert('cdfAlert', 'Please select value and category columns', 'error');
+                return;
+            }
+
+            showSpinner('cdfSpinner', true);
+
+            try {
+                const response = await fetch('/api/plot/cdf', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        csv_id: currentCsvId,
+                        value_col: valueCol,
+                        category_col: categoryCol,
+                        split_col: splitCol || null,
+                        title: title
+                    })
+                });
+
+                const data = await response.json();
+
+                if (!response.ok || !data.success) {
+                    showAlert('cdfAlert', data.error || 'Failed to generate plot', 'error');
+                    return;
+                }
+
+                document.getElementById('cdfImage').src = data.plot_url + '?' + Date.now();
+                document.getElementById('cdfPlot').style.display = 'block';
+                showAlert('cdfAlert', '✅ CDF plot generated successfully!', 'success');
+
+            } catch (error) {
+                showAlert('cdfAlert', `Error: ${error.message}`, 'error');
+            } finally {
+                showSpinner('cdfSpinner', false);
+            }
+        }
+
+        // STATS FUNCTIONS
+        async function loadStats() {
+            if (!currentCsvId) return;
+
+            showSpinner('statsSpinner', true);
+
+            try {
+                const response = await fetch(`/api/stats/${currentCsvId}`);
+                const data = await response.json();
+
+                if (!response.ok || !data.success) {
+                    showAlert('statsAlert', data.error || 'Failed to load stats', 'error');
+                    return;
+                }
+
+                displayStats(data.stats);
+
+            } catch (error) {
+                showAlert('statsAlert', `Error: ${error.message}`, 'error');
+            } finally {
+                showSpinner('statsSpinner', false);
+            }
+        }
+
+        function displayStats(stats) {
+            const container = document.getElementById('statsContainer');
+            container.innerHTML = '';
+
+            for (const [col, stat] of Object.entries(stats)) {
+                const card = document.createElement('div');
+                card.className = 'stat-card';
+
+                if (stat.type === 'categorical') {
+                    card.innerHTML = `
+                        <h3>${col}</h3>
+                        <div class="value">${stat.unique_count}</div>
+                        <div class="unit">Unique Values</div>
+                    `;
+                } else {
+                    const mean = stat.mean ? stat.mean.toFixed(4) : 'N/A';
+                    const std = stat.std ? stat.std.toFixed(4) : 'N/A';
+                    card.innerHTML = `
+                        <h3>${col}</h3>
+                        <div style="font-size: 0.9em; line-height: 1.6;">
+                            <div><strong>Mean:</strong> ${mean}</div>
+                            <div><strong>Std Dev:</strong> ${std}</div>
+                            <div><strong>Min:</strong> ${stat.min ? stat.min.toFixed(4) : 'N/A'}</div>
+                            <div><strong>Max:</strong> ${stat.max ? stat.max.toFixed(4) : 'N/A'}</div>
+                            <div><strong>Count:</strong> ${stat.count}</div>
+                        </div>
+                    `;
+                }
+
+                container.appendChild(card);
+            }
+        }
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            console.log('FDV EIMPRO WebApp loaded');
+        });
+    </script>
+</body>
+</html>

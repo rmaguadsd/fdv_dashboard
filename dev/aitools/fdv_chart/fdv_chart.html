@@ -1,0 +1,1974 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>FDV Chart Parser</title>
+    <style>
+        * { box-sizing: border-box; }
+        html, body {
+            height: 100%;
+            margin: 0;
+            padding: 0;
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* TOP CONTROL PANEL */
+        #top-panel {
+            flex: 0 0 auto;
+            padding: 10px 16px 6px 16px;
+            background: #f8f9fa;
+            border-bottom: 2px solid #dee2e6;
+        }
+        #top-panel h1 { margin: 0 0 6px 0; font-size: 1.2em; color: #333; }
+        .ctrl-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 5px; }
+        .ctrl-label { font-size: 0.82em; color: #555; white-space: nowrap; }
+        #file-input { display:none; }
+        #dir-file-input { display:none; }
+        /* File selection pill list */
+        #file-pill-list {
+            display: flex; flex-wrap: wrap; gap: 4px;
+            align-items: center; max-width: 520px;
+        }
+        .file-pill {
+            display: inline-flex; align-items: center; gap: 4px;
+            background: #d1ecf1; border: 1px solid #bee5eb; border-radius: 12px;
+            padding: 2px 8px; font-size: 0.78em; color: #0c5460; white-space: nowrap;
+            max-width: 200px; overflow: hidden; text-overflow: ellipsis;
+        }
+        .file-pill .pill-rm { cursor: pointer; font-size: 0.9em; color: #856404;
+                               margin-left: 2px; flex-shrink: 0; }
+        .file-pill .pill-rm:hover { color: #721c24; }
+        #input-source-tabs {
+            display: flex; gap: 0; margin-bottom: 4px; font-size: 0.82em;
+        }
+        .src-tab {
+            padding: 3px 12px; border: 1px solid #ced4da; cursor: pointer;
+            background: #e9ecef; color: #495057; user-select: none;
+        }
+        .src-tab:first-child { border-radius: 4px 0 0 4px; }
+        .src-tab:last-child  { border-radius: 0 4px 4px 0; }
+        .src-tab.active { background: #007bff; color: #fff; border-color: #007bff; }
+        #regex-input {
+            flex: 1 1 300px; padding: 5px 8px;
+            font-family: monospace; font-size: 0.9em;
+            border: 1px solid #ccc; border-radius: 4px; min-width: 200px;
+        }
+        .radio-group { display: flex; gap: 12px; font-size: 0.88em; }
+        .btn { padding: 6px 16px; background: #007bff; color: white; border: none;
+               border-radius: 4px; cursor: pointer; font-size: 0.9em; white-space: nowrap; }
+        .btn:hover { background: #0056b3; }
+        .btn.sec { background: #6c757d; } .btn.sec:hover { background: #545b62; }
+        .btn.grn { background: #28a745; } .btn.grn:hover { background: #1e7e34; }
+        #status-bar { font-size: 0.82em; padding: 3px 0; min-height: 22px; color: #155724; }
+        #status-bar.error { color: #721c24; }
+        #status-bar.info  { color: #0c5460; }
+
+        /* PLOT PANEL */
+        #plot-panel {
+            flex: 0 0 auto; display: none; flex-direction: column;
+            border-bottom: 2px solid #dee2e6; background: #fff; min-height: 60px;
+        }
+        #plot-bar {
+            flex: 0 0 auto; display: flex; align-items: center; gap: 8px;
+            flex-wrap: wrap; padding: 5px 12px; background: #e9ecef;
+            border-bottom: 1px solid #ced4da; font-size: 0.82em;
+        }
+        #plot-bar select, #plot-bar input[type=text], #plot-bar input[type=number] {
+            padding: 3px 6px; font-size: 0.88em; border: 1px solid #ccc; border-radius: 3px;
+        }
+        #plot-bar label { white-space: nowrap; color: #555; }
+        /* interval-filter inputs get a tinted border so they're visually distinct */
+        .iv-input { border-color: #6f42c1 !important; }
+        .iv-input:focus { outline: none; box-shadow: 0 0 0 2px rgba(111,66,193,0.25); }
+        #iv-row { border-top: 1px dashed #ced4da; padding-top: 4px; margin-top: 2px; }
+        /* marker lines row */
+        #marker-row { border-top: 1px dashed #ced4da; padding-top: 4px; margin-top: 2px; }
+        #marker-input {
+            flex: 1 1 300px; min-width: 180px; padding: 3px 6px;
+            font-family: monospace; font-size: 0.82em;
+            border: 1px solid #e83e8c; border-radius: 3px; background: #fff9fc;
+        }
+        #marker-input:focus { outline: none; box-shadow: 0 0 0 2px rgba(232,62,140,0.2); }
+        .marker-tag {
+            display: inline-flex; align-items: center; gap: 4px;
+            padding: 2px 8px; border-radius: 12px; font-size: 0.78em;
+            border: 1px solid #e83e8c; background: #fce4f0; color: #6a0136;
+            white-space: nowrap; cursor: default;
+        }
+        .marker-tag .mk-rm { cursor: pointer; color: #c0185e; }
+        .marker-tag .mk-rm:hover { color: #721c24; }
+        #plot-area { flex: 1 1 0; position: relative; min-height: 220px; max-height: 340px; }
+        #plot-area canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
+        /* Split-chart grid */
+        #plot-grid {
+            flex: 1 1 0; display: none;
+            overflow-y: auto; overflow-x: hidden;
+            padding: 6px; gap: 6px;
+            flex-wrap: wrap; align-content: flex-start;
+            min-height: 80px; max-height: 340px; background: #f8f9fa;
+        }
+        .split-tile {
+            flex: 0 0 auto;
+            background: #fff; border: 1px solid #dee2e6; border-radius: 4px;
+            display: flex; flex-direction: column; overflow: hidden;
+        }
+        .split-tile-title {
+            font-size: 0.75em; font-weight: bold; color: #495057;
+            padding: 2px 6px; background: #e9ecef;
+            border-bottom: 1px solid #dee2e6; white-space: nowrap;
+            overflow: hidden; text-overflow: ellipsis;
+        }
+        .split-tile-canvas { position: relative; flex: 1 1 0; min-height: 0; }
+        .split-tile-canvas canvas { position: absolute; top:0; left:0; width:100%; height:100%; }
+
+        /* BOTTOM TABLE PANEL */
+        #bottom-panel { flex: 1 1 0; display: flex; flex-direction: column; overflow: hidden; background: #fff; }
+        #table-bar {
+            flex: 0 0 auto; display: flex; align-items: center;
+            justify-content: space-between; padding: 4px 12px;
+            background: #e9ecef; border-bottom: 1px solid #ced4da;
+            font-size: 0.82em; color: #495057; min-height: 28px;
+        }
+
+        /* VIRTUAL SCROLL TABLE */
+        #table-scroller {
+            flex: 1 1 0;
+            overflow-y: scroll;
+            overflow-x: auto;
+            position: relative;
+        }
+        /* Spacer makes the scrollbar reflect total row count */
+        #vt-spacer {
+            position: absolute;
+            top: 0; left: 0;
+            width: 1px;
+            pointer-events: none;
+        }
+        /* Table is sticky at top; tbody rows are absolutely positioned */
+        #result-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.82em;
+            position: sticky;
+            top: 0;
+            z-index: 0;
+        }
+        #result-table thead th {
+            background: #343a40; color: #fff; padding: 6px 8px;
+            text-align: left; white-space: nowrap;
+            overflow: hidden; text-overflow: ellipsis;
+            user-select: none;   /* prevent text selection while resizing */
+        }
+        #result-table tbody {
+            position: relative;   /* anchor for absolutely-placed rows */
+        }
+        #result-table tbody tr {
+            position: absolute;
+            left: 0; right: 0;
+            display: flex;
+        }
+        #result-table tbody td {
+            padding: 4px 8px; border-bottom: 1px solid #e9ecef;
+            white-space: nowrap; flex: 1 1 0; min-width: 60px;
+            overflow: hidden; text-overflow: ellipsis;
+        }
+        #result-table tbody tr:hover td { background: #fff3cd; }
+        #result-table tbody tr.row-even td { background: #f8f9fa; }
+        #result-table tbody tr.row-even:hover td { background: #fff3cd; }
+
+        #empty-state { display: flex; align-items: center; justify-content: center;
+                       height: 100%; color: #aaa; font-size: 1.1em; }
+
+        /* FILTER ROW */
+        #filter-row th {
+            background: #495057; padding: 3px 4px;
+        }
+        #filter-row th input {
+            width: 100%; padding: 2px 4px; font-size: 0.78em;
+            border: 1px solid #adb5bd; border-radius: 2px;
+            background: #fff; box-sizing: border-box; min-width: 40px;
+        }
+        #filter-row th input.active  { border-color: #ffc107; background: #fff9e6; }
+        #filter-row th input.invalid { border-color: #dc3545; background: #fff0f0; }
+        #filter-row th input.op      { border-color: #17a2b8; background: #e8f7fb; }
+
+        /* COLUMN RESIZE GRIPPER */
+        #result-table thead th {
+            position: relative;   /* anchor for the gripper */
+        }
+        .col-gripper {
+            position: absolute;
+            right: 0; top: 0; bottom: 0;
+            width: 6px;
+            cursor: col-resize;
+            background: transparent;
+            z-index: 2;
+        }
+        .col-gripper:hover, .col-gripper.dragging {
+            background: rgba(255,255,255,0.35);
+        }
+
+        /* DRAG HANDLE */
+        #drag-handle { flex: 0 0 6px; cursor: ns-resize; background: #dee2e6;
+                       border-top: 1px solid #ced4da; border-bottom: 1px solid #ced4da; }
+        #drag-handle:hover { background: #adb5bd; }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1/dist/chartjs-plugin-annotation.min.js"></script>
+</head>
+<body>
+
+<!-- TOP PANEL -->
+<div id="top-panel">
+    <h1>&#128202; FDV Chart Parser</h1>
+
+    <!-- Source mode tabs -->
+    <div id="input-source-tabs">
+        <span class="src-tab active" data-src="path" onclick="_srcTab(this)">&#128196; Path / Dir</span>
+        <span class="src-tab" data-src="files" onclick="_srcTab(this)">&#128194; Upload files</span>
+        <span class="src-tab" data-src="dir" onclick="_srcTab(this)">&#128193; Upload directory</span>
+    </div>
+
+    <!-- Path / Dir row -->
+    <div class="ctrl-row" id="src-row-path">
+        <span class="ctrl-label" id="path-label">File&nbsp;path:</span>
+        <input type="text" id="path-input"
+               placeholder="e.g. D:\FDV\logs\site114\Output_site114.txt  or  D:\FDV\logs\site114"
+               style="flex:2 1 400px;min-width:200px">
+        <label style="font-size:0.82em;color:#555;white-space:nowrap;display:flex;align-items:center;gap:4px">
+            <input type="checkbox" id="dir-recursive" checked> Recursive
+        </label>
+    </div>
+
+    <!-- Upload files row (hidden by default) -->
+    <div class="ctrl-row" id="src-row-files" style="display:none">
+        <span class="ctrl-label">Files:</span>
+        <button class="btn sec" style="padding:4px 10px;font-size:0.82em"
+                onclick="document.getElementById('file-input').click()">&#128194; Browse&hellip;</button>
+        <input type="file" id="file-input" accept=".txt,.log,.csv" multiple>
+        <div id="file-pill-list"><span style="font-size:0.8em;color:#888">No files selected</span></div>
+    </div>
+
+    <!-- Upload directory row (hidden by default) -->
+    <div class="ctrl-row" id="src-row-dir" style="display:none">
+        <span class="ctrl-label">Directory:</span>
+        <button class="btn sec" style="padding:4px 10px;font-size:0.82em"
+                onclick="document.getElementById('dir-file-input').click()">&#128193; Browse&hellip;</button>
+        <input type="file" id="dir-file-input" accept=".txt,.log,.csv" multiple webkitdirectory>
+        <span id="dir-file-count" style="font-size:0.8em;color:#888">No directory selected</span>
+    </div>
+
+    <!-- Regex / mode / action row (always visible) -->
+    <div class="ctrl-row">
+        <span class="ctrl-label">Regex:</span>
+        <input type="text" id="regex-input"
+               placeholder="optional -- e.g. ^FDV POLL or ^FDV OUTPUT"
+               style="flex:1 1 260px">
+        <span class="ctrl-label">Mode:</span>
+        <div class="radio-group">
+            <label><input type="radio" name="filter-mode" value="include" checked> Include</label>
+            <label><input type="radio" name="filter-mode" value="exclude"> Exclude</label>
+        </div>
+        <button class="btn" onclick="parseFile()">&#9654; Parse</button>
+        <button class="btn sec" onclick="resetAll()">&#10006; Clear</button>
+        <button class="btn grn" id="download-btn" onclick="downloadCSV()" style="display:none">&#8595; CSV</button>
+    </div>
+    <div id="status-bar">Ready -- select a file and click Parse.</div>
+</div>
+
+<!-- PLOT PANEL -->
+<div id="plot-panel" style="display:none">
+    <div id="plot-bar">
+        <label>X:<select id="x-col"></select></label>
+        <label style="margin-left:4px">X&nbsp;regex:
+            <input type="text" id="x-regex" placeholder="e.g. ([0-9]+)" style="width:110px"></label>
+        <label id="y-col-label" style="margin-left:8px">Y:<select id="y-col"></select></label>
+        <label id="y-regex-label" style="margin-left:4px">Y&nbsp;regex:
+            <input type="text" id="y-regex" placeholder="e.g. ([0-9]+)" style="width:110px"></label>
+        <label id="color-col-label" style="margin-left:8px">Color&nbsp;by:
+            <select id="color-col"><option value="">-- none --</option></select></label>
+        <label id="color-rx-label" style="margin-left:4px">Color&nbsp;regex:
+            <input type="text" id="color-regex" placeholder="e.g. DUT(\d+)" style="width:110px"></label>
+        <label style="margin-left:8px">Type:
+            <select id="chart-type" onchange="onChartTypeChange()">
+                <option value="scatter">Scatter</option>
+                <option value="line">Line</option>
+                <option value="histogram">Histogram</option>
+                <option value="cumproba">Cum Proba</option>
+            </select>
+        </label>
+        <label id="bins-label" style="margin-left:4px;display:none">Bins:
+            <input type="number" id="hist-bins" min="2" max="500" placeholder="auto" style="width:60px"></label>
+        <label id="split-label" style="margin-left:8px;display:none">Split&nbsp;by:
+            <select id="split-col"><option value="">-- none --</option></select></label>
+        <label id="split-rx-label" style="margin-left:4px;display:none">Split&nbsp;regex:
+            <input type="text" id="split-regex" placeholder="e.g. DUT(\d+)" style="width:110px"></label>
+        <button id="plot-btn" class="btn" style="padding:4px 12px" onclick="drawPlot()">&#9654; Plot</button>
+        <label style="margin-left:8px;font-size:0.82em;color:#555">
+            <input type="checkbox" id="x-log"> X&nbsp;log</label>
+        <label style="margin-left:4px;font-size:0.82em;color:#555">
+            <input type="checkbox" id="y-log"> Y&nbsp;log</label>
+        <label id="x-min-label" style="margin-left:8px;font-size:0.82em;color:#555">X&nbsp;min:
+            <input type="number" id="x-min" placeholder="auto" style="width:70px;font-size:0.9em"></label>
+        <label id="x-max-label" style="margin-left:2px;font-size:0.82em;color:#555">max:
+            <input type="number" id="x-max" placeholder="auto" style="width:70px;font-size:0.9em"></label>
+        <label id="y-min-label" style="margin-left:8px;font-size:0.82em;color:#555">Y&nbsp;min:
+            <input type="number" id="y-min" placeholder="auto" style="width:70px;font-size:0.9em"></label>
+        <label id="y-max-label" style="margin-left:2px;font-size:0.82em;color:#555">max:
+            <input type="number" id="y-max" placeholder="auto" style="width:70px;font-size:0.9em"></label>
+        <label id="x-step-label" style="margin-left:8px;font-size:0.82em;color:#555"
+               title="X-axis tick interval (stepSize). Leave blank for auto.">X&nbsp;tick:
+            <input type="number" id="x-step" placeholder="auto" min="0" style="width:66px;font-size:0.9em"></label>
+        <label id="y-step-label" style="margin-left:2px;font-size:0.82em;color:#555"
+               title="Y-axis tick interval (stepSize). Leave blank for auto.">Y&nbsp;tick:
+            <input type="number" id="y-step" placeholder="auto" min="0" style="width:66px;font-size:0.9em"></label>
+        <span id="plot-status" style="color:#555;font-size:0.85em;margin-left:6px"></span>
+        <!-- Data interval filter row -->
+        <div id="iv-row" style="width:100%;display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:3px">
+            <span style="font-size:0.82em;color:#6f42c1;font-weight:bold">&#x25a3;&nbsp;Data&nbsp;interval:</span>
+            <label style="font-size:0.82em;color:#6f42c1">X&nbsp;from:
+                <input type="number" id="x-ivlo" placeholder="&minus;&infin;" style="width:72px;font-size:0.9em" class="iv-input"
+                       title="Exclude data points where X < this value" onchange="drawPlot()"></label>
+            <label style="font-size:0.82em;color:#6f42c1">to:
+                <input type="number" id="x-ivhi" placeholder="+&infin;" style="width:72px;font-size:0.9em" class="iv-input"
+                       title="Exclude data points where X > this value" onchange="drawPlot()"></label>
+            <label id="y-ivlo-label" style="font-size:0.82em;color:#6f42c1;margin-left:8px">Y&nbsp;from:
+                <input type="number" id="y-ivlo" placeholder="&minus;&infin;" style="width:72px;font-size:0.9em" class="iv-input"
+                       title="Exclude data points where Y < this value" onchange="drawPlot()"></label>
+            <label id="y-ivhi-label" style="font-size:0.82em;color:#6f42c1">to:
+                <input type="number" id="y-ivhi" placeholder="+&infin;" style="width:72px;font-size:0.9em" class="iv-input"
+                       title="Exclude data points where Y > this value" onchange="drawPlot()"></label>
+            <button class="btn sec" style="padding:2px 8px;font-size:0.78em" onclick="_clearIntervals()"
+                    title="Reset all interval filters">&#10006;&nbsp;Clear&nbsp;interval</button>
+        </div>
+        <!-- Marker lines row -->
+        <div id="marker-row" style="width:100%;display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:3px">
+            <span style="font-size:0.82em;color:#e83e8c;font-weight:bold">&#x2015;&nbsp;Markers:</span>
+            <input id="marker-input" type="text"
+                   placeholder="e.g.  x=5  or  y=0.01:red:Limit  — press Enter to add"
+                   title="Format: x=VALUE[:COLOR[:LABEL]]  or  y=VALUE[:COLOR[:LABEL]]&#10;Examples:  x=100  |  y=0.5:orange:Threshold  |  x=200:#3366cc:UCL">
+            <div id="marker-tag-list" style="display:flex;flex-wrap:wrap;gap:4px;align-items:center"></div>
+            <button class="btn sec" style="padding:2px 8px;font-size:0.78em" onclick="_clearMarkers()"
+                    title="Remove all marker lines">&#10006;&nbsp;Clear&nbsp;markers</button>
+        </div>
+        <!-- Split charts row -->
+        <div id="split-chart-row" style="width:100%;display:flex;align-items:center;gap:6px;flex-wrap:wrap;
+             border-top:1px dashed #ced4da;padding-top:4px;margin-top:2px">
+            <span style="font-size:0.82em;color:#17a2b8;font-weight:bold">&#9707;&nbsp;Split&nbsp;charts:</span>
+            <label style="font-size:0.82em;color:#17a2b8">By:
+                <select id="split-chart-col" onchange="drawPlot()" style="border-color:#17a2b8">
+                    <option value="">-- none (single chart) --</option>
+                </select></label>
+            <label style="font-size:0.82em;color:#17a2b8">Regex:
+                <input type="text" id="split-chart-rx" placeholder="e.g. DUT(\d+)"
+                       style="width:110px;border-color:#17a2b8" onchange="drawPlot()"></label>
+            <label style="font-size:0.82em;color:#17a2b8">Cols:
+                <input type="number" id="split-chart-cols" value="3" min="1" max="10"
+                       style="width:46px;border-color:#17a2b8" onchange="_applySplitLayout()" title="Charts per row"></label>
+            <label style="font-size:0.82em;color:#17a2b8">Tile&nbsp;H:
+                <input type="number" id="split-chart-h" value="200" min="80" max="800" step="20"
+                       style="width:56px;border-color:#17a2b8" onchange="_applySplitLayout()" title="Height of each tile in px"></label>
+            <label style="font-size:0.82em;color:#17a2b8">Grid&nbsp;H:
+                <input type="number" id="split-grid-h" value="340" min="100" max="2000" step="20"
+                       style="width:60px;border-color:#17a2b8" onchange="_applySplitLayout()" title="Max height of the grid container (px)"></label>
+        </div>
+    </div>
+    <div id="plot-area">
+        <div id="plot-cover-banner" style="display:none;position:absolute;top:0;left:0;right:0;
+             z-index:10;background:rgba(255,193,7,0.92);color:#333;font-size:0.82em;
+             font-weight:bold;padding:4px 10px;text-align:center;pointer-events:none;
+             border-bottom:1px solid #e0a800;">
+            &#9203; PARTIAL DATA &mdash; <span id="plot-cover-pct"></span>
+        </div>
+        <canvas id="plot-canvas"></canvas>
+    </div>
+    <div id="plot-grid"></div>
+    <div id="drag-handle" title="Drag to resize plot"></div>
+</div>
+
+<!-- BOTTOM PANEL -->
+<div id="bottom-panel">
+    <div id="table-bar">
+        <span id="table-info">No data loaded</span>
+        <button id="filter-toggle-btn" onclick="toggleFilters()"
+                style="display:none;padding:2px 10px;font-size:0.8em;background:#6c757d;
+                       color:#fff;border:none;border-radius:3px;cursor:pointer">
+            &#128269; Filters</button>
+    </div>
+    <div id="empty-state">Parse a file to see results here</div>
+    <!-- Virtual-scroll container: only ~50 DOM rows exist at any time -->
+    <div id="table-scroller" style="display:none">
+        <div id="vt-spacer"></div>
+        <table id="result-table">
+            <thead id="table-head"></thead>
+            <tbody id="table-body"></tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+'use strict';
+
+/* ================================================================
+   GLOBALS
+================================================================ */
+var currentCsvId      = null;
+var currentHeaders    = [];
+var chartInst         = null;
+var filtersVisible    = false;
+var domFullyLoaded    = false;
+var allRows           = [];   // ALL rows in memory -- primary source of truth
+var filteredIndices   = [];   // indices into allRows[] that pass current filters
+var totalExpectedRows = 0;
+
+/* Virtual-scroll state */
+var ROW_H       = 22;   // estimated row height px (recalibrated after first render)
+var VS_OVERSCAN = 8;    // extra rows above/below viewport
+var vsFirstRow  = 0;    // first rendered row index (into filteredIndices)
+var colWidths   = [];   // pixel widths per column (set by resize grippers)
+
+var PALETTE = [
+    '#007bff','#e83e8c','#28a745','#fd7e14','#6610f2',
+    '#17a2b8','#dc3545','#20c997','#ffc107','#6f42c1'
+];
+
+/* ================================================================
+   UTILITIES
+================================================================ */
+function setStatus(msg, cls) {
+    var el = document.getElementById('status-bar');
+    el.textContent = msg; el.className = cls || '';
+}
+function setTableInfo(msg) { document.getElementById('table-info').textContent = msg; }
+function sleep(ms) { return new Promise(function(r){ setTimeout(r, ms); }); }
+function escHtml(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;')
+                    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function _updatePlotCoverBanner() {
+    var pct    = totalExpectedRows > 0
+                 ? Math.round(allRows.length / totalExpectedRows * 100) : 100;
+    var banner = document.getElementById('plot-cover-banner');
+    var lbl    = document.getElementById('plot-cover-pct');
+    if (!domFullyLoaded && totalExpectedRows > 0) {
+        lbl.textContent = allRows.length.toLocaleString() + ' / ' +
+            totalExpectedRows.toLocaleString() + ' rows loaded (' + pct + '%)';
+        banner.style.display = '';
+    } else {
+        banner.style.display = 'none';
+    }
+}
+
+function _setPlotBtnLoading(loading) {
+    var btn = document.getElementById('plot-btn');
+    if (!btn) return;
+    btn.disabled         = loading;
+    btn.style.opacity    = loading ? '0.5' : '';
+    btn.style.cursor     = loading ? 'not-allowed' : '';
+    btn.title = loading
+        ? 'Data still loading \u2014 wait for full load or click to plot partial data'
+        : '';
+}
+
+/* ================================================================
+   VIRTUAL SCROLL ENGINE
+   Only renders rows visible in the viewport + VS_OVERSCAN.
+   #vt-spacer is sized to total height so the scrollbar is correct.
+================================================================ */
+function _vtTotalHeight() {
+    return filteredIndices.length * ROW_H;
+}
+
+function _vtRender() {
+    var scroller = document.getElementById('table-scroller');
+    var spacer   = document.getElementById('vt-spacer');
+    var tbody    = document.getElementById('table-body');
+    if (!scroller || !tbody || !spacer) return;
+    if (filteredIndices.length === 0) { tbody.innerHTML = ''; return; }
+
+    /* Keep spacer sized to full dataset so scrollbar is accurate */
+    spacer.style.height = _vtTotalHeight() + 'px';
+
+    var scrollTop    = scroller.scrollTop;
+    var viewH        = scroller.clientHeight;
+    var headerH      = (document.getElementById('result-table').querySelector('thead') || {offsetHeight:33}).offsetHeight || 33;
+    var contentTop   = Math.max(0, scrollTop - headerH);
+    var firstVisible = Math.max(0, Math.floor(contentTop / ROW_H) - VS_OVERSCAN);
+    var lastVisible  = Math.min(
+        filteredIndices.length - 1,
+        Math.ceil((contentTop + viewH) / ROW_H) + VS_OVERSCAN
+    );
+
+    /* Skip re-render if the window AND content count haven't changed.
+       Use filteredIndices.length as a content fingerprint so a filter
+       change always forces a re-render even when scrollTop stays at 0. */
+    var expectedCount = lastVisible - firstVisible + 1;
+    if (firstVisible === vsFirstRow &&
+        tbody.children.length === expectedCount &&
+        tbody.dataset.filtLen === String(filteredIndices.length)) return;
+    vsFirstRow = firstVisible;
+    tbody.dataset.filtLen = String(filteredIndices.length);
+
+    var frag = document.createDocumentFragment();
+    for (var r = firstVisible; r <= lastVisible; r++) {
+        var row = allRows[filteredIndices[r]];
+        var tr  = document.createElement('tr');
+        if (r % 2 === 1) tr.className = 'row-even';
+        tr.style.top = (headerH + r * ROW_H) + 'px';
+        var cells = '';
+        for (var c = 0; c < row.length; c++) {
+            /* Apply stored column width if available */
+            var wStyle = (colWidths[c] ? ' style="width:' + colWidths[c] + 'px;min-width:' + colWidths[c] + 'px;flex:none"' : '');
+            cells += '<td' + wStyle + '>' + escHtml(row[c] != null ? String(row[c]) : '') + '</td>';
+        }
+        tr.innerHTML = cells;
+        frag.appendChild(tr);
+    }
+    tbody.innerHTML = '';
+    tbody.appendChild(frag);
+
+    /* Calibrate ROW_H from actual rendered row height */
+    if (tbody.children.length > 0 && tbody.children[0].offsetHeight > 0) {
+        var measured = tbody.children[0].offsetHeight;
+        if (measured !== ROW_H) { ROW_H = measured; spacer.style.height = _vtTotalHeight() + 'px'; }
+    }
+}
+
+/* Wire scroll event once DOM is ready */
+document.addEventListener('DOMContentLoaded', function() {
+    var scroller = document.getElementById('table-scroller');
+    if (scroller) {
+        scroller.addEventListener('scroll', function() { _vtRender(); }, { passive: true });
+    }
+    /* Restore session after browser refresh */
+    _tryRestoreSession();
+});
+
+/* ================================================================
+   FILTER ENGINE  (operates on allRows[], no DOM row scanning)
+================================================================ */
+function parseFilterExpr(raw) {
+    if (!raw) return null;
+    /* /regex/flags */
+    var rxLit = raw.match(/^\/(.+)\/([gimsuy]*)$/);
+    if (rxLit) {
+        try {
+            var re = new RegExp(rxLit[1], rxLit[2] || 'i');
+            return { fn: function(s){ return re.test(s); }, type: 'regex' };
+        } catch(e) {
+            return { fn: function(){ return false; }, type: 'invalid' };
+        }
+    }
+    /* comparison operator */
+    var cmp = raw.match(/^(==?|!=|<>|>=?|<=?)(.*)/);
+    if (cmp) {
+        var op = cmp[1], rhs = cmp[2].trim();
+        var rhsN = parseFloat(rhs), rhsIsN = !isNaN(rhsN) && rhs !== '';
+        return { type: 'op', fn: function(s) {
+            var lN = parseFloat(s);
+            if (rhsIsN && !isNaN(lN)) {
+                if (op==='>')  return lN>rhsN;   if (op==='>=') return lN>=rhsN;
+                if (op==='<')  return lN<rhsN;   if (op==='<=') return lN<=rhsN;
+                if (op==='=='||op==='=')  return lN===rhsN;
+                if (op==='!='||op==='<>') return lN!==rhsN;
+            }
+            var sl=s.toLowerCase(), rl=rhs.toLowerCase();
+            if (op==='=='||op==='=')  return sl===rl;
+            if (op==='!='||op==='<>') return sl!==rl;
+            if (op==='>') return s>rhs;  if (op==='>=') return s>=rhs;
+            if (op==='<') return s<rhs;  if (op==='<=') return s<=rhs;
+            return false;
+        }};
+    }
+    /* fallback: try regex, then substring */
+    try {
+        var re2 = new RegExp(raw, 'i');
+        return { fn: function(s){ return re2.test(s); }, type: 'regex' };
+    } catch(e) {
+        var low = raw.toLowerCase();
+        return { fn: function(s){ return s.toLowerCase().indexOf(low)!==-1; }, type: 'sub' };
+    }
+}
+
+function buildActiveFilters() {
+    var result = [];
+    document.querySelectorAll('#filter-row input').forEach(function(inp) {
+        var val = inp.value.trim();
+        if (!val) return;
+        var parsed = parseFilterExpr(val);
+        if (parsed && parsed.type !== 'invalid')
+            result.push({ idx: parseInt(inp.dataset.colidx), fn: parsed.fn });
+    });
+    return result;
+}
+
+function hasActiveFilters() {
+    var inputs = document.querySelectorAll('#filter-row input');
+    for (var i = 0; i < inputs.length; i++)
+        if (inputs[i].value.trim() !== '') return true;
+    return false;
+}
+
+/* Rebuild filteredIndices[] by scanning allRows[] -- pure JS, no DOM */
+function recomputeFilteredIndices() {
+    var filters = buildActiveFilters();
+    filteredIndices = [];
+    for (var r = 0; r < allRows.length; r++) {
+        if (filters.length === 0) { filteredIndices.push(r); continue; }
+        var row = allRows[r], pass = true;
+        for (var f = 0; f < filters.length; f++) {
+            var cell = row[filters[f].idx];
+            if (!filters[f].fn(cell != null ? String(cell) : '')) { pass = false; break; }
+        }
+        if (pass) filteredIndices.push(r);
+    }
+}
+
+var _filterTimer = null;
+function applyFilters() {
+    clearTimeout(_filterTimer);
+    _filterTimer = setTimeout(_doApplyFilters, 100);
+}
+
+function _doApplyFilters() {
+    var inputs = document.querySelectorAll('#filter-row input');
+    var activeCount = 0;
+    inputs.forEach(function(inp) {
+        var val = inp.value.trim();
+        inp.className = '';
+        if (!val) return;
+        var parsed = parseFilterExpr(val);
+        activeCount++;
+        if (!parsed || parsed.type === 'invalid') { inp.classList.add('invalid'); return; }
+        inp.classList.add(parsed.type === 'op' ? 'op' : 'active');
+    });
+    recomputeFilteredIndices();
+    vsFirstRow = 0;
+    _vtRender();
+    _updateFilterInfo(activeCount);
+}
+
+function _updateFilterInfo(activeCount) {
+    var info = document.getElementById('table-info');
+    if (!info) return;
+    var base = info.textContent.replace(/ \u2014 \d.*$/, '');
+    info.textContent = activeCount > 0
+        ? base + ' \u2014 ' + filteredIndices.length.toLocaleString() +
+          ' shown (' + activeCount + ' filter' + (activeCount > 1 ? 's' : '') + ')'
+        : base;
+}
+
+function toggleFilters() {
+    filtersVisible = !filtersVisible;
+    var row = document.getElementById('filter-row');
+    if (row) row.style.display = filtersVisible ? '' : 'none';
+    document.getElementById('filter-toggle-btn').style.background =
+        filtersVisible ? '#0056b3' : '#6c757d';
+    if (!filtersVisible) {
+        document.querySelectorAll('#filter-row input').forEach(function(inp) {
+            inp.value = ''; inp.className = '';
+        });
+        recomputeFilteredIndices();
+        vsFirstRow = 0;
+        _vtRender();
+        _updateFilterInfo(0);
+    }
+}
+
+/* ================================================================
+   SOURCE TAB SWITCHING
+================================================================ */
+var _activeSrc = 'path';   // 'path' | 'files' | 'dir'
+
+function _srcTab(el) {
+    _activeSrc = el.dataset.src;
+    document.querySelectorAll('.src-tab').forEach(function(t) { t.classList.remove('active'); });
+    el.classList.add('active');
+    document.getElementById('src-row-path').style.display  = (_activeSrc === 'path')  ? '' : 'none';
+    document.getElementById('src-row-files').style.display = (_activeSrc === 'files') ? '' : 'none';
+    document.getElementById('src-row-dir').style.display   = (_activeSrc === 'dir')   ? '' : 'none';
+}
+
+/* ----------------------------------------------------------------
+   File-pill management (multi-upload tab)
+---------------------------------------------------------------- */
+var _selectedFiles = [];   // FileList items for multi-upload
+
+function _clearPills() {
+    _selectedFiles = [];
+    var pl = document.getElementById('file-pill-list');
+    pl.innerHTML = '<span style="font-size:0.8em;color:#888">No files selected</span>';
+}
+
+function _rebuildPills() {
+    var pl = document.getElementById('file-pill-list');
+    if (!_selectedFiles.length) {
+        pl.innerHTML = '<span style="font-size:0.8em;color:#888">No files selected</span>';
+        return;
+    }
+    pl.innerHTML = '';
+    _selectedFiles.forEach(function(f, i) {
+        var pill = document.createElement('span');
+        pill.className = 'file-pill';
+        pill.title = f.name;
+        pill.innerHTML = escHtml(f.name.length > 28 ? '\u2026' + f.name.slice(-25) : f.name) +
+            ' <span class="pill-rm" title="Remove" data-idx="' + i + '">&times;</span>';
+        pl.appendChild(pill);
+    });
+    // remove-pill click
+    pl.querySelectorAll('.pill-rm').forEach(function(rm) {
+        rm.addEventListener('click', function() {
+            var idx = parseInt(this.dataset.idx);
+            _selectedFiles.splice(idx, 1);
+            _rebuildPills();
+        });
+    });
+    // count label
+    if (_selectedFiles.length > 1) {
+        var lbl = document.createElement('span');
+        lbl.style.cssText = 'font-size:0.8em;color:#555;white-space:nowrap';
+        lbl.textContent = '(' + _selectedFiles.length + ' files)';
+        pl.appendChild(lbl);
+    }
+}
+
+// Wire file-input change → accumulate into _selectedFiles
+document.addEventListener('DOMContentLoaded', function() {
+    document.getElementById('file-input').addEventListener('change', function() {
+        Array.from(this.files).forEach(function(f) {
+            if (!_selectedFiles.find(function(x) { return x.name === f.name && x.size === f.size; }))
+                _selectedFiles.push(f);
+        });
+        this.value = '';   // reset so same files can be added again
+        _rebuildPills();
+    });
+
+    document.getElementById('dir-file-input').addEventListener('change', function() {
+        var n = this.files.length;
+        document.getElementById('dir-file-count').textContent =
+            n ? n + ' file' + (n !== 1 ? 's' : '') + ' selected' : 'No directory selected';
+    });
+});
+
+/* ================================================================
+   PARSE  (async job pattern)
+================================================================ */
+async function parseFile() {
+    var regex = document.getElementById('regex-input').value.trim();
+    var mode  = document.querySelector('input[name="filter-mode"]:checked').value;
+
+    var resp, jobFname;
+
+    try {
+        if (_activeSrc === 'path') {
+            /* ---- path or directory typed by user ---- */
+            var pathVal = document.getElementById('path-input').value.trim();
+            if (!pathVal) { setStatus('Enter a file or directory path.', 'error'); return; }
+            jobFname = pathVal.split(/[\\/]/).pop();
+
+            // Heuristic: if the path has no extension it's likely a directory
+            var looksLikeDir = !/\.[a-zA-Z0-9]{1,6}$/.test(pathVal.replace(/[\\/]$/, ''));
+            var recursive     = document.getElementById('dir-recursive').checked;
+
+            setStatus('Submitting\u2026', 'info'); setTableInfo('Parsing \u2026');
+            resp = await fetch(looksLikeDir ? '/parse_dir' : '/parse_path', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ path: pathVal, regex: regex, mode: mode, recursive: recursive })
+            });
+
+        } else if (_activeSrc === 'files') {
+            /* ---- multiple uploaded files ---- */
+            if (!_selectedFiles.length) { setStatus('Select at least one file.', 'error'); return; }
+            jobFname = _selectedFiles.length === 1
+                ? _selectedFiles[0].name
+                : _selectedFiles.length + ' files';
+
+            setStatus('Uploading ' + _selectedFiles.length + ' file(s)\u2026', 'info');
+            setTableInfo('Parsing \u2026');
+            var form = new FormData();
+            _selectedFiles.forEach(function(f) { form.append('file', f); });
+            form.append('regex', regex);
+            form.append('mode', mode);
+            resp = await fetch('/parse_multi', { method: 'POST', body: form });
+
+        } else {
+            /* ---- webkitdirectory upload ---- */
+            var dirFiles = document.getElementById('dir-file-input').files;
+            if (!dirFiles || !dirFiles.length) { setStatus('Select a directory.', 'error'); return; }
+            jobFname = dirFiles.length + ' files (directory)';
+
+            setStatus('Uploading ' + dirFiles.length + ' file(s) from directory\u2026', 'info');
+            setTableInfo('Parsing \u2026');
+            var form2 = new FormData();
+            Array.from(dirFiles).forEach(function(f) { form2.append('file', f); });
+            form2.append('regex', regex);
+            form2.append('mode', mode);
+            resp = await fetch('/parse_multi', { method: 'POST', body: form2 });
+        }
+    } catch(e) { setStatus('Network error: ' + e, 'error'); setTableInfo('Error'); return; }
+
+    var jobResp;
+    try { jobResp = await resp.json(); }
+    catch(e) { setStatus('Bad server response: ' + e, 'error'); return; }
+
+    if (jobResp.success) { _onParseResult(jobResp, jobFname, Date.now()); return; }
+    if (!jobResp.job_id) { setStatus('Error: ' + (jobResp.error || 'Unknown'), 'error'); return; }
+
+    /* ---- async polling ---- */
+    var jobId  = jobResp.job_id;
+    var nFiles = jobResp.file_count ? ' (' + jobResp.file_count + ' files)' : '';
+    var t0     = Date.now();
+    var ticker = setInterval(function() {
+        setStatus('Parsing' + nFiles + ' \u2026 ' + ((Date.now()-t0)/1000).toFixed(1) + 's', 'info');
+    }, 500);
+    while (true) {
+        await sleep(1000);
+        var sr;
+        try { var r2 = await fetch('/parse_status?job='+jobId); sr = await r2.json(); }
+        catch(e) { clearInterval(ticker); setStatus('Poll error: '+e,'error'); return; }
+        if (sr.state==='pending'||sr.state==='running') continue;
+        clearInterval(ticker);
+        if (!sr.success) { setStatus('Error: '+(sr.error||'Parse failed'),'error'); return; }
+        _onParseResult(sr, jobFname, t0);
+        return;
+    }
+}
+
+function _onParseResult(result, fname, t0) {
+    currentCsvId      = result.csv_id;
+    currentHeaders    = result.headers;
+    domFullyLoaded    = false;
+    totalExpectedRows = result.total_rows;
+    allRows           = result.rows.slice();
+
+    var total = result.total_rows;
+    var tSecs = ((Date.now()-t0)/1000).toFixed(1);
+    var extra = '';
+    if (result.file_count > 1) extra = ' \u2022 ' + result.file_count + ' files';
+    if (result.errors && result.errors.length)
+        extra += ' \u26a0 ' + result.errors.length + ' file(s) skipped';
+    setStatus('Parsed ' + total.toLocaleString() + ' rows \u2022 ' +
+              result.headers.length + ' columns \u2022 ' + tSecs + 's' + extra);
+
+    _buildTableHeader(result.headers);
+    recomputeFilteredIndices();   /* no active filters yet -- filteredIndices = all */
+    vsFirstRow = 0;
+
+    document.getElementById('empty-state').style.display       = 'none';
+    document.getElementById('table-scroller').style.display    = '';
+    document.getElementById('filter-toggle-btn').style.display = '';
+    document.getElementById('download-btn').style.display      = 'inline-block';
+    document.getElementById('plot-panel').style.display        = 'flex';
+
+    _vtRender();   /* show first viewport immediately */
+
+    populatePlotSelectors(result.headers);
+    _setPlotBtnLoading(true);
+    setTableInfo(total.toLocaleString() + ' rows \u00b7 ' + result.headers.length +
+                 ' columns \u00b7 ' + fname + ' \u2014 loading\u2026');
+
+    loadMoreRows(result.csv_id, result.headers.length, result.rows.length, total, fname);
+}
+
+function _buildTableHeader(headers) {
+    colWidths = new Array(headers.length).fill(0);  // 0 = auto (flex)
+    var hhtml = '<tr>';
+    headers.forEach(function(h, i) {
+        hhtml += '<th data-colidx="' + i + '">' + escHtml(h) +
+                 '<span class="col-gripper" data-colidx="' + i + '"></span></th>';
+    });
+    hhtml += '</tr><tr id="filter-row" style="display:none">';
+    headers.forEach(function(h, i){
+        hhtml += '<th><input type="text" data-colidx="' + i + '" placeholder="\u26b2"' +
+                 ' oninput="applyFilters()"' +
+                 ' title="Filter: substring / /regex/ / ==val / !=val / >=N / <=N"></th>';
+    });
+    hhtml += '</tr>';
+    document.getElementById('table-head').innerHTML = hhtml;
+    _wireColResize();
+}
+
+/* ── Column resize via gripper drag ─────────────────────────────────── */
+function _wireColResize() {
+    document.querySelectorAll('.col-gripper').forEach(function(grip) {
+        grip.addEventListener('mousedown', function(e) {
+            var colIdx   = parseInt(grip.dataset.colidx);
+            var th       = grip.parentElement;
+            var startX   = e.clientX;
+            var startW   = th.offsetWidth;
+            grip.classList.add('dragging');
+            document.body.style.cursor = 'col-resize';
+            e.preventDefault();
+
+            function onMove(ev) {
+                var newW = Math.max(40, startW + ev.clientX - startX);
+                colWidths[colIdx] = newW;
+                /* Apply to header cell immediately */
+                th.style.width    = newW + 'px';
+                th.style.minWidth = newW + 'px';
+                /* Rerender body rows to pick up the new width */
+                vsFirstRow = -1;   /* force re-render */
+                _vtRender();
+            }
+            function onUp() {
+                grip.classList.remove('dragging');
+                document.body.style.cursor = '';
+                document.removeEventListener('mousemove', onMove);
+                document.removeEventListener('mouseup', onUp);
+            }
+            document.addEventListener('mousemove', onMove);
+            document.addEventListener('mouseup', onUp);
+        });
+    });
+}
+
+/* ================================================================
+   PROGRESSIVE LOADER -- feeds allRows[] only; no DOM row appending
+================================================================ */
+async function loadMoreRows(csv_id, ncols, offset, total, fname) {
+    var CHUNK = 10000;   /* larger chunks safe now -- zero DOM cost per row */
+    while (offset < total) {
+        var resp = await fetch('/rows?csv_id=' + csv_id +
+                               '&offset=' + offset + '&limit=' + CHUNK);
+        var d = await resp.json();
+        if (!d.success) break;
+
+        for (var i = 0; i < d.rows.length; i++) allRows.push(d.rows[i]);
+        offset += d.rows.length;
+
+        /* Recompute filtered view (pure JS array scan) */
+        recomputeFilteredIndices();
+
+        /* Keep spacer height accurate so scrollbar moves during load */
+        var spacer = document.getElementById('vt-spacer');
+        if (spacer) spacer.style.height = _vtTotalHeight() + 'px';
+
+        var pct = Math.round(offset / total * 100);
+        setTableInfo(total.toLocaleString() + ' rows \u00b7 ' + ncols +
+                     ' columns \u00b7 ' + fname +
+                     ' \u2014 loading ' + offset.toLocaleString() +
+                     ' / ' + total.toLocaleString() + ' (' + pct + '%)');
+
+        if (!d.has_more) break;
+        await sleep(0);   /* yield to event loop between network chunks */
+    }
+
+    domFullyLoaded = true;
+    recomputeFilteredIndices();
+    _vtRender();
+    _setPlotBtnLoading(false);
+    _updatePlotCoverBanner();
+    setTableInfo(total.toLocaleString() + ' rows \u00b7 ' + ncols +
+                 ' columns \u00b7 ' + fname);
+    if (hasActiveFilters()) _updateFilterInfo(buildActiveFilters().length);
+    _saveSession(fname);   /* persist session so browser refresh can restore */
+    drawPlot();
+}
+
+/* ================================================================
+   SESSION PERSISTENCE  (survives browser refresh within same tab)
+================================================================ */
+function _saveSession(fname) {
+    try {
+        sessionStorage.setItem('fdv_session', JSON.stringify({
+            csv_id:   currentCsvId,
+            headers:  currentHeaders,
+            total:    totalExpectedRows,
+            fname:    fname || ''
+        }));
+    } catch(e) { /* sessionStorage not available -- silently ignore */ }
+}
+
+async function _tryRestoreSession() {
+    var raw;
+    try { raw = sessionStorage.getItem('fdv_session'); } catch(e) { return; }
+    if (!raw) return;
+    var sess;
+    try { sess = JSON.parse(raw); } catch(e) { return; }
+    if (!sess.csv_id || !sess.headers || !sess.total) return;
+
+    /* Verify the server still holds this csv_id */
+    try {
+        var probe = await fetch('/rows?csv_id=' + sess.csv_id + '&offset=0&limit=1');
+        var pd    = await probe.json();
+        if (!pd.success) { sessionStorage.removeItem('fdv_session'); return; }
+    } catch(e) { return; }
+
+    setStatus('Restoring session \u2014 reloading ' + sess.total.toLocaleString() + ' rows\u2026', 'info');
+    setTableInfo('Restoring\u2026');
+
+    currentCsvId      = sess.csv_id;
+    currentHeaders    = sess.headers;
+    domFullyLoaded    = false;
+    totalExpectedRows = sess.total;
+    allRows           = [];
+
+    _buildTableHeader(sess.headers);
+    recomputeFilteredIndices();
+    vsFirstRow = 0;
+
+    document.getElementById('empty-state').style.display       = 'none';
+    document.getElementById('table-scroller').style.display    = '';
+    document.getElementById('filter-toggle-btn').style.display = '';
+    document.getElementById('download-btn').style.display      = 'inline-block';
+    document.getElementById('plot-panel').style.display        = 'flex';
+
+    populatePlotSelectors(sess.headers);
+    _setPlotBtnLoading(true);
+
+    /* Re-fetch all rows from server using existing /rows endpoint */
+    await loadMoreRows(sess.csv_id, sess.headers.length, 0, sess.total, sess.fname);
+    setStatus('Session restored \u2022 ' + sess.total.toLocaleString() + ' rows \u2022 ' +
+              sess.headers.length + ' columns');
+}
+
+/* ================================================================
+   RESET / DOWNLOAD
+================================================================ */
+function resetAll() {
+    document.getElementById('file-input').value     = '';
+    document.getElementById('dir-file-input').value = '';
+    document.getElementById('regex-input').value    = '';
+    document.getElementById('path-input').value     = '';
+    _clearPills();
+    document.getElementById('dir-file-count').textContent = 'No directory selected';
+    ['x-ivlo','x-ivhi','y-ivlo','y-ivhi','x-step','y-step','x-min','x-max','y-min','y-max'].forEach(function(id){
+        document.getElementById(id).value = '';
+    });
+    _markers = [];
+    _rebuildMarkerTags();
+    document.getElementById('marker-input').value = '';
+    _destroySplitCharts();
+    document.getElementById('split-chart-col').value = '';
+    document.getElementById('split-chart-rx').value  = '';
+    document.getElementById('plot-area').style.display = '';
+    document.getElementById('plot-grid').style.display = 'none';
+    document.getElementById('table-head').innerHTML = '';
+    document.getElementById('table-body').innerHTML = '';
+    document.getElementById('table-scroller').style.display = 'none';
+    document.getElementById('empty-state').style.display   = 'flex';
+    document.getElementById('download-btn').style.display  = 'none';
+    document.getElementById('filter-toggle-btn').style.display = 'none';
+    document.getElementById('plot-panel').style.display    = 'none';
+    var banner = document.getElementById('plot-cover-banner');
+    if (banner) banner.style.display = 'none';
+    if (chartInst) { chartInst.destroy(); chartInst = null; }
+    setStatus('Ready \u2014 select a file and click Parse.');
+    setTableInfo('No data loaded');
+    currentCsvId = null; currentHeaders = []; allRows = []; filteredIndices = [];
+    totalExpectedRows = 0; domFullyLoaded = false; filtersVisible = false;
+    vsFirstRow = 0; colWidths = [];
+    _setPlotBtnLoading(false);
+    try { sessionStorage.removeItem('fdv_session'); } catch(e) {}
+}
+
+function downloadCSV() {
+    if (!currentCsvId) { setStatus('No data to download','error'); return; }
+    window.location.href = '/download/' + currentCsvId;
+}
+
+/* ================================================================
+   PLOT DATA SOURCE
+   Iterates filteredIndices[] (indices into allRows[]).
+   Filter logic is already applied -- no re-evaluation needed.
+================================================================ */
+function readFilteredFromMemory(xCol, yCol, groupCol, xRx, yRx, ivXlo, ivXhi, ivYlo, ivYhi) {
+    var xi = currentHeaders.indexOf(xCol);
+    var yi = yCol     ? currentHeaders.indexOf(yCol)     : -1;
+    var gi = groupCol ? currentHeaders.indexOf(groupCol) : -1;
+    if (xi < 0) return { points: [], skipped: 0 };
+
+    /* interval bounds (NaN = unbounded) */
+    var xLo = (ivXlo !== undefined && ivXlo !== null && ivXlo !== '') ? parseFloat(ivXlo) : NaN;
+    var xHi = (ivXhi !== undefined && ivXhi !== null && ivXhi !== '') ? parseFloat(ivXhi) : NaN;
+    var yLo = (ivYlo !== undefined && ivYlo !== null && ivYlo !== '') ? parseFloat(ivYlo) : NaN;
+    var yHi = (ivYhi !== undefined && ivYhi !== null && ivYhi !== '') ? parseFloat(ivYhi) : NaN;
+
+    var points = [], skipped = 0;
+    for (var r = 0; r < filteredIndices.length; r++) {
+        var row  = allRows[filteredIndices[r]];
+        var xRaw = row[xi] != null ? String(row[xi]) : '';
+        var yRaw = yi >= 0 && row[yi] != null ? String(row[yi]) : xRaw;
+        var gRaw = gi >= 0 && row[gi] != null ? String(row[gi]) : null;
+        var xv   = extractNum(xRaw, xRx);
+        var yv   = yi >= 0 ? extractNum(yRaw, yRx) : xv;
+        if (xv === null || (yi >= 0 && yv === null)) { skipped++; continue; }
+        /* apply data-interval filter */
+        if (!isNaN(xLo) && xv < xLo) { skipped++; continue; }
+        if (!isNaN(xHi) && xv > xHi) { skipped++; continue; }
+        if (!isNaN(yLo) && yv < yLo) { skipped++; continue; }
+        if (!isNaN(yHi) && yv > yHi) { skipped++; continue; }
+        var pt = { x: xv, y: yv };
+        if (gRaw !== null) pt.group = gRaw;
+        points.push(pt);
+    }
+    return { points: points, skipped: skipped };
+}
+
+/* ================================================================
+   PLOT CONTROLS
+================================================================ */
+function onChartTypeChange() {
+    var ct      = document.getElementById('chart-type').value;
+    var isXOnly = ct === 'histogram' || ct === 'cumproba';
+    var isCum   = ct === 'cumproba';
+    var isHist  = ct === 'histogram';
+    function show(id, vis) { var el=document.getElementById(id); if(el) el.style.display=vis?'':'none'; }
+    show('y-col-label',    !isXOnly);
+    show('y-regex-label',  !isXOnly);
+    show('color-col-label',!isXOnly);
+    show('color-rx-label', !isXOnly);
+    show('bins-label',      isHist);
+    show('split-label',     isCum);
+    show('split-rx-label',  isCum);
+    show('y-min-label',    !isXOnly);
+    show('y-max-label',    !isXOnly);
+    show('y-ivlo-label',   !isXOnly);
+    show('y-ivhi-label',   !isXOnly);
+    show('y-step-label',   !isXOnly);
+}
+
+function populatePlotSelectors(headers) {
+    currentHeaders = headers;
+    ['x-col','y-col','color-col','split-col','split-chart-col'].forEach(function(id) {
+        var sel = document.getElementById(id), prev = sel.value;
+        sel.innerHTML = (id==='color-col'||id==='split-col'||id==='split-chart-col')
+            ? '<option value="">-- none --</option>' : '';
+        headers.forEach(function(h) {
+            var o = document.createElement('option');
+            o.value = h; o.textContent = h; sel.appendChild(o);
+        });
+        if (prev) sel.value = prev;
+    });
+    function tryDefault(id, candidates) {
+        var sel = document.getElementById(id);
+        for (var ci=0; ci<candidates.length; ci++)
+            for (var i=0; i<sel.options.length; i++)
+                if (sel.options[i].value.toUpperCase()===candidates[ci].toUpperCase()) {
+                    sel.value=sel.options[i].value; return;
+                }
+    }
+    tryDefault('x-col',    ['WL','BLK','SB','BL','LINE#']);
+    tryDefault('y-col',    ['RBER','BYBER','RBER_LIMIT','Measurement']);
+    tryDefault('color-col',['DUT','RESULT','PAGETYPE','Type']);
+}
+
+function extractNum(val, rxStr) {
+    if (rxStr) {
+        try {
+            var m = new RegExp(rxStr).exec(String(val));
+            if (m) val = (m[1] !== undefined ? m[1] : m[0]);
+        } catch(e) {}
+    }
+    var n = parseFloat(String(val).replace(/[^0-9.eE+\-]/g,''));
+    return isNaN(n) ? null : n;
+}
+
+function getAxisScale(minId, maxId, stepId) {
+    var opts = {};
+    var mn   = parseFloat(document.getElementById(minId).value);
+    var mx   = parseFloat(document.getElementById(maxId).value);
+    if (!isNaN(mn)) opts.min = mn;
+    if (!isNaN(mx)) opts.max = mx;
+    if (stepId) {
+        var st = parseFloat(document.getElementById(stepId).value);
+        if (!isNaN(st) && st > 0) {
+            opts.ticks = Object.assign(opts.ticks || {}, { stepSize: st });
+        }
+    }
+    return opts;
+}
+
+/* Return current data-interval bounds from the purple interval inputs */
+function _getIntervals() {
+    return {
+        xLo: document.getElementById('x-ivlo').value,
+        xHi: document.getElementById('x-ivhi').value,
+        yLo: document.getElementById('y-ivlo').value,
+        yHi: document.getElementById('y-ivhi').value
+    };
+}
+
+function _clearIntervals() {
+    ['x-ivlo','x-ivhi','y-ivlo','y-ivhi'].forEach(function(id){
+        document.getElementById(id).value = '';
+    });
+    drawPlot();
+}
+
+/* Brief label shown in plot-status when any interval is active */
+function _intervalNote() {
+    var iv = _getIntervals();
+    var parts = [];
+    if (iv.xLo !== '' || iv.xHi !== '') {
+        parts.push('X\u2208[' + (iv.xLo || '\u2212\u221e') + ', ' + (iv.xHi || '+\u221e') + ']');
+    }
+    if (iv.yLo !== '' || iv.yHi !== '') {
+        parts.push('Y\u2208[' + (iv.yLo || '\u2212\u221e') + ', ' + (iv.yHi || '+\u221e') + ']');
+    }
+    return parts.length ? ' | interval: ' + parts.join(', ') : '';
+}
+
+/* ================================================================
+   MARKER LINES
+   State: array of {axis:'x'|'y', value:number, color:string, label:string}
+================================================================ */
+var _markers = [];
+
+var _MARKER_COLORS = ['#e83e8c','#dc3545','#fd7e14','#28a745','#007bff','#6f42c1','#20c997','#343a40'];
+
+function _markerColorCycle(idx) {
+    return _MARKER_COLORS[idx % _MARKER_COLORS.length];
+}
+
+function _parseMarkerExpr(raw) {
+    /* Format: x=VALUE[:COLOR[:LABEL]]  or  y=VALUE[:COLOR[:LABEL]] */
+    raw = raw.trim();
+    var m = raw.match(/^([xy])\s*=\s*([^\s:]+)(?::([^:]+))?(?::(.+))?$/i);
+    if (!m) return null;
+    var v = parseFloat(m[2]);
+    if (isNaN(v)) return null;
+    return {
+        axis:  m[1].toLowerCase(),
+        value: v,
+        color: (m[3] && m[3].trim()) || null,   /* null → auto from palette */
+        label: (m[4] && m[4].trim()) || ''
+    };
+}
+
+function _rebuildMarkerTags() {
+    var list = document.getElementById('marker-tag-list');
+    list.innerHTML = '';
+    _markers.forEach(function(mk, i) {
+        var c   = mk.color || _markerColorCycle(i);
+        var tag = document.createElement('span');
+        tag.className = 'marker-tag';
+        tag.style.borderColor = c;
+        tag.style.background  = c + '22';
+        tag.style.color       = c;
+        var desc = mk.axis.toUpperCase() + '=' + mk.value;
+        if (mk.label) desc += ' ' + mk.label;
+        tag.innerHTML = escHtml(desc) +
+            ' <span class="mk-rm" data-idx="' + i + '" title="Remove">&times;</span>';
+        list.appendChild(tag);
+    });
+    list.querySelectorAll('.mk-rm').forEach(function(rm) {
+        rm.addEventListener('click', function() {
+            _markers.splice(parseInt(this.dataset.idx), 1);
+            _rebuildMarkerTags();
+            if (currentCsvId) drawPlot();
+        });
+    });
+}
+
+function _addMarkerFromInput() {
+    var inp = document.getElementById('marker-input');
+    var raw = inp.value.trim();
+    if (!raw) return;
+    /* allow comma-separated list */
+    raw.split(',').forEach(function(part) {
+        var mk = _parseMarkerExpr(part);
+        if (mk) _markers.push(mk);
+    });
+    inp.value = '';
+    _rebuildMarkerTags();
+    if (currentCsvId) drawPlot();
+}
+
+function _clearMarkers() {
+    _markers = [];
+    _rebuildMarkerTags();
+    if (currentCsvId) drawPlot();
+}
+
+/* Build the chartjs-plugin-annotation `annotations` object from _markers[] */
+function _buildAnnotations() {
+    var ann = {};
+    _markers.forEach(function(mk, i) {
+        var c = mk.color || _markerColorCycle(i);
+        var key = 'mk_' + i;
+        ann[key] = {
+            type: 'line',
+            scaleID: mk.axis === 'x' ? 'x' : 'y',
+            value: mk.value,
+            borderColor: c,
+            borderWidth: 1.5,
+            borderDash: [5, 4],
+            label: mk.label ? {
+                display: true,
+                content: mk.label,
+                position: mk.axis === 'x' ? 'start' : 'end',
+                backgroundColor: c + 'cc',
+                color: '#fff',
+                font: { size: 10 },
+                padding: { x: 4, y: 2 },
+                yAdjust: mk.axis === 'x' ? -8 : 0
+            } : { display: false }
+        };
+    });
+    return ann;
+}
+
+/* Wire Enter key on marker input */
+document.addEventListener('DOMContentLoaded', function() {
+    var mi = document.getElementById('marker-input');
+    if (mi) {
+        mi.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') { e.preventDefault(); _addMarkerFromInput(); }
+        });
+    }
+});
+
+/* ================================================================
+   SPLIT-CHART ENGINE
+================================================================ */
+var _splitInsts = [];   /* Chart instances for split-chart tiles */
+
+function _splitChartKey(row, colIdx, rxStr) {
+    if (colIdx < 0) return null;
+    var raw = row[colIdx] != null ? String(row[colIdx]) : '(blank)';
+    if (!rxStr) return raw;
+    try {
+        var m = new RegExp(rxStr).exec(raw);
+        return m ? (m[1] !== undefined ? m[1] : m[0]) : '(no match)';
+    } catch(e) { return raw; }
+}
+
+function _applySplitLayout() {
+    var grid    = document.getElementById('plot-grid');
+    var cols    = Math.max(1, parseInt(document.getElementById('split-chart-cols').value) || 3);
+    var tileH   = Math.max(80,  parseInt(document.getElementById('split-chart-h').value)    || 200);
+    var gridH   = Math.max(100, parseInt(document.getElementById('split-grid-h').value)     || 340);
+    var tiles   = grid.querySelectorAll('.split-tile');
+    var tileW   = 'calc(' + (100 / cols).toFixed(4) + '% - 6px)';
+    tiles.forEach(function(t) {
+        t.style.width  = tileW;
+        t.style.height = tileH + 'px';
+    });
+    grid.style.maxHeight = gridH + 'px';
+}
+
+function _destroySplitCharts() {
+    _splitInsts.forEach(function(c) { try { c.destroy(); } catch(e) {} });
+    _splitInsts = [];
+    document.getElementById('plot-grid').innerHTML = '';
+}
+
+/* Build one Chart.js config for a tile (reuses the main draw logic but
+   accepts pre-filtered points / values and a canvas element). */
+function _buildTileChart(canvas, ct, tileData, xCol, yCol, xRx, yRx, colCol, colorRx,
+                          xLog, yLog, innerSplitCol, innerSplitRx) {
+    var ctx = canvas.getContext('2d');
+
+    function colorKey(pt) {
+        if (!colCol) return '(all)';
+        var raw = pt.group != null ? String(pt.group) : '(blank)';
+        if (!colorRx) return raw;
+        try {
+            var m = new RegExp(colorRx).exec(raw);
+            return m ? (m[1] !== undefined ? m[1] : m[0]) : '(no match)';
+        } catch(e) { return raw; }
+    }
+
+    function innerSplitKey(pt) {
+        if (!innerSplitCol) return '(all)';
+        var raw = pt.splitGroup != null ? String(pt.splitGroup) : '(blank)';
+        if (!innerSplitRx) return raw;
+        try {
+            var m = new RegExp(innerSplitRx).exec(raw);
+            return m ? (m[1] !== undefined ? m[1] : m[0]) : '(no match)';
+        } catch(e) { return raw; }
+    }
+
+    var ann = { annotations: _buildAnnotations() };
+    var xScale = getAxisScale('x-min', 'x-max', 'x-step');
+    var yScale = getAxisScale('y-min', 'y-max', 'y-step');
+
+    /* ── Histogram tile ── */
+    if (ct === 'histogram') {
+        var vals = tileData.map(function(p) { return p.x; });
+        if (!vals.length) return null;
+        var userBins = parseInt(document.getElementById('hist-bins').value);
+        var nBins    = userBins >= 2 ? userBins : autoBins(vals.length);
+        var h        = buildHistBins(vals, nBins);
+        return new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: h.bins.map(function(b){ return b.toFixed(4); }),
+                datasets: [{ label: xCol, data: h.counts,
+                    backgroundColor: PALETTE[0] + 'bb', borderColor: PALETTE[0],
+                    borderWidth: 1, barPercentage: 1.0, categoryPercentage: 1.0 }]
+            },
+            options: {
+                animation: false, responsive: true, maintainAspectRatio: false,
+                plugins: { legend: { display: false }, annotation: ann,
+                    tooltip: { callbacks: {
+                        title: function(i){ return 'Centre: ' + i[0].label; },
+                        label: function(i){ return 'Count: ' + i.parsed.y; }
+                    }}},
+                scales: {
+                    x: Object.assign({ title: { display: true, text: xCol },
+                        ticks: Object.assign({ maxTicksLimit: 8, maxRotation: 45 },
+                            (function(){ var s=parseFloat(document.getElementById('x-step').value);
+                                         return (!isNaN(s)&&s>0)?{stepSize:s}:{}; })())
+                    }, xScale),
+                    y: Object.assign({ type: yLog ? 'logarithmic' : 'linear',
+                        title: { display: true, text: 'Count' }, beginAtZero: !yLog }, yScale)
+                }
+            }
+        });
+    }
+
+    /* ── Cum Proba tile ── */
+    if (ct === 'cumproba') {
+        /* Group by inner-split col (cumproba split-col) if set,
+           else by color-col, matching single-chart cumproba behaviour. */
+        var cpGroups = {}, cpOrder = [];
+        tileData.forEach(function(pt) {
+            var g = innerSplitCol ? innerSplitKey(pt) : colorKey(pt);
+            if (!cpGroups[g]) { cpGroups[g] = []; cpOrder.push(g); }
+            cpGroups[g].push(pt.x);
+        });
+        /* deduplicate + sort group keys naturally */
+        var cpKeys = cpOrder.filter(function(k,i){ return cpOrder.indexOf(k)===i; })
+                            .sort(function(a,b){ return a.localeCompare(b, undefined, {numeric:true}); });
+        if (!cpKeys.length) return null;
+        var cpDatasets = cpKeys.map(function(g, i) {
+            var vals = cpGroups[g].slice().sort(function(a,b){ return a-b; });
+            var n    = vals.length;
+            return {
+                label: g + ' (n=' + n + ')',
+                data:  vals.map(function(v,j){ return { x: v, y: (j+1)/n }; }),
+                borderColor:     PALETTE[i % PALETTE.length],
+                backgroundColor: 'transparent',
+                borderWidth: 1.8,
+                pointRadius: n <= 1000 ? 2 : 0,
+                showLine: true, tension: 0
+            };
+        });
+        return new Chart(ctx, {
+            type: 'scatter',
+            data: { datasets: cpDatasets },
+            options: {
+                animation: false, responsive: true, maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: cpDatasets.length > 1, position: 'right',
+                              labels: { boxWidth: 10, font: { size: 9 } } },
+                    annotation: ann,
+                    tooltip: { callbacks: { label: function(i){
+                        return i.dataset.label + ': x=' + i.parsed.x.toFixed(6) +
+                               ', P=' + (i.parsed.y*100).toFixed(2) + '%';
+                    }}}
+                },
+                scales: {
+                    x: Object.assign({ type: xLog ? 'logarithmic' : 'linear',
+                        title: { display: true, text: xCol + (xRx ? ' ['+xRx+']' : '') } }, xScale),
+                    y: { title: { display: true, text: 'Cum. Proba' }, min: 0, max: 1,
+                         ticks: { callback: function(v){ return (v*100).toFixed(0)+'%'; } } }
+                }
+            }
+        });
+    }
+
+    /* ── Scatter / Line tile ── */
+    var MAX_PTS = 5000;
+    var pts = tileData, sampled = false;
+    if (pts.length > MAX_PTS && ct !== 'line') {
+        var step = Math.ceil(pts.length / MAX_PTS);
+        pts = pts.filter(function(_, i){ return i % step === 0; });
+        sampled = true;
+    }
+    var groups = {};
+    pts.forEach(function(pt) {
+        var g = colorKey(pt);
+        if (!groups[g]) groups[g] = [];
+        groups[g].push({ x: pt.x, y: pt.y });
+    });
+    var datasets = Object.keys(groups).map(function(g, i) {
+        return { label: g, data: groups[g],
+            backgroundColor: PALETTE[i % PALETTE.length] + '99',
+            borderColor:     PALETTE[i % PALETTE.length],
+            borderWidth: ct === 'line' ? 1.5 : 0,
+            pointRadius: ct === 'line' ? 2 : 3, showLine: ct === 'line' };
+    });
+    return new Chart(ctx, {
+        type: 'scatter',
+        data: { datasets: datasets },
+        options: {
+            animation: false, responsive: true, maintainAspectRatio: false,
+            plugins: {
+                legend: { display: datasets.length > 1, position: 'right',
+                          labels: { boxWidth: 10, font: { size: 9 } } },
+                annotation: ann,
+                tooltip: { callbacks: { label: function(ctx) {
+                    return ctx.dataset.label + ': (' + ctx.parsed.x + ', ' + ctx.parsed.y + ')';
+                }}}
+            },
+            scales: {
+                x: Object.assign({ type: xLog ? 'logarithmic' : 'linear',
+                    title: { display: true, text: xCol + (xRx ? ' ['+xRx+']' : '') } }, xScale),
+                y: Object.assign({ type: yLog ? 'logarithmic' : 'linear',
+                    title: { display: true, text: yCol + (yRx ? ' ['+yRx+']' : '') } }, yScale)
+            }
+        }
+    });
+}
+
+function _drawSplitCharts() {
+    _destroySplitCharts();
+
+    var ct        = document.getElementById('chart-type').value;
+    var xCol      = document.getElementById('x-col').value;
+    var yCol      = document.getElementById('y-col').value;
+    var xRx       = document.getElementById('x-regex').value.trim();
+    var yRx       = document.getElementById('y-regex').value.trim();
+    var colCol    = document.getElementById('color-col').value;
+    var colorRx   = document.getElementById('color-regex').value.trim();
+    var splitCol  = document.getElementById('split-col').value;      /* cumproba inner-split col */
+    var splitRx   = document.getElementById('split-regex').value.trim();
+    var xLog      = document.getElementById('x-log').checked;
+    var yLog      = document.getElementById('y-log').checked;
+    var scCol     = document.getElementById('split-chart-col').value;
+    var scRx      = document.getElementById('split-chart-rx').value.trim();
+    var status    = document.getElementById('plot-status');
+
+    var scIdx = currentHeaders.indexOf(scCol);
+    if (scIdx < 0) { status.textContent = 'Split-chart column not found.'; return; }
+
+    /* Collect all points, bucket by split key */
+    var isXOnly = ct === 'histogram' || ct === 'cumproba';
+    var iv      = _getIntervals();
+    var res     = readFilteredFromMemory(xCol, isXOnly ? null : yCol,
+                    colCol || null, xRx, isXOnly ? null : yRx,
+                    iv.xLo, iv.xHi, isXOnly ? '' : iv.yLo, isXOnly ? '' : iv.yHi);
+
+    /* Attach split key to each point using raw filteredIndices */
+    var buckets = {};
+    var bucketOrder = [];
+    for (var r = 0; r < filteredIndices.length; r++) {
+        var row = allRows[filteredIndices[r]];
+        var key = _splitChartKey(row, scIdx, scRx) || '(blank)';
+        if (!buckets[key]) { buckets[key] = []; bucketOrder.push(key); }
+        /* match point index — points were built in same filteredIndices order,
+           but readFilteredFromMemory skips non-numeric rows; re-extract here */
+        var xv = extractNum(row[currentHeaders.indexOf(xCol)] != null
+            ? String(row[currentHeaders.indexOf(xCol)]) : '', xRx);
+        var yv = isXOnly ? xv : extractNum(
+            row[currentHeaders.indexOf(yCol)] != null
+            ? String(row[currentHeaders.indexOf(yCol)]) : '', yRx);
+        if (xv === null || (!isXOnly && yv === null)) continue;
+        var xLo = iv.xLo !== '' ? parseFloat(iv.xLo) : NaN;
+        var xHi = iv.xHi !== '' ? parseFloat(iv.xHi) : NaN;
+        var yLo = (!isXOnly && iv.yLo !== '') ? parseFloat(iv.yLo) : NaN;
+        var yHi = (!isXOnly && iv.yHi !== '') ? parseFloat(iv.yHi) : NaN;
+        if (!isNaN(xLo) && xv < xLo) continue;
+        if (!isNaN(xHi) && xv > xHi) continue;
+        if (!isNaN(yLo) && yv < yLo) continue;
+        if (!isNaN(yHi) && yv > yHi) continue;
+        var gi  = colCol   ? currentHeaders.indexOf(colCol)   : -1;
+        var si  = splitCol ? currentHeaders.indexOf(splitCol) : -1;
+        var pt  = { x: xv, y: isXOnly ? xv : yv };
+        if (gi >= 0 && row[gi] != null)  pt.group      = String(row[gi]);
+        if (si >= 0 && row[si] != null)  pt.splitGroup = String(row[si]);
+        buckets[key].push(pt);
+    }
+
+    var keys    = bucketOrder.filter(function(k,i){ return bucketOrder.indexOf(k)===i; })
+                             .sort(function(a,b){ return a.localeCompare(b, undefined, {numeric:true}); });
+    var grid    = document.getElementById('plot-grid');
+    var cols    = Math.max(1, parseInt(document.getElementById('split-chart-cols').value) || 3);
+    var tileH   = Math.max(80,  parseInt(document.getElementById('split-chart-h').value)    || 200);
+    var gridH   = Math.max(100, parseInt(document.getElementById('split-grid-h').value)     || 340);
+    var tileW   = 'calc(' + (100/cols).toFixed(4) + '% - 6px)';
+    grid.style.maxHeight = gridH + 'px';
+    grid.style.display   = 'flex';
+
+    keys.forEach(function(key, ki) {
+        var tile  = document.createElement('div');
+        tile.className   = 'split-tile';
+        tile.style.width  = tileW;
+        tile.style.height = tileH + 'px';
+
+        var titleEl = document.createElement('div');
+        titleEl.className   = 'split-tile-title';
+        titleEl.textContent = scCol + ' = ' + key + '  (n=' + (buckets[key]||[]).length + ')';
+        tile.appendChild(titleEl);
+
+        var canvasWrap = document.createElement('div');
+        canvasWrap.className = 'split-tile-canvas';
+        var canvas = document.createElement('canvas');
+        canvasWrap.appendChild(canvas);
+        tile.appendChild(canvasWrap);
+        grid.appendChild(tile);
+
+        var inst = _buildTileChart(canvas, ct, buckets[key] || [],
+                    xCol, yCol, xRx, yRx, colCol, colorRx, xLog, yLog, splitCol, splitRx);
+        if (inst) _splitInsts.push(inst);
+    });
+
+    var filtNote = hasActiveFilters() ? ' \u2014 filtered' : '';
+    status.textContent = keys.length + ' charts \u00b7 ' + res.points.length.toLocaleString() +
+        ' pts \u00b7 split by ' + scCol + (scRx ? ' ['+scRx+']' : '') + filtNote + _intervalNote();
+}
+
+function drawPlot() {
+    _updatePlotCoverBanner();
+    var scCol = document.getElementById('split-chart-col').value;
+
+    /* Toggle between single-chart and split-chart modes */
+    var singleArea = document.getElementById('plot-area');
+    var gridArea   = document.getElementById('plot-grid');
+
+    if (scCol) {
+        /* Split-chart mode */
+        if (chartInst) { chartInst.destroy(); chartInst = null; }
+        singleArea.style.display = 'none';
+        _drawSplitCharts();
+        return;
+    }
+
+    /* Single-chart mode */
+    _destroySplitCharts();
+    gridArea.style.display   = 'none';
+    singleArea.style.display = '';
+    /* Restore a sensible floor if the handle had previously collapsed it */
+    if (!singleArea.style.minHeight || parseInt(singleArea.style.minHeight) < 80) {
+        singleArea.style.minHeight = '220px';
+        singleArea.style.maxHeight = '340px';
+    }
+
+    var ct = document.getElementById('chart-type').value;
+    if (ct === 'histogram') { drawHistogram(); return; }
+    if (ct === 'cumproba')  { drawCumProba();  return; }
+    drawScatterLine();
+}
+
+/* ── Scatter / Line ──────────────────────────────────────────────────── */
+function drawScatterLine() {
+    var xCol    = document.getElementById('x-col').value;
+    var yCol    = document.getElementById('y-col').value;
+    var xRx     = document.getElementById('x-regex').value.trim();
+    var yRx     = document.getElementById('y-regex').value.trim();
+    var colCol  = document.getElementById('color-col').value;
+    var colorRx = document.getElementById('color-regex').value.trim();
+    var ct      = document.getElementById('chart-type').value;
+    var xLog    = document.getElementById('x-log').checked;
+    var yLog    = document.getElementById('y-log').checked;
+    var status  = document.getElementById('plot-status');
+
+    if (!currentCsvId) { status.textContent = 'Session expired \u2014 re-parse file.'; return; }
+    status.textContent = 'Computing\u2026';
+
+    var iv      = _getIntervals();
+    var res     = readFilteredFromMemory(xCol, yCol, colCol || null, xRx, yRx, iv.xLo, iv.xHi, iv.yLo, iv.yHi);
+    var points  = res.points;
+    var skipped = res.skipped;
+
+    var MAX_PTS = 10000, plotPts = points, sampled = false;
+    if (points.length > MAX_PTS && ct !== 'line') {
+        var step = Math.ceil(points.length / MAX_PTS);
+        plotPts = points.filter(function(_, i){ return i % step === 0; });
+        sampled = true;
+    }
+
+    function colorKey(pt) {
+        if (!colCol) return '(all)';
+        var raw = pt.group != null ? String(pt.group) : '(blank)';
+        if (!colorRx) return raw;
+        try {
+            var m = new RegExp(colorRx).exec(raw);
+            return m ? (m[1] !== undefined ? m[1] : m[0]) : '(no match)';
+        } catch(e) { return raw; }
+    }
+
+    var groups = {};
+    plotPts.forEach(function(pt) {
+        var g = colorKey(pt);
+        if (!groups[g]) groups[g] = [];
+        groups[g].push({ x: pt.x, y: pt.y });
+    });
+
+    var datasets = Object.keys(groups).map(function(g, i) {
+        return {
+            label: g,
+            data: groups[g],
+            backgroundColor: PALETTE[i % PALETTE.length] + '99',
+            borderColor:     PALETTE[i % PALETTE.length],
+            borderWidth: ct === 'line' ? 1.5 : 0,
+            pointRadius: ct === 'line' ? 2 : 3,
+            showLine: ct === 'line'
+        };
+    });
+
+    if (chartInst) chartInst.destroy();
+    chartInst = new Chart(document.getElementById('plot-canvas').getContext('2d'), {
+        type: 'scatter',
+        data: { datasets: datasets },
+        options: {
+            animation: false,
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    display: datasets.length > 1,
+                    position: 'right',
+                    labels: { boxWidth: 12, font: { size: 10 } }
+                },
+                tooltip: { callbacks: {
+                    label: function(ctx) {
+                        return ctx.dataset.label + ': (' + ctx.parsed.x + ', ' + ctx.parsed.y + ')';
+                    }
+                }},
+                annotation: { annotations: _buildAnnotations() }
+            },
+            scales: {
+                x: Object.assign({
+                    type: xLog ? 'logarithmic' : 'linear',
+                    title: { display: true,
+                             text: xCol + (xRx ? ' [' + xRx + ']' : '') + (xLog ? ' (log)' : '') }
+                }, getAxisScale('x-min', 'x-max', 'x-step')),
+                y: Object.assign({
+                    type: yLog ? 'logarithmic' : 'linear',
+                    title: { display: true,
+                             text: yCol + (yRx ? ' [' + yRx + ']' : '') + (yLog ? ' (log)' : '') }
+                }, getAxisScale('y-min', 'y-max', 'y-step'))
+            }
+        }
+    });
+
+    var filtNote = hasActiveFilters() ? ' \u2014 filtered' : '';
+    var sampNote = sampled
+        ? ' (sampled ' + plotPts.length.toLocaleString() + '/' + points.length.toLocaleString() + ')' : '';
+    status.textContent = points.length.toLocaleString() + ' pts' + sampNote +
+        (skipped > 0 ? ', ' + skipped + ' skipped' : '') + filtNote + _intervalNote();
+}
+
+/* ── Histogram ───────────────────────────────────────────────────────── */
+function autoBins(n) { return Math.min(200, Math.max(2, Math.ceil(Math.log2(n) + 1))); }
+
+function buildHistBins(values, nBins) {
+    if (!values.length) return { bins: [], counts: [], width: 0 };
+    var mn = Math.min.apply(null, values);
+    var mx = Math.max.apply(null, values);
+    var w  = (mx - mn || 1) / nBins;
+    var bins = [], counts = [];
+    for (var i = 0; i < nBins; i++) { bins.push(mn + i*w + w/2); counts.push(0); }
+    values.forEach(function(v) {
+        var idx = Math.min(nBins - 1, Math.floor((v - mn) / w));
+        counts[idx]++;
+    });
+    return { bins: bins, counts: counts, width: w };
+}
+
+function drawHistogram() {
+    var xCol   = document.getElementById('x-col').value;
+    var xRx    = document.getElementById('x-regex').value.trim();
+    var yLog   = document.getElementById('y-log').checked;
+    var binsEl = document.getElementById('hist-bins');
+    var status = document.getElementById('plot-status');
+
+    if (!currentCsvId) { status.textContent = 'Session expired \u2014 re-parse file.'; return; }
+    status.textContent = 'Computing\u2026';
+
+    var iv      = _getIntervals();
+    var res     = readFilteredFromMemory(xCol, null, null, xRx, null, iv.xLo, iv.xHi, '', '');
+    var vals    = res.points.map(function(p){ return p.x; });
+    var skipped = res.skipped;
+
+    if (!vals.length) { status.textContent = 'No numeric values in column ' + xCol; return; }
+
+    var userBins = parseInt(binsEl.value);
+    var nBins    = userBins >= 2 ? userBins : autoBins(vals.length);
+    var autoLbl  = userBins >= 2 ? '' : ' (auto)';
+    var h = buildHistBins(vals, nBins);
+
+    if (chartInst) chartInst.destroy();
+    chartInst = new Chart(document.getElementById('plot-canvas').getContext('2d'), {
+        type: 'bar',
+        data: {
+            labels: h.bins.map(function(b){ return b.toFixed(4); }),
+            datasets: [{
+                label: xCol,
+                data: h.counts,
+                backgroundColor: PALETTE[0] + 'bb',
+                borderColor: PALETTE[0],
+                borderWidth: 1,
+                barPercentage: 1.0,
+                categoryPercentage: 1.0
+            }]
+        },
+        options: {
+            animation: false,
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { display: false },
+                tooltip: { callbacks: {
+                    title: function(items){ return 'Centre: ' + items[0].label; },
+                    label: function(item) { return 'Count: ' + item.parsed.y; }
+                }},
+                annotation: { annotations: _buildAnnotations() }
+            },
+            scales: {
+                x: Object.assign({
+                    title: { display: true, text: xCol + (xRx ? ' [' + xRx + ']' : '') },
+                    ticks: Object.assign({ maxTicksLimit: 12, maxRotation: 45 },
+                           (function(){ var s=parseFloat(document.getElementById('x-step').value);
+                                        return (!isNaN(s)&&s>0)?{stepSize:s}:{}; })())
+                }, getAxisScale('x-min', 'x-max')),
+                y: Object.assign({
+                    type: yLog ? 'logarithmic' : 'linear',
+                    title: { display: true, text: 'Count' + (yLog ? ' (log)' : '') },
+                    beginAtZero: !yLog
+                }, getAxisScale('y-min', 'y-max', 'y-step'))
+            }
+        }
+    });
+
+    var filtNote = hasActiveFilters() ? ' \u2014 filtered' : '';
+    status.textContent = vals.length.toLocaleString() + ' values, ' + nBins + ' bins' + autoLbl +
+        (skipped > 0 ? ', ' + skipped + ' skipped' : '') + filtNote + _intervalNote();
+}
+
+/* ── Cumulative Probability ──────────────────────────────────────────── */
+function drawCumProba() {
+    var xCol     = document.getElementById('x-col').value;
+    var xRx      = document.getElementById('x-regex').value.trim();
+    var splitCol = document.getElementById('split-col').value;
+    var splitRx  = document.getElementById('split-regex').value.trim();
+    var xLog     = document.getElementById('x-log').checked;
+    var status   = document.getElementById('plot-status');
+
+    if (!currentCsvId) { status.textContent = 'Session expired \u2014 re-parse file.'; return; }
+    status.textContent = 'Computing\u2026';
+
+    var iv      = _getIntervals();
+    var res     = readFilteredFromMemory(xCol, null, splitCol || null, xRx, null, iv.xLo, iv.xHi, '', '');
+    var points  = res.points;
+    var skipped = res.skipped;
+
+    if (!points.length) { status.textContent = 'No numeric values in column ' + xCol; return; }
+
+    function groupKey(pt) {
+        if (!splitCol) return '(all)';
+        var raw = pt.group != null ? String(pt.group) : '(blank)';
+        if (!splitRx) return raw;
+        try {
+            var m = new RegExp(splitRx).exec(raw);
+            return m ? (m[1] !== undefined ? m[1] : m[0]) : '(no match)';
+        } catch(e) { return raw; }
+    }
+
+    var groups = {};
+    points.forEach(function(pt) {
+        var g = groupKey(pt);
+        if (!groups[g]) groups[g] = [];
+        groups[g].push(pt.x);
+    });
+
+    var datasets = Object.keys(groups).sort().map(function(g, i) {
+        var vals = groups[g].slice().sort(function(a,b){ return a-b; });
+        var n    = vals.length;
+        return {
+            label: g + ' (n=' + n.toLocaleString() + ')',
+            data:  vals.map(function(v, j){ return { x: v, y: (j+1)/n }; }),
+            borderColor:     PALETTE[i % PALETTE.length],
+            backgroundColor: 'transparent',
+            borderWidth: 1.8,
+            pointRadius: n <= 2000 ? 2 : 0,
+            showLine: true,
+            tension: 0
+        };
+    });
+
+    if (chartInst) chartInst.destroy();
+    chartInst = new Chart(document.getElementById('plot-canvas').getContext('2d'), {
+        type: 'scatter',
+        data: { datasets: datasets },
+        options: {
+            animation: false,
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { display: true, position: 'right',
+                          labels: { boxWidth: 12, font: { size: 10 } } },
+                tooltip: { callbacks: {
+                    label: function(item) {
+                        return item.dataset.label + ': x=' + item.parsed.x.toFixed(6) +
+                               ', P=' + (item.parsed.y * 100).toFixed(2) + '%';
+                    }
+                }},
+                annotation: { annotations: _buildAnnotations() }
+            },
+            scales: {
+                x: Object.assign({
+                    type: xLog ? 'logarithmic' : 'linear',
+                    title: { display: true,
+                             text: xCol + (xRx ? ' [' + xRx + ']' : '') + (xLog ? ' (log)' : '') }
+                }, getAxisScale('x-min', 'x-max', 'x-step')),
+                y: {
+                    title: { display: true, text: 'Cumulative Probability' },
+                    min: 0, max: 1,
+                    ticks: { callback: function(v){ return (v*100).toFixed(0)+'%'; } }
+                }
+            }
+        }
+    });
+
+    var filtNote  = hasActiveFilters() ? ' \u2014 filtered' : '';
+    var nGroups   = Object.keys(groups).length;
+    var splitDesc = splitCol
+        ? (' split by ' + splitCol + (splitRx ? ' [' + splitRx + ']' : '')) : '';
+    status.textContent = points.length.toLocaleString() + ' values' + splitDesc +
+        (nGroups > 1 ? ', ' + nGroups + ' groups' : '') +
+        (skipped > 0 ? ', ' + skipped + ' skipped' : '') + filtNote + _intervalNote();
+}
+
+/* ── Drag-to-resize plot ─────────────────────────────────────────────── */
+(function() {
+    var handle   = document.getElementById('drag-handle');
+    var dragging = false, startY = 0, startH = 0, targetEl = null;
+
+    handle.addEventListener('mousedown', function(e) {
+        /* Pick whichever plot container is currently visible */
+        var grid = document.getElementById('plot-grid');
+        var area = document.getElementById('plot-area');
+        if (grid && grid.style.display !== 'none' && grid.children.length) {
+            targetEl = grid;
+            startH   = grid.offsetHeight || parseInt(document.getElementById('split-grid-h').value) || 340;
+        } else {
+            targetEl = area;
+            startH   = area.offsetHeight || 220;
+        }
+        dragging = true;
+        startY   = e.clientY;
+        document.body.style.cursor = 'ns-resize';
+        e.preventDefault();
+    });
+
+    document.addEventListener('mousemove', function(e) {
+        if (!dragging || !targetEl) return;
+        var newH = Math.max(80, Math.min(1200, startH + e.clientY - startY));
+        targetEl.style.maxHeight = newH + 'px';
+        targetEl.style.minHeight = newH + 'px';
+        /* Keep the split-grid-h input in sync when resizing the grid */
+        if (targetEl.id === 'plot-grid') {
+            var inp = document.getElementById('split-grid-h');
+            if (inp) inp.value = newH;
+        }
+        if (chartInst) chartInst.resize();
+    });
+
+    document.addEventListener('mouseup', function() {
+        dragging  = false;
+        targetEl  = null;
+        document.body.style.cursor = '';
+    });
+})();
+</script>
+</body>
+</html>
