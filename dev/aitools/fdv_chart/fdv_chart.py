@@ -28,10 +28,61 @@ import io
 import sys
 import tempfile
 import threading
+import urllib.request
 from pathlib import Path
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from socketserver import ThreadingMixIn
 from urllib.parse import urlparse
+
+# ── Local Ollama / LLM config ────────────────────────────────────────────────
+_LLM_URL     = 'http://localhost:11434/v1/chat/completions'
+_LLM_MODEL   = 'llama3'
+_LLM_APIKEY  = ''    # leave empty for Ollama (no key needed)
+_LLM_TIMEOUT      = 180   # seconds — llama3 can be slow; long conversations need more headroom
+_CHAT_MAX_TURNS   = 20    # max user+assistant turn pairs kept in history (older pairs trimmed)
+
+_LLM_SYSTEM_PROMPT = (
+    'You are a data analysis assistant embedded in an engineering test-data viewer. '
+    'The user gives you statistics extracted from parsed log file charts. '
+    'Follow the TASK instruction in the prompt exactly. '
+    'When asked for a single-chart analysis: describe distribution shape, central tendency, '
+    'spread and outliers concisely. '
+    'When asked for a comparative analysis: compare each group directly against the others — '
+    'rank them by median or mean where useful, highlight which groups have wider spread, '
+    'higher extremes, or cross reference lines. '
+    'Always use engineering language. Never pad with generic disclaimers. '
+    'Respect the word limit stated in the TASK.\n\n'
+    'MARKER COMMANDS — you may add or remove reference lines on the chart by emitting '
+    'these special tokens anywhere in your reply (they will be executed automatically '
+    'and hidden from the displayed text):\n'
+    '  [MARKER: x=<value>:<label>]   — add a vertical line at X=value\n'
+    '  [MARKER: y=<value>:<label>]   — add a horizontal line at Y=value\n'
+    '  [CLEAR_MARKERS]               — remove all existing markers\n'
+    'Examples: [MARKER: x=1000:spec_limit]  [MARKER: y=0.05:target]  [CLEAR_MARKERS]\n'
+    'Use markers when the user asks to mark, highlight, or draw a line at a specific value, '
+    'or when you identify a threshold worth highlighting. You may emit multiple MARKER '
+    'commands in one reply. Always explain in prose what you marked and why.'
+)
+
+def _call_llm(messages):
+    """POST a messages list to local Ollama and return the assistant reply string."""
+    payload = json.dumps({
+        'model':       _LLM_MODEL,
+        'messages':    messages,
+        'stream':      False,
+        'temperature': 0.3
+    }).encode('utf-8')
+    headers = {'Content-Type': 'application/json'}
+    if _LLM_APIKEY:
+        headers['Authorization'] = 'Bearer ' + _LLM_APIKEY
+    req = urllib.request.Request(_LLM_URL, data=payload, headers=headers)
+    with urllib.request.urlopen(req, timeout=_LLM_TIMEOUT) as r:
+        body = json.loads(r.read().decode('utf-8'))
+    return body['choices'][0]['message']['content'].strip()
+
+# ── Chat session store  {csv_id: [{"role":..,"content":..}, ...]} ─────
+_chat_sessions      = {}
+_chat_sessions_lock = threading.Lock()
 
 with open(log_path, 'a') as f:
     f.write("IMPORTS_OK\n")
@@ -802,6 +853,100 @@ class RequestHandler(BaseHTTPRequestHandler):
 
             except Exception as e:
                 _send_json(self, 400, {'success': False, 'error': str(e)})
+
+        elif self.path == '/analyze':
+            # Single-turn AI analysis — no session history
+            try:
+                length = int(self.headers.get('Content-Length', 0))
+                body   = json.loads(self.rfile.read(length).decode('utf-8'))
+                prompt = body.get('prompt', '').strip()
+                if not prompt:
+                    raise ValueError('Empty prompt')
+                messages = [
+                    {'role': 'system', 'content': _LLM_SYSTEM_PROMPT},
+                    {'role': 'user',   'content': prompt}
+                ]
+                summary = _call_llm(messages)
+                _send_json(self, 200, {'success': True, 'summary': summary})
+            except Exception as e:
+                _send_json(self, 200, {'success': False, 'error': str(e)})
+
+        elif self.path == '/chat':
+            # Multi-turn chat — maintains per-csv_id conversation history
+            try:
+                length  = int(self.headers.get('Content-Length', 0))
+                body    = json.loads(self.rfile.read(length).decode('utf-8'))
+                csv_id  = body.get('csv_id', 'default') or 'default'
+                message = body.get('message', '').strip()
+                context = body.get('context', '').strip()   # chart stats injected on first turn
+                if not message:
+                    raise ValueError('Empty message')
+
+                with _chat_sessions_lock:
+                    if csv_id not in _chat_sessions:
+                        # Start new session with system prompt + optional context
+                        sess = [{'role': 'system', 'content': _LLM_SYSTEM_PROMPT}]
+                        if context:
+                            sess.append({
+                                'role': 'system',
+                                'content': 'Current chart context:\n' + context
+                            })
+                        _chat_sessions[csv_id] = sess
+                    elif context:
+                        # Context re-injected — REPLACE the existing context message
+                        # (search for it by prefix; if not found, append once)
+                        sess = _chat_sessions[csv_id]
+                        replaced = False
+                        for i, m in enumerate(sess):
+                            if m['role'] == 'system' and (
+                                    m['content'].startswith('Current chart context:') or
+                                    m['content'].startswith('Updated chart context:')):
+                                sess[i] = {'role': 'system',
+                                           'content': 'Updated chart context:\n' + context}
+                                replaced = True
+                                break
+                        if not replaced:
+                            sess.append({'role': 'system',
+                                         'content': 'Updated chart context:\n' + context})
+
+                    # Append user message
+                    _chat_sessions[csv_id].append({'role': 'user', 'content': message})
+
+                    # ── Trim history to avoid unbounded growth ──────────────
+                    # Keep all system messages + last _CHAT_MAX_TURNS turn pairs.
+                    sess = _chat_sessions[csv_id]
+                    system_msgs = [m for m in sess if m['role'] == 'system']
+                    conv_msgs   = [m for m in sess if m['role'] != 'system']
+                    # Each turn = one user + one assistant message = 2 items
+                    max_conv    = _CHAT_MAX_TURNS * 2
+                    if len(conv_msgs) > max_conv:
+                        conv_msgs = conv_msgs[-max_conv:]
+                    _chat_sessions[csv_id] = system_msgs + conv_msgs
+
+                    messages_snapshot = list(_chat_sessions[csv_id])
+
+                # Call LLM outside the lock (slow network I/O)
+                reply = _call_llm(messages_snapshot)
+
+                with _chat_sessions_lock:
+                    _chat_sessions[csv_id].append({'role': 'assistant', 'content': reply})
+                    turn = sum(1 for m in _chat_sessions[csv_id] if m['role'] == 'user')
+
+                _send_json(self, 200, {'success': True, 'reply': reply, 'turn': turn})
+            except Exception as e:
+                _send_json(self, 200, {'success': False, 'error': str(e)})
+
+        elif self.path == '/chat_reset':
+            # Delete the session history for a csv_id
+            try:
+                length = int(self.headers.get('Content-Length', 0))
+                body   = json.loads(self.rfile.read(length).decode('utf-8'))
+                csv_id = body.get('csv_id', 'default') or 'default'
+                with _chat_sessions_lock:
+                    _chat_sessions.pop(csv_id, None)
+                _send_json(self, 200, {'success': True})
+            except Exception as e:
+                _send_json(self, 200, {'success': False, 'error': str(e)})
 
         else:
             self.send_error(404)

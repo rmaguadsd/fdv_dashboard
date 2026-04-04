@@ -214,6 +214,139 @@
         #drag-handle { flex: 0 0 6px; cursor: ns-resize; background: #dee2e6;
                        border-top: 1px solid #ced4da; border-bottom: 1px solid #ced4da; }
         #drag-handle:hover { background: #adb5bd; }
+
+        /* AI ANALYSIS PANEL */
+        #analysis-panel {
+            flex: 0 0 auto;
+            display: none;
+            flex-direction: column;
+            border-top: 2px solid #6610f2;
+            background: #f5f0ff;
+            font-size: 0.83em;
+            color: #1a1a2e;
+            height: 160px;
+            min-height: 60px;
+            max-height: 600px;
+            box-sizing: border-box;
+            resize: none;
+        }
+        /* scrollable content area inside analysis panel */
+        #analysis-panel-body {
+            flex: 1 1 0; overflow-y: auto;
+            padding: 4px 14px 8px 14px;
+            line-height: 1.6;
+        }
+        #analysis-panel .an-header {
+            display: flex; align-items: center;
+            justify-content: space-between; margin-bottom: 4px;
+        }
+        #analysis-panel .an-header strong { color: #6610f2; font-size: 0.95em; }
+        #analysis-panel .an-close {
+            cursor: pointer; color: #6610f2; font-size: 1.1em;
+            border: none; background: none; padding: 0 2px; line-height: 1;
+        }
+        #analysis-panel .an-close:hover { color: #3d0099; }
+        #analysis-text { white-space: pre-wrap; color: #2c2c4a; }
+        .an-tile-block { margin-bottom: 8px; border-left: 3px solid #6610f2; padding-left: 8px; }
+        .an-tile-label { font-weight: bold; color: #495057; font-size: 0.88em; margin-bottom: 2px; }
+        /* Analyze button */
+        #analyze-btn {
+            padding: 4px 10px; background: #6610f2; color: #fff;
+            border: none; border-radius: 4px; cursor: pointer;
+            font-size: 0.88em; white-space: nowrap; margin-left: 4px;
+        }
+        #analyze-btn:hover    { background: #520dc2; }
+        #analyze-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+
+        /* ── CHAT DRAWER ─────────────────────────────────────────── */
+        #chat-drawer {
+            flex: 0 0 auto; display: none; flex-direction: column;
+            border-top: 2px solid #17a2b8; background: #f0fafa;
+            height: 260px; min-height: 100px; max-height: 700px;
+            box-sizing: border-box;
+        }
+        #chat-drawer-hdr {
+            flex: 0 0 auto; display: flex; align-items: center;
+            justify-content: space-between;
+            padding: 3px 10px; background: #17a2b8; color: #fff;
+            font-size: 0.82em; font-weight: bold;
+        }
+        #chat-drawer-hdr .ch-btns { display: flex; gap: 5px; align-items: center; }
+        #chat-drawer-hdr button {
+            background: rgba(255,255,255,0.18); border: 1px solid rgba(255,255,255,0.35);
+            color: #fff; border-radius: 3px; cursor: pointer;
+            padding: 1px 7px; font-size: 0.82em; white-space: nowrap;
+        }
+        #chat-drawer-hdr button:hover { background: rgba(255,255,255,0.32); }
+        #chat-messages {
+            flex: 1 1 0; overflow-y: auto; padding: 6px 10px;
+            display: flex; flex-direction: column; gap: 5px;
+        }
+        .ch-msg {
+            max-width: 88%; padding: 5px 10px; border-radius: 8px;
+            font-size: 0.82em; line-height: 1.5;
+            white-space: pre-wrap; word-break: break-word;
+        }
+        .ch-msg.user {
+            align-self: flex-end; background: #17a2b8; color: #fff;
+            border-bottom-right-radius: 2px;
+        }
+        .ch-msg.assistant {
+            align-self: flex-start; background: #fff; color: #1a1a2e;
+            border: 1px solid #bee5eb; border-bottom-left-radius: 2px;
+        }
+        .ch-msg.note {
+            align-self: center; font-size: 0.74em; color: #888;
+            font-style: italic; background: none; border: none; padding: 1px 0;
+            max-width: 100%;
+        }
+        .ch-msg.thinking {
+            align-self: flex-start; background: #e9ecef; color: #888;
+            border: none; font-style: italic;
+        }
+        #chat-input-row {
+            flex: 0 0 auto; display: flex; gap: 6px;
+            padding: 5px 8px; border-top: 1px solid #bee5eb; background: #fff;
+        }
+        #chat-input {
+            flex: 1 1 0; padding: 5px 8px; font-size: 0.83em;
+            border: 1px solid #17a2b8; border-radius: 4px;
+            resize: none; height: 36px; font-family: inherit; overflow-y: auto;
+        }
+        #chat-input:focus { outline: none; box-shadow: 0 0 0 2px rgba(23,162,184,0.28); }
+        #chat-send-btn {
+            padding: 5px 14px; background: #17a2b8; color: #fff;
+            border: none; border-radius: 4px; cursor: pointer;
+            font-size: 0.83em; white-space: nowrap; align-self: flex-end;
+        }
+        #chat-send-btn:hover    { background: #138496; }
+        #chat-send-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+        /* Chat toggle button in plot bar */
+        #chat-toggle-btn {
+            padding: 4px 10px; background: #17a2b8; color: #fff;
+            border: none; border-radius: 4px; cursor: pointer;
+            font-size: 0.88em; white-space: nowrap; margin-left: 4px;
+        }
+        #chat-toggle-btn:hover  { background: #138496; }
+        #chat-toggle-btn.active { background: #0c6674; }
+
+        /* ── Panel resize grips ─────────────────────────────────── */
+        .panel-grip {
+            flex: 0 0 5px; cursor: ns-resize;
+            display: flex; align-items: center; justify-content: center;
+        }
+        .panel-grip::after {
+            content: ''; display: block;
+            width: 36px; height: 3px; border-radius: 2px;
+            background: rgba(0,0,0,0.18);
+        }
+        .panel-grip:hover::after { background: rgba(0,0,0,0.38); }
+        /* Analysis panel grip inherits purple theme */
+        #analysis-panel .panel-grip { background: rgba(102,16,242,0.07); }
+        #analysis-panel .panel-grip:hover { background: rgba(102,16,242,0.15); }
+        /* Chat drawer grip inherits teal theme */
+        #chat-drawer .panel-grip { background: rgba(23,162,184,0.08); }
+        #chat-drawer .panel-grip:hover { background: rgba(23,162,184,0.18); }
     </style>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1/dist/chartjs-plugin-annotation.min.js"></script>
@@ -306,6 +439,14 @@
         <label id="split-rx-label" style="margin-left:4px;display:none">Split&nbsp;regex:
             <input type="text" id="split-regex" placeholder="e.g. DUT(\d+)" style="width:110px"></label>
         <button id="plot-btn" class="btn" style="padding:4px 12px" onclick="drawPlot()">&#9654; Plot</button>
+        <button id="analyze-btn" type="button" onclick="_analyzeChart()"
+                title="Ask local Ollama llama3 to summarise the current chart&#10;Prerequisites: ollama serve  &amp;  ollama pull llama3">
+            &#129504; Analyze
+        </button>
+        <button id="chat-toggle-btn" type="button" onclick="_toggleChat()"
+                title="Open a multi-turn chat with llama3 about your data&#10;Prerequisites: ollama serve  &amp;  ollama pull llama3">
+            &#128172; Chat
+        </button>
         <label style="margin-left:8px;font-size:0.82em;color:#555">
             <input type="checkbox" id="x-log"> X&nbsp;log</label>
         <label style="margin-left:4px;font-size:0.82em;color:#555">
@@ -385,6 +526,40 @@
         <canvas id="plot-canvas"></canvas>
     </div>
     <div id="plot-grid"></div>
+    <div id="analysis-panel">
+        <div class="panel-grip" id="analysis-grip" title="Drag to resize"></div>
+        <div id="analysis-panel-body">
+        <div class="an-header">
+            <strong>&#129504; AI Summary &mdash; llama3 (Ollama)</strong>
+            <button class="an-close"
+                    onclick="document.getElementById('analysis-panel').style.display='none'"
+                    title="Close">&#10006;</button>
+        </div>
+        <div id="analysis-text"></div>
+        </div>
+    </div>
+    <!-- CHAT DRAWER -->
+    <div id="chat-drawer">
+        <div class="panel-grip" id="chat-grip" title="Drag to resize"></div>
+        <div id="chat-drawer-hdr">
+            <span>&#128172; Chat with llama3 &mdash; ask about your data</span>
+            <div class="ch-btns">
+                <button type="button" onclick="_chatInjectContext()"
+                        title="Re-send current chart statistics as context">&#8635; Inject context</button>
+                <button type="button" onclick="_chatReset()"
+                        title="Clear history and start a new session">&#128465; New session</button>
+                <button type="button" onclick="_toggleChat()"
+                        title="Close chat">&#10006;</button>
+            </div>
+        </div>
+        <div id="chat-messages"></div>
+        <div id="chat-input-row">
+            <textarea id="chat-input"
+                      placeholder="Ask a question, request analysis, or say e.g. &#8220;mark the mean&#8221; or &#8220;add a line at x=1000&#8221;&#8230;"
+                      onkeydown="_chatKeydown(event)"></textarea>
+            <button id="chat-send-btn" type="button" onclick="_chatSend()">Send &#9658;</button>
+        </div>
+    </div>
     <div id="drag-handle" title="Drag to resize plot"></div>
 </div>
 
@@ -1927,6 +2102,987 @@ function drawCumProba() {
         (nGroups > 1 ? ', ' + nGroups + ' groups' : '') +
         (skipped > 0 ? ', ' + skipped + ' skipped' : '') + filtNote + _intervalNote();
 }
+
+/* ================================================================
+   AI ANALYSIS ENGINE
+   Pure addition — zero changes to any existing function.
+================================================================ */
+
+/* Descriptive statistics from a numeric array */
+function _descStats(arr) {
+    if (!arr || !arr.length) return null;
+    var sorted = arr.slice().sort(function(a, b) { return a - b; });
+    var n    = sorted.length;
+    var sum  = sorted.reduce(function(a, b) { return a + b; }, 0);
+    var mean = sum / n;
+    var vari = sorted.reduce(function(a, b) { return a + (b - mean) * (b - mean); }, 0) / n;
+    function pct(p) { return sorted[Math.min(n - 1, Math.floor(n * p))]; }
+    return { n: n, min: sorted[0], max: sorted[n - 1],
+             mean: mean, std: Math.sqrt(vari),
+             p5: pct(0.05), p25: pct(0.25), p50: pct(0.50),
+             p75: pct(0.75), p95: pct(0.95) };
+}
+
+function _fmtStats(st) {
+    if (!st) return 'no data';
+    var f = function(v) { return v.toPrecision(5); };
+    return 'n='    + st.n +
+           ', min=' + f(st.min)  + ', max=' + f(st.max)  +
+           ', mean='+ f(st.mean) + ', std=' + f(st.std)  +
+           ', p5='  + f(st.p5)   + ', p25=' + f(st.p25)  +
+           ', p50=' + f(st.p50)  + ', p75=' + f(st.p75)  +
+           ', p95=' + f(st.p95);
+}
+
+/* Build a focused prompt for one chart (single-chart mode).
+   groupStats: optional array of {label, xSt, ySt} for in-chart grouping (color-by / split-by). */
+function _buildChartPrompt(ct, xCol, yCol, xRx, yRx, points, groupStats) {
+    var xs  = points.map(function(p) { return p.x; });
+    var ys  = (ct !== 'histogram' && ct !== 'cumproba')
+              ? points.map(function(p) { return p.y; }) : [];
+    var xSt = _descStats(xs);
+    var ySt = ys.length ? _descStats(ys) : null;
+
+    var lines = [];
+    lines.push('Chart type: ' + ct);
+    lines.push('X column: ' + xCol + (xRx ? ' (regex: ' + xRx + ')' : ''));
+    if (ct !== 'histogram' && ct !== 'cumproba')
+        lines.push('Y column: ' + yCol + (yRx ? ' (regex: ' + yRx + ')' : ''));
+    lines.push('');
+    lines.push('Overall stats:');
+    lines.push('  X: ' + _fmtStats(xSt));
+    if (ySt) lines.push('  Y: ' + _fmtStats(ySt));
+
+    /* Per-group breakdown (color-by or cumproba split-by) */
+    if (groupStats && groupStats.length > 1) {
+        lines.push('');
+        lines.push('Per-group breakdown (' + groupStats.length + ' groups):');
+        groupStats.forEach(function(g) {
+            lines.push('  [' + g.label + ']');
+            lines.push('    X: ' + _fmtStats(g.xSt));
+            if (g.ySt) lines.push('    Y: ' + _fmtStats(g.ySt));
+        });
+        lines.push('');
+        lines.push('TASK: Provide a focused analysis of this single chart. '
+            + 'Compare the groups above — highlight differences in distribution, '
+            + 'spread, central tendency and any outliers. Be concise (max 150 words).');
+    } else {
+        lines.push('');
+        lines.push('TASK: Provide a focused analysis of this single chart. '
+            + 'Describe the distribution shape, central tendency, spread and any '
+            + 'notable outliers. Be concise (max 120 words).');
+    }
+
+    /* Marker lines */
+    if (_markers.length) {
+        lines.push('');
+        lines.push('Reference marker lines:');
+        _markers.forEach(function(mk) {
+            var d  = '  ' + mk.axis.toUpperCase() + '=' + mk.value;
+            if (mk.label) d += ' (' + mk.label + ')';
+            var st = mk.axis === 'x' ? xSt : ySt;
+            if (st) {
+                if      (mk.value < st.min) d += ' \u2192 below data range';
+                else if (mk.value > st.max) d += ' \u2192 above data range';
+                else                        d += ' \u2192 within data range';
+            }
+            lines.push(d);
+        });
+    }
+
+    var af = buildActiveFilters();
+    if (af.length) lines.push('Active column filters: ' + af.length + ' column(s)');
+    var ivNote = _intervalNote();
+    if (ivNote) lines.push('Data interval: ' + ivNote.replace(' | interval: ', ''));
+
+    return lines.join('\n');
+}
+
+/* Build a comparative prompt when split-charts are active.
+   tileStats: array of {key, xSt, ySt, n} — one entry per split tile. */
+function _buildSplitPrompt(ct, xCol, yCol, xRx, yRx, scCol, tileStats) {
+    var lines = [];
+    lines.push('Chart type: ' + ct);
+    lines.push('X column: ' + xCol + (xRx ? ' (regex: ' + xRx + ')' : ''));
+    if (ct !== 'histogram' && ct !== 'cumproba')
+        lines.push('Y column: ' + yCol + (yRx ? ' (regex: ' + yRx + ')' : ''));
+    lines.push('Split-by column: ' + scCol);
+    lines.push('Number of groups: ' + tileStats.length);
+    lines.push('');
+    lines.push('Per-group statistics:');
+    tileStats.forEach(function(t) {
+        lines.push('  [' + t.key + ']  n=' + t.n);
+        lines.push('    X: ' + _fmtStats(t.xSt));
+        if (t.ySt) lines.push('    Y: ' + _fmtStats(t.ySt));
+    });
+
+    /* Marker lines */
+    if (_markers.length) {
+        lines.push('');
+        lines.push('Reference marker lines:');
+        _markers.forEach(function(mk) {
+            var d = '  ' + mk.axis.toUpperCase() + '=' + mk.value;
+            if (mk.label) d += ' (' + mk.label + ')';
+            lines.push(d);
+        });
+    }
+
+    lines.push('');
+    lines.push('TASK: Perform a comparative analysis across all ' + tileStats.length
+        + ' groups split by "' + scCol + '". '
+        + 'For each group discuss its distribution relative to the others. '
+        + 'Identify which group(s) stand out, rank them if meaningful, and explain '
+        + 'key differences in spread, median and extremes. '
+        + 'If marker lines are present, note which groups cross or approach them. '
+        + 'Be concise and engineering-focused (max 200 words total).');
+
+    var af = buildActiveFilters();
+    if (af.length) lines.push('Active column filters: ' + af.length + ' column(s)');
+    var ivNote = _intervalNote();
+    if (ivNote) lines.push('Data interval: ' + ivNote.replace(' | interval: ', ''));
+
+    return lines.join('\n');
+}
+
+/* Build a two-dimensional comparative prompt: split-chart tiles × color groups.
+   crossStats: array of {tileKey, colorKey, n, xSt, ySt}
+   tileKeys / colorKeys: sorted unique lists */
+function _buildCrossPrompt(ct, xCol, yCol, xRx, yRx, scCol, colorCol, crossStats,
+                            tileKeys, colorKeys) {
+    var lines = [];
+    lines.push('Chart type: ' + ct);
+    lines.push('X column: ' + xCol + (xRx ? ' (regex: ' + xRx + ')' : ''));
+    if (ct !== 'histogram' && ct !== 'cumproba')
+        lines.push('Y column: ' + yCol + (yRx ? ' (regex: ' + yRx + ')' : ''));
+    lines.push('Split-chart dimension: ' + scCol
+        + ' (' + tileKeys.length + ' tiles: ' + tileKeys.join(', ') + ')');
+    lines.push('Color-group dimension: ' + colorCol
+        + ' (' + colorKeys.length + ' groups: ' + colorKeys.join(', ') + ')');
+    lines.push('Total combinations: ' + crossStats.length);
+    lines.push('');
+    lines.push('Statistics per [tile \u00d7 color-group]:');
+
+    /* Group by tile for readability */
+    tileKeys.forEach(function(tk) {
+        lines.push('');
+        lines.push('  Tile [' + tk + ']:');
+        crossStats.filter(function(c){ return c.tileKey === tk; })
+                  .forEach(function(c) {
+            lines.push('    Color group [' + c.colorKey + ']  n=' + c.n);
+            lines.push('      X: ' + _fmtStats(c.xSt));
+            if (c.ySt) lines.push('      Y: ' + _fmtStats(c.ySt));
+        });
+    });
+
+    /* Marker lines */
+    if (_markers.length) {
+        lines.push('');
+        lines.push('Reference marker lines:');
+        _markers.forEach(function(mk) {
+            var d = '  ' + mk.axis.toUpperCase() + '=' + mk.value;
+            if (mk.label) d += ' (' + mk.label + ')';
+            lines.push(d);
+        });
+    }
+
+    lines.push('');
+    lines.push('TASK: Perform a two-dimensional comparative analysis.');
+    lines.push('  1. Within each tile (' + scCol + '): compare the color groups ('
+        + colorCol + ') — which color group has the highest/lowest values, widest spread?');
+    lines.push('  2. Across tiles (' + scCol + '): for each color group, how does it change '
+        + 'from tile to tile? Are certain color groups consistently higher or more variable?');
+    lines.push('  3. Summarise the strongest interaction: which combination of ['
+        + scCol + ' \u00d7 ' + colorCol + '] is the outlier overall?');
+    lines.push('  If marker lines are present, note which combinations cross or approach them.');
+    lines.push('  Be concise and engineering-focused (max 250 words total).');
+
+    var af = buildActiveFilters();
+    if (af.length) lines.push('Active column filters: ' + af.length + ' column(s)');
+    var ivNote = _intervalNote();
+    if (ivNote) lines.push('Data interval: ' + ivNote.replace(' | interval: ', ''));
+
+    return lines.join('\n');
+}
+
+/* Render a plain-text summary (single chart or comparative) */
+function _renderAnalysisSingle(text, headerNote) {
+    var el = document.getElementById('analysis-text');
+    el.innerHTML = '';
+    if (headerNote) {
+        var h = document.createElement('div');
+        h.style.cssText = 'font-size:0.78em;color:#6610f2;font-weight:bold;margin-bottom:4px';
+        h.textContent   = headerNote;
+        el.appendChild(h);
+    }
+    var body = document.createElement('div');
+    body.textContent = text;
+    el.appendChild(body);
+}
+
+/* Render one labelled block per tile */
+function _renderAnalysisTiles(results) {
+    var el = document.getElementById('analysis-text');
+    el.innerHTML = '';
+    results.forEach(function(r) {
+        var block = document.createElement('div');
+        block.className = 'an-tile-block';
+        var lbl  = document.createElement('div');
+        lbl.className   = 'an-tile-label';
+        lbl.textContent = r.label;
+        var body = document.createElement('div');
+        body.textContent = r.text;
+        block.appendChild(lbl);
+        block.appendChild(body);
+        el.appendChild(block);
+    });
+}
+
+/* POST to /analyze — returns summary string or throws */
+async function _fetchSummary(prompt) {
+    var resp = await fetch('/analyze', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ prompt: prompt })
+    });
+    var d = await resp.json();
+    if (!d.success) throw new Error(d.error || 'LLM error');
+    return d.summary;
+}
+
+/* Entry point — wired to the Analyze button.
+   ONE LLM call per chart always. Split-by → comparative prompt, not per-tile calls. */
+function _analyzeChart() {
+    var btn    = document.getElementById('analyze-btn');
+    var panel  = document.getElementById('analysis-panel');
+    var textEl = document.getElementById('analysis-text');
+
+    panel.style.display = 'flex';
+
+    if (!currentCsvId) {
+        textEl.innerHTML = '<span style="color:#e67e00">&#9888; No data loaded &mdash; '
+            + 'parse a file first, then draw a plot.</span>';
+        return;
+    }
+    if (!document.getElementById('x-col').value) {
+        textEl.innerHTML = '<span style="color:#e67e00">&#9888; Select an X column and '
+            + 'draw a plot first.</span>';
+        return;
+    }
+
+    btn.disabled     = true;
+    btn.textContent  = '\u23f3 Analyzing\u2026';
+    textEl.innerHTML = '<em style="color:#888">Contacting Ollama (llama3)\u2026</em>';
+
+    var ct      = document.getElementById('chart-type').value;
+    var xCol    = document.getElementById('x-col').value;
+    var yCol    = document.getElementById('y-col').value;
+    var xRx     = document.getElementById('x-regex').value.trim();
+    var yRx     = document.getElementById('y-regex').value.trim();
+    var colCol  = document.getElementById('color-col').value;     /* color-by / in-chart grouping */
+    var colorRx = document.getElementById('color-regex').value.trim();
+    var splitCol= document.getElementById('split-col').value;     /* cumproba inner split */
+    var splitRx = document.getElementById('split-regex').value.trim();
+    var scCol   = document.getElementById('split-chart-col').value; /* split-charts column */
+    var scRx    = document.getElementById('split-chart-rx').value.trim();
+    var isXOnly = ct === 'histogram' || ct === 'cumproba';
+
+    /* Helper — extract the effective group key for in-chart grouping */
+    var inChartGroupCol = isXOnly ? (splitCol || colCol) : colCol;
+    var inChartGroupRx  = isXOnly ? (splitCol ? splitRx : colorRx) : colorRx;
+
+    function inChartKey(rawVal) {
+        if (!inChartGroupCol) return null;
+        var raw = rawVal != null ? String(rawVal) : '(blank)';
+        if (!inChartGroupRx) return raw;
+        try {
+            var m = new RegExp(inChartGroupRx).exec(raw);
+            return m ? (m[1] !== undefined ? m[1] : m[0]) : '(no match)';
+        } catch(e) { return raw; }
+    }
+
+    /* Bucket rows by a given key function → returns {keys[], buckets{key→[{x,y}]}} */
+    function bucketRows(keyFn) {
+        var buckets = {}, order = [];
+        var iv  = _getIntervals();
+        var xLo = iv.xLo !== '' ? parseFloat(iv.xLo) : NaN;
+        var xHi = iv.xHi !== '' ? parseFloat(iv.xHi) : NaN;
+        var yLo = (!isXOnly && iv.yLo !== '') ? parseFloat(iv.yLo) : NaN;
+        var yHi = (!isXOnly && iv.yHi !== '') ? parseFloat(iv.yHi) : NaN;
+        for (var ri = 0; ri < filteredIndices.length; ri++) {
+            var row = allRows[filteredIndices[ri]];
+            var xi  = currentHeaders.indexOf(xCol);
+            var yi  = isXOnly ? -1 : currentHeaders.indexOf(yCol);
+            var xv  = extractNum(row[xi] != null ? String(row[xi]) : '', xRx);
+            var yv  = isXOnly ? xv
+                      : extractNum(row[yi] != null ? String(row[yi]) : '', yRx);
+            if (xv === null || (!isXOnly && yv === null)) continue;
+            if (!isNaN(xLo) && xv < xLo) continue;
+            if (!isNaN(xHi) && xv > xHi) continue;
+            if (!isNaN(yLo) && yv < yLo) continue;
+            if (!isNaN(yHi) && yv > yHi) continue;
+            var key = keyFn(row) || '(blank)';
+            if (!buckets[key]) { buckets[key] = []; order.push(key); }
+            buckets[key].push({ x: xv, y: isXOnly ? xv : yv });
+        }
+        var keys = order.filter(function(k,i){ return order.indexOf(k)===i; })
+                        .sort(function(a,b){ return a.localeCompare(b,undefined,{numeric:true}); });
+        return { keys: keys, buckets: buckets };
+    }
+
+    /* Compute tileStats array from a bucket result */
+    function toTileStats(b) {
+        return b.keys.map(function(k) {
+            var pts = b.buckets[k];
+            var xs  = pts.map(function(p){ return p.x; });
+            var ys  = isXOnly ? [] : pts.map(function(p){ return p.y; });
+            return { key: k, n: pts.length,
+                     xSt: _descStats(xs), ySt: ys.length ? _descStats(ys) : null };
+        });
+    }
+
+    (async function() {
+        try {
+            var prompt, headerNote;
+
+            if (scCol && _splitInsts.length > 0) {
+                /* ════════════════════════════════════════════════════
+                   SPLIT-CHART MODE
+                   If color-by is also active → 2-D cross analysis
+                   (tile × color-group in ONE prompt).
+                   Otherwise → 1-D tile comparison.
+                   ════════════════════════════════════════════════════ */
+                var scIdx   = currentHeaders.indexOf(scCol);
+                var gcIdx2  = inChartGroupCol
+                              ? currentHeaders.indexOf(inChartGroupCol) : -1;
+
+                if (gcIdx2 >= 0) {
+                    /* ── 2-D: tile × color-group ── */
+                    /* Bucket by compound key "tileKey\x00colorKey" */
+                    var crossBuckets = {}, crossOrder = [];
+                    var tileSet = {}, colorSet = {};
+                    var iv4 = _getIntervals();
+                    var xLo4 = iv4.xLo !== '' ? parseFloat(iv4.xLo) : NaN;
+                    var xHi4 = iv4.xHi !== '' ? parseFloat(iv4.xHi) : NaN;
+                    var yLo4 = (!isXOnly && iv4.yLo !== '') ? parseFloat(iv4.yLo) : NaN;
+                    var yHi4 = (!isXOnly && iv4.yHi !== '') ? parseFloat(iv4.yHi) : NaN;
+
+                    for (var ri4 = 0; ri4 < filteredIndices.length; ri4++) {
+                        var row4 = allRows[filteredIndices[ri4]];
+                        var xi4  = currentHeaders.indexOf(xCol);
+                        var yi4  = isXOnly ? -1 : currentHeaders.indexOf(yCol);
+                        var xv4  = extractNum(row4[xi4] != null ? String(row4[xi4]) : '', xRx);
+                        var yv4  = isXOnly ? xv4
+                                   : extractNum(row4[yi4] != null ? String(row4[yi4]) : '', yRx);
+                        if (xv4 === null || (!isXOnly && yv4 === null)) continue;
+                        if (!isNaN(xLo4) && xv4 < xLo4) continue;
+                        if (!isNaN(xHi4) && xv4 > xHi4) continue;
+                        if (!isNaN(yLo4) && yv4 < yLo4) continue;
+                        if (!isNaN(yHi4) && yv4 > yHi4) continue;
+
+                        var tk4  = _splitChartKey(row4, scIdx, scRx) || '(blank)';
+                        var ck4  = inChartKey(row4[gcIdx2]) || '(blank)';
+                        var cpk  = tk4 + '\x00' + ck4;
+                        if (!crossBuckets[cpk]) {
+                            crossBuckets[cpk] = { tileKey: tk4, colorKey: ck4, pts: [] };
+                            crossOrder.push(cpk);
+                        }
+                        crossBuckets[cpk].pts.push({ x: xv4, y: isXOnly ? xv4 : yv4 });
+                        tileSet[tk4]  = true;
+                        colorSet[ck4] = true;
+                    }
+
+                    var tileKeys2  = Object.keys(tileSet).sort(function(a,b){
+                        return a.localeCompare(b,undefined,{numeric:true}); });
+                    var colorKeys2 = Object.keys(colorSet).sort(function(a,b){
+                        return a.localeCompare(b,undefined,{numeric:true}); });
+
+                    var crossStats = crossOrder
+                        .filter(function(cpk,i){ return crossOrder.indexOf(cpk)===i; })
+                        .map(function(cpk) {
+                            var c   = crossBuckets[cpk];
+                            var xs5 = c.pts.map(function(p){ return p.x; });
+                            var ys5 = isXOnly ? [] : c.pts.map(function(p){ return p.y; });
+                            return { tileKey:  c.tileKey, colorKey: c.colorKey,
+                                     n: c.pts.length,
+                                     xSt: _descStats(xs5),
+                                     ySt: ys5.length ? _descStats(ys5) : null };
+                        });
+
+                    if (!crossStats.length) {
+                        textEl.innerHTML = '<span style="color:#e67e00">&#9888; '
+                            + 'No data found.</span>';
+                        return;
+                    }
+                    var colorLabel = inChartGroupCol
+                        + (inChartGroupRx ? ' [' + inChartGroupRx + ']' : '');
+                    textEl.innerHTML = '<em style="color:#888">Cross-dimensional analysis: '
+                        + tileKeys2.length + ' tiles \u00d7 '
+                        + colorKeys2.length + ' color groups\u2026</em>';
+                    prompt     = _buildCrossPrompt(ct, xCol, yCol, xRx, yRx,
+                                                   scCol, colorLabel,
+                                                   crossStats, tileKeys2, colorKeys2);
+                    headerNote = 'Cross analysis \u2014 '
+                        + tileKeys2.length + ' \u00d7 ' + colorKeys2.length
+                        + ' (' + scCol + ' \u00d7 ' + inChartGroupCol + ')';
+
+                } else {
+                    /* ── 1-D: tile comparison only ── */
+                    var b1d = bucketRows(function(row) {
+                        return _splitChartKey(row, scIdx, scRx);
+                    });
+                    if (!b1d.keys.length) {
+                        textEl.innerHTML = '<span style="color:#e67e00">&#9888; '
+                            + 'No data found for split column.</span>';
+                        return;
+                    }
+                    var tileStats = toTileStats(b1d);
+                    textEl.innerHTML = '<em style="color:#888">Comparing '
+                        + tileStats.length + ' split-chart tiles\u2026</em>';
+                    prompt     = _buildSplitPrompt(ct, xCol, yCol, xRx, yRx,
+                                                   scCol, tileStats);
+                    headerNote = 'Comparative analysis \u2014 ' + tileStats.length
+                        + ' tiles split by \u201c' + scCol + '\u201d';
+                }
+
+            } else if (inChartGroupCol) {
+                /* ════════════════════════════════════════════════════
+                   SINGLE CHART WITH IN-CHART COLOR/SPLIT GROUPING
+                   Groups are color-by series (scatter/line) or
+                   split-by series (cumproba/histogram).
+                   One comparative prompt — same structure as split-chart.
+                   ════════════════════════════════════════════════════ */
+                var gcIdx = currentHeaders.indexOf(inChartGroupCol);
+                var b2 = bucketRows(function(row) {
+                    return inChartKey(row[gcIdx]);
+                });
+                if (!b2.keys.length) {
+                    textEl.innerHTML = '<span style="color:#e67e00">&#9888; '
+                        + 'No numeric data in selected column.</span>';
+                    return;
+                }
+                var colorStats = toTileStats(b2);
+                var groupLabel = inChartGroupCol
+                    + (inChartGroupRx ? ' [' + inChartGroupRx + ']' : '');
+
+                if (colorStats.length > 1) {
+                    /* Multiple color/split groups → full comparative analysis */
+                    textEl.innerHTML = '<em style="color:#888">Comparing '
+                        + colorStats.length + ' color groups\u2026</em>';
+                    prompt     = _buildSplitPrompt(ct, xCol, yCol, xRx, yRx,
+                                                   groupLabel, colorStats);
+                    headerNote = 'Comparative analysis \u2014 '
+                        + colorStats.length + ' color groups by \u201c'
+                        + inChartGroupCol + '\u201d';
+                } else {
+                    /* Only one group resolved — plain single-chart analysis */
+                    var allPts2 = b2.buckets[b2.keys[0]] || [];
+                    textEl.innerHTML = '<em style="color:#888">Analyzing chart\u2026</em>';
+                    prompt     = _buildChartPrompt(ct, xCol, yCol, xRx, yRx, allPts2, null);
+                    headerNote = 'Analysis \u2014 ' + xCol
+                        + (ct !== 'histogram' && ct !== 'cumproba' ? ' vs ' + yCol : '');
+                }
+
+            } else {
+                /* ════════════════════════════════════════════════════
+                   PLAIN SINGLE CHART — no grouping at all
+                   ════════════════════════════════════════════════════ */
+                var iv3 = _getIntervals();
+                var res = readFilteredFromMemory(
+                    xCol, isXOnly ? null : yCol, null, xRx, isXOnly ? null : yRx,
+                    iv3.xLo, iv3.xHi, isXOnly ? '' : iv3.yLo, isXOnly ? '' : iv3.yHi);
+                if (!res.points.length) {
+                    textEl.innerHTML = '<span style="color:#e67e00">&#9888; '
+                        + 'No numeric data — draw a plot first.</span>';
+                    return;
+                }
+                textEl.innerHTML = '<em style="color:#888">Analyzing chart\u2026</em>';
+                prompt     = _buildChartPrompt(ct, xCol, yCol, xRx, yRx, res.points, null);
+                headerNote = 'Analysis \u2014 ' + xCol
+                    + (ct !== 'histogram' && ct !== 'cumproba' ? ' vs ' + yCol : '');
+            }
+
+            var summary = await _fetchSummary(prompt);
+            _renderAnalysisSingle(summary, headerNote);
+
+        } catch(e) {
+            textEl.innerHTML =
+                '<span style="color:#dc3545">&#9888; ' + escHtml(e.message) + '</span>'
+                + '<br><small style="color:#888">Check: Ollama is running on port 11434 '
+                + 'and llama3 is pulled (<code>ollama pull llama3</code>).</small>';
+        } finally {
+            btn.disabled    = false;
+            btn.textContent = '\uD83E\uDDE0 Analyze';
+        }
+    })();
+}
+
+/* Hide analysis panel whenever a new plot is drawn.
+   Uses wrapper pattern — drawPlot body is NOT modified. */
+var _ai_drawPlot_orig = drawPlot;
+drawPlot = function() {
+    var p = document.getElementById('analysis-panel');
+    if (p) p.style.display = 'none';
+    return _ai_drawPlot_orig.apply(this, arguments);
+};
+
+/* Hide + reset analysis panel on full reset.
+   Uses wrapper pattern — resetAll body is NOT modified. */
+var _ai_resetAll_orig = resetAll;
+resetAll = function() {
+    _ai_resetAll_orig.apply(this, arguments);
+    var p  = document.getElementById('analysis-panel');
+    var t  = document.getElementById('analysis-text');
+    var b  = document.getElementById('analyze-btn');
+    if (p) p.style.display = 'none';
+    if (t) t.innerHTML     = '';
+    if (b) { b.disabled = false; b.textContent = '\uD83E\uDDE0 Analyze'; }
+};
+
+/* ── Chat session ────────────────────────────────────────────────────── */
+var _chatOpen         = false;
+var _chatBusy         = false;
+var _chatPending      = '';   /* legacy — superseded by _chatContextDirty */
+var _chatContextDirty = true; /* true = build+send fresh context on next _chatSend() */
+
+function _toggleChat() {
+    var drawer = document.getElementById('chat-drawer');
+    var btn    = document.getElementById('chat-toggle-btn');
+    _chatOpen  = !_chatOpen;
+    if (_chatOpen) {
+        drawer.style.display = 'flex';
+        btn.classList.add('active');
+        var msgs = document.getElementById('chat-messages');
+        if (!msgs.firstChild) {
+            _chatAddNote('Chat ready \u2014 your first message will automatically include '
+                + 'current chart statistics. Click \u21bb Inject context after changing the plot.');
+            _chatContextDirty = true;   /* arm auto-inject for first message */
+        }
+        document.getElementById('chat-input').focus();
+    } else {
+        drawer.style.display = 'none';
+        btn.classList.remove('active');
+    }
+}
+
+function _chatScrollBottom() {
+    var msgs = document.getElementById('chat-messages');
+    msgs.scrollTop = msgs.scrollHeight;
+}
+
+function _chatAddMsg(role, text) {
+    var msgs = document.getElementById('chat-messages');
+    var div  = document.createElement('div');
+    div.className = 'ch-msg ' + role;
+    div.textContent = text;
+    msgs.appendChild(div);
+    _chatScrollBottom();
+    return div;
+}
+
+function _chatAddNote(text) {
+    var msgs = document.getElementById('chat-messages');
+    var div  = document.createElement('div');
+    div.className = 'ch-msg note';
+    div.textContent = text;
+    msgs.appendChild(div);
+    _chatScrollBottom();
+}
+
+function _chatSetBusy(busy) {
+    _chatBusy = busy;
+    var btn   = document.getElementById('chat-send-btn');
+    var ta    = document.getElementById('chat-input');
+    if (btn) btn.disabled = busy;
+    if (ta)  ta.disabled  = busy;
+}
+
+/* Build a compact context string from current chart data.
+   Uses the EXACT same bucketing logic as _analyzeChart so the
+   model always sees the same data the chart sees. */
+function _buildChatContext() {
+    if (!currentCsvId || !filteredIndices || filteredIndices.length === 0) {
+        return 'No chart data currently loaded.';
+    }
+    if (!document.getElementById('x-col').value) {
+        return 'No X column selected — draw a plot first.';
+    }
+
+    /* ── Read all the same inputs as _analyzeChart ── */
+    var ct       = document.getElementById('chart-type').value;
+    var xCol     = document.getElementById('x-col').value;
+    var yCol     = document.getElementById('y-col').value;
+    var xRx      = document.getElementById('x-regex').value.trim();
+    var yRx      = document.getElementById('y-regex').value.trim();
+    var colCol   = document.getElementById('color-col').value;
+    var colorRx  = document.getElementById('color-regex').value.trim();
+    var splitCol = document.getElementById('split-col').value;
+    var splitRx  = document.getElementById('split-regex').value.trim();
+    var scCol    = document.getElementById('split-chart-col').value;
+    var scRx     = document.getElementById('split-chart-rx').value.trim();
+    var isXOnly  = ct === 'histogram' || ct === 'cumproba';
+    var iv       = _getIntervals();
+
+    /* Mirrors _analyzeChart exactly */
+    var inChartGroupCol = isXOnly ? (splitCol || colCol) : colCol;
+    var inChartGroupRx  = isXOnly ? (splitCol ? splitRx : colorRx) : colorRx;
+
+    function inChartKey(rawVal) {
+        if (!inChartGroupCol) return null;
+        var raw = rawVal != null ? String(rawVal) : '(blank)';
+        if (!inChartGroupRx) return raw;
+        try {
+            var m = new RegExp(inChartGroupRx).exec(raw);
+            return m ? (m[1] !== undefined ? m[1] : m[0]) : '(no match)';
+        } catch(e) { return raw; }
+    }
+
+    function bucketRows(keyFn) {
+        var buckets = {}, order = [];
+        var xLo = iv.xLo !== '' ? parseFloat(iv.xLo) : NaN;
+        var xHi = iv.xHi !== '' ? parseFloat(iv.xHi) : NaN;
+        var yLo = (!isXOnly && iv.yLo !== '') ? parseFloat(iv.yLo) : NaN;
+        var yHi = (!isXOnly && iv.yHi !== '') ? parseFloat(iv.yHi) : NaN;
+        for (var ri = 0; ri < filteredIndices.length; ri++) {
+            var row = allRows[filteredIndices[ri]];
+            var xi  = currentHeaders.indexOf(xCol);
+            var yi  = isXOnly ? -1 : currentHeaders.indexOf(yCol);
+            var xv  = extractNum(row[xi] != null ? String(row[xi]) : '', xRx);
+            var yv  = isXOnly ? xv
+                      : extractNum(row[yi] != null ? String(row[yi]) : '', yRx);
+            if (xv === null || (!isXOnly && yv === null)) continue;
+            if (!isNaN(xLo) && xv < xLo) continue;
+            if (!isNaN(xHi) && xv > xHi) continue;
+            if (!isNaN(yLo) && yv < yLo) continue;
+            if (!isNaN(yHi) && yv > yHi) continue;
+            var key = keyFn(row) || '(blank)';
+            if (!buckets[key]) { buckets[key] = []; order.push(key); }
+            buckets[key].push({ x: xv, y: isXOnly ? xv : yv });
+        }
+        var keys = order.filter(function(k,i){ return order.indexOf(k)===i; })
+                        .sort(function(a,b){ return a.localeCompare(b,undefined,{numeric:true}); });
+        return { keys: keys, buckets: buckets };
+    }
+
+    function fmtBucket(pts) {
+        var xs = pts.map(function(p){ return p.x; });
+        var ys = isXOnly ? [] : pts.map(function(p){ return p.y; });
+        var out = 'n=' + pts.length + ',  X: ' + _fmtStats(_descStats(xs));
+        if (ys.length) out += ',  Y: ' + _fmtStats(_descStats(ys));
+        return out;
+    }
+
+    /* ── Header ── */
+    var lines = [];
+    lines.push('FDV Dashboard \u2014 chart context for llama3');
+    lines.push('Chart type: ' + ct);
+    lines.push('X column: ' + xCol + (xRx ? '  (regex: /' + xRx + '/)' : ''));
+    if (!isXOnly) lines.push('Y column: ' + yCol + (yRx ? '  (regex: /' + yRx + '/)' : ''));
+    lines.push('Rows in memory: ' + allRows.length + '   passing table filters: ' + filteredIndices.length);
+
+    var ivParts = [];
+    if (iv.xLo || iv.xHi) ivParts.push('X \u2208 [' + (iv.xLo||'\u2212\u221E') + ', ' + (iv.xHi||'+\u221E') + ']');
+    if (!isXOnly && (iv.yLo || iv.yHi)) ivParts.push('Y \u2208 [' + (iv.yLo||'\u2212\u221E') + ', ' + (iv.yHi||'+\u221E') + ']');
+    if (ivParts.length) lines.push('Data interval filter: ' + ivParts.join(';  '));
+
+    if (inChartGroupCol) lines.push((isXOnly ? 'Split-by' : 'Color-by') + ' column: ' + inChartGroupCol + (inChartGroupRx ? '  (regex: /' + inChartGroupRx + '/)' : ''));
+    if (scCol) lines.push('Split-chart column: ' + scCol + (scRx ? '  (regex: /' + scRx + '/)' : ''));
+
+    /* ── Data: mirrors the three code paths in _analyzeChart ── */
+    if (scCol && _splitInsts.length > 0) {
+        /* ── SPLIT-CHART MODE ── */
+        var scIdx = currentHeaders.indexOf(scCol);
+        var gcIdx = inChartGroupCol ? currentHeaders.indexOf(inChartGroupCol) : -1;
+
+        if (gcIdx >= 0) {
+            /* 2-D: tile × color-group — same cross-bucket logic */
+            var crossBuckets = {}, crossOrder = [], tileSet = {}, colorSet = {};
+            var xLo2 = iv.xLo !== '' ? parseFloat(iv.xLo) : NaN;
+            var xHi2 = iv.xHi !== '' ? parseFloat(iv.xHi) : NaN;
+            var yLo2 = (!isXOnly && iv.yLo !== '') ? parseFloat(iv.yLo) : NaN;
+            var yHi2 = (!isXOnly && iv.yHi !== '') ? parseFloat(iv.yHi) : NaN;
+            for (var ri2 = 0; ri2 < filteredIndices.length; ri2++) {
+                var row2 = allRows[filteredIndices[ri2]];
+                var xi2  = currentHeaders.indexOf(xCol);
+                var yi2  = isXOnly ? -1 : currentHeaders.indexOf(yCol);
+                var xv2  = extractNum(row2[xi2] != null ? String(row2[xi2]) : '', xRx);
+                var yv2  = isXOnly ? xv2 : extractNum(row2[yi2] != null ? String(row2[yi2]) : '', yRx);
+                if (xv2 === null || (!isXOnly && yv2 === null)) continue;
+                if (!isNaN(xLo2) && xv2 < xLo2) continue;
+                if (!isNaN(xHi2) && xv2 > xHi2) continue;
+                if (!isNaN(yLo2) && yv2 < yLo2) continue;
+                if (!isNaN(yHi2) && yv2 > yHi2) continue;
+                var tk2 = _splitChartKey(row2, scIdx, scRx) || '(blank)';
+                var ck2 = inChartKey(row2[gcIdx]) || '(blank)';
+                var cpk = tk2 + '\x00' + ck2;
+                if (!crossBuckets[cpk]) { crossBuckets[cpk] = { tk: tk2, ck: ck2, pts: [] }; crossOrder.push(cpk); }
+                crossBuckets[cpk].pts.push({ x: xv2, y: isXOnly ? xv2 : yv2 });
+                tileSet[tk2] = true; colorSet[ck2] = true;
+            }
+            var tileKeys  = Object.keys(tileSet).sort(function(a,b){ return a.localeCompare(b,undefined,{numeric:true}); });
+            var colorKeys = Object.keys(colorSet).sort(function(a,b){ return a.localeCompare(b,undefined,{numeric:true}); });
+            lines.push('\nCross-dimensional data: ' + tileKeys.length + ' tiles \u00d7 ' + colorKeys.length + ' color groups');
+            tileKeys.forEach(function(tk) {
+                lines.push('\n  Tile [' + tk + ']:');
+                colorKeys.forEach(function(ck) {
+                    var cpk = tk + '\x00' + ck;
+                    var pts = (crossBuckets[cpk] || {}).pts || [];
+                    if (!pts.length) return;
+                    lines.push('    [' + ck + '] ' + fmtBucket(pts));
+                });
+            });
+        } else {
+            /* 1-D: tile comparison only */
+            var b1 = bucketRows(function(row) { return _splitChartKey(row, scIdx, scRx); });
+            lines.push('\nSplit-chart tiles (' + b1.keys.length + ' tiles by ' + scCol + '):');
+            b1.keys.forEach(function(k) {
+                lines.push('  [' + k + '] ' + fmtBucket(b1.buckets[k]));
+            });
+        }
+
+    } else if (inChartGroupCol) {
+        /* ── SINGLE CHART WITH IN-CHART GROUPING ── */
+        var gcIdx3 = currentHeaders.indexOf(inChartGroupCol);
+        var b2 = bucketRows(function(row) { return inChartKey(row[gcIdx3]); });
+        if (b2.keys.length > 1) {
+            lines.push('\nIn-chart groups (' + b2.keys.length + ' groups by ' + inChartGroupCol + '):');
+            b2.keys.forEach(function(k) {
+                lines.push('  [' + k + '] ' + fmtBucket(b2.buckets[k]));
+            });
+        } else if (b2.keys.length === 1) {
+            lines.push('\nOverall stats: ' + fmtBucket(b2.buckets[b2.keys[0]]));
+        }
+
+    } else {
+        /* ── PLAIN SINGLE CHART ── */
+        var b3 = bucketRows(function() { return '__all__'; });
+        var allPts = b3.buckets['__all__'] || [];
+        if (allPts.length) {
+            lines.push('\nOverall stats: ' + fmtBucket(allPts));
+        } else {
+            lines.push('\n(No numeric data passes current filters/intervals.)');
+        }
+    }
+
+    /* ── Marker reference lines ── */
+    if (_markers && _markers.length) {
+        lines.push('\nReference marker lines:');
+        _markers.forEach(function(m) {
+            lines.push('  ' + (m.axis||'x').toUpperCase() + '=' + m.value + (m.label ? ' (' + m.label + ')' : ''));
+        });
+    }
+
+    return lines.join('\n');
+}
+
+function _chatInjectContext() {
+    /* Reset server session — fresh context will be built at send time */
+    _chatPending      = '';
+    _chatContextDirty = true;
+    fetch('/chat_reset', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({csv_id: currentCsvId || '__default__'})
+    }).catch(function(){});
+    _chatAddNote('\u21bb Context armed \u2014 current chart statistics will be sent with your next message.');
+}
+
+function _chatReset() {
+    var msgs = document.getElementById('chat-messages');
+    if (msgs) msgs.innerHTML = '';
+    _chatPending      = '';
+    _chatContextDirty = true;   /* next message will auto-inject fresh context */
+    fetch('/chat_reset', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({csv_id: currentCsvId || '__default__'})
+    }).catch(function(){});
+    _chatAddNote('Session cleared \u2014 your first message will automatically include current chart statistics.');
+}
+
+function _chatSend() {
+    if (_chatBusy) return;
+    var ta  = document.getElementById('chat-input');
+    var msg = ta.value.trim();
+    if (!msg) return;
+    ta.value = '';
+    ta.style.height = '36px';
+
+    _chatAddMsg('user', msg);
+    _chatSetBusy(true);
+    var thinking = _chatAddMsg('thinking', '\u2026 thinking');
+
+    /* Build context fresh at send time if dirty, so it always reflects the
+       current chart state — not whatever was captured at inject time */
+    var context = '';
+    if (_chatContextDirty) {
+        context           = _buildChatContext();
+        _chatContextDirty = false;
+        _chatPending      = '';
+    } else if (_chatPending) {
+        context      = _chatPending;
+        _chatPending = '';
+    }
+
+    (function() {
+        /* Client-side timeout — abort if server takes longer than 200 s.
+           (Server has its own 180 s Ollama timeout; this is a safety net.) */
+        var controller = new AbortController();
+        var chatTimer  = setTimeout(function() { controller.abort(); }, 200000);
+
+        fetch('/chat', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            signal: controller.signal,
+            body: JSON.stringify({
+                csv_id:  currentCsvId || '__default__',
+                message: msg,
+                context: context
+            })
+        })
+        .then(function(r) { clearTimeout(chatTimer); return r.json(); })
+        .then(function(data) {
+            if (thinking && thinking.parentNode) thinking.parentNode.removeChild(thinking);
+            if (data.success) {
+                /* Execute any marker commands embedded in the reply */
+                var result = _chatExecMarkerCmds(data.reply);
+                _chatAddMsg('assistant', result.text);
+                /* Show a confirmation chip for each marker action */
+                result.actions.forEach(function(a) {
+                    _chatAddNote('\uD83D\uDCCC ' + a);
+                });
+            } else {
+                _chatAddMsg('note', '\u26a0 Error: ' + (data.error || 'unknown'));
+            }
+            _chatSetBusy(false);
+        })
+        .catch(function(err) {
+            clearTimeout(chatTimer);
+            if (thinking && thinking.parentNode) thinking.parentNode.removeChild(thinking);
+            var msg2 = err.name === 'AbortError'
+                ? '\u26a0 Request timed out (>200 s). Ollama may be overloaded or the conversation is too long. Try starting a New session.'
+                : '\u26a0 Network error: ' + err.message;
+            _chatAddMsg('note', msg2);
+            _chatSetBusy(false);
+        });
+    })();
+}
+
+/* ── Chat marker command executor ────────────────────────────────────── */
+/* Scans an LLM reply for [MARKER: ...] and [CLEAR_MARKERS] tokens,
+   executes them against the live _markers[] array, redraws the chart,
+   strips the tokens from the returned text, and returns
+   { text: <cleaned reply>, actions: [<description>, ...] }          */
+function _chatExecMarkerCmds(raw) {
+    var actions = [];
+    var cleared = false;
+
+    /* 1 — [CLEAR_MARKERS] */
+    if (/\[CLEAR_MARKERS\]/i.test(raw)) {
+        _markers = [];
+        cleared  = true;
+        actions.push('Cleared all markers');
+        raw = raw.replace(/\[CLEAR_MARKERS\]/gi, '').trim();
+    }
+
+    /* 2 — [MARKER: x=VALUE:LABEL] or [MARKER: y=VALUE:LABEL] */
+    var markerRx = /\[MARKER:\s*([^\]]+)\]/gi;
+    var m;
+    while ((m = markerRx.exec(raw)) !== null) {
+        var expr = m[1].trim();
+        var mk   = _parseMarkerExpr(expr);
+        if (mk) {
+            _markers.push(mk);
+            actions.push('Added ' + mk.axis.toUpperCase() + '=' + mk.value
+                         + (mk.label ? ' (' + mk.label + ')' : ''));
+        }
+    }
+    raw = raw.replace(/\[MARKER:[^\]]*\]/gi, '').replace(/\n{3,}/g, '\n\n').trim();
+
+    if (actions.length) {
+        _rebuildMarkerTags();
+        if (currentCsvId) drawPlot();
+    }
+
+    return { text: raw, actions: actions };
+}
+
+function _chatKeydown(e) {
+    /* Enter = send; Shift+Enter = newline; auto-grow textarea */
+    if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        _chatSend();
+        return;
+    }
+    /* Auto-grow up to ~120 px */
+    var ta = e.target;
+    ta.style.height = '36px';
+    ta.style.height = Math.min(ta.scrollHeight, 120) + 'px';
+}
+
+/* Patch resetAll to also close chat */
+(function() {
+    var _origReset = window.resetAll;
+    window.resetAll = function() {
+        if (_origReset) _origReset();
+        var drawer = document.getElementById('chat-drawer');
+        var btn    = document.getElementById('chat-toggle-btn');
+        if (drawer) drawer.style.display = 'none';
+        if (btn)    btn.classList.remove('active');
+        _chatOpen         = false;
+        _chatBusy         = false;
+        _chatPending      = '';
+        _chatContextDirty = true;   /* re-arm: next session gets fresh context */
+        var msgs = document.getElementById('chat-messages');
+        if (msgs) msgs.innerHTML = '';
+    };
+})();
+
+/* Patch drawPlot to mark context dirty whenever the chart changes */
+(function() {
+    var _origDraw = window.drawPlot;
+    window.drawPlot = function() {
+        if (_origDraw) _origDraw.apply(this, arguments);
+        _chatContextDirty = true;   /* next chat message will auto-inject fresh stats */
+        if (_chatOpen) {
+            _chatAddNote('\u2139\uFE0F Chart updated \u2014 fresh statistics will be sent automatically with your next message.');
+        }
+    };
+})();
+
+/* ── Panel resize grips (analysis + chat) ────────────────────────────── */
+(function() {
+    function makeResizable(gripId, panelId, minH, maxH) {
+        var grip    = document.getElementById(gripId);
+        var panel   = document.getElementById(panelId);
+        if (!grip || !panel) return;
+        var dragging = false, startY = 0, startH = 0;
+
+        grip.addEventListener('mousedown', function(e) {
+            dragging = true;
+            startY   = e.clientY;
+            startH   = panel.offsetHeight;
+            document.body.style.cursor = 'ns-resize';
+            e.preventDefault();
+        });
+
+        document.addEventListener('mousemove', function(e) {
+            if (!dragging) return;
+            /* Grip is at the top — dragging down grows the panel */
+            var newH = Math.max(minH, Math.min(maxH, startH + (e.clientY - startY)));
+            panel.style.height    = newH + 'px';
+            panel.style.minHeight = newH + 'px';
+        });
+
+        document.addEventListener('mouseup', function() {
+            if (!dragging) return;
+            dragging = false;
+            document.body.style.cursor = '';
+        });
+    }
+
+    makeResizable('analysis-grip', 'analysis-panel', 60,  600);
+    makeResizable('chat-grip',     'chat-drawer',     100, 700);
+})();
 
 /* ── Drag-to-resize plot ─────────────────────────────────────────────── */
 (function() {
