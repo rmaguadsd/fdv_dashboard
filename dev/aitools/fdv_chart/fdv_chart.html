@@ -257,6 +257,26 @@
         }
         #analyze-btn:hover    { background: #520dc2; }
         #analyze-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+        /* Model selector */
+        #llm-model-sel {
+            padding: 3px 5px; font-size: 0.82em;
+            border: 1px solid #6610f2; border-radius: 4px;
+            color: #6610f2; background: #faf5ff;
+            max-width: 155px; margin-left: 4px; cursor: pointer;
+        }
+        #llm-pull-btn {
+            padding: 3px 7px; font-size: 0.78em;
+            background: #6610f2; color: #fff;
+            border: none; border-radius: 4px; cursor: pointer;
+            margin-left: 2px; white-space: nowrap;
+        }
+        #llm-pull-btn:hover    { background: #520dc2; }
+        #llm-pull-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+        #llm-pull-status {
+            font-size: 0.75em; color: #6610f2; margin-left: 4px;
+            white-space: nowrap; max-width: 160px; overflow: hidden;
+            text-overflow: ellipsis; display: none;
+        }
 
         /* ── CHAT DRAWER ─────────────────────────────────────────── */
         #chat-drawer {
@@ -330,6 +350,35 @@
         #chat-toggle-btn:hover  { background: #138496; }
         #chat-toggle-btn.active { background: #0c6674; }
 
+        /* ── Custom HTML tooltip (replaces canvas-clipped Chart.js tooltip) ── */
+        #chart-tooltip {
+            position: fixed;
+            z-index: 9999;
+            background: rgba(30,30,40,0.93);
+            color: #f0f0f0;
+            border-radius: 5px;
+            padding: 6px 10px;
+            font-size: 0.78em;
+            line-height: 1.6;
+            pointer-events: none;
+            white-space: pre;      /* keeps columns aligned, no wrapping */
+            max-width: 480px;
+            white-space: normal;   /* but do wrap if very long */
+            word-break: break-all;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+            display: none;
+            transition: opacity 0.1s;
+        }
+        #chart-tooltip .ct-title {
+            font-weight: bold; color: #adf; margin-bottom: 3px;
+            border-bottom: 1px solid rgba(255,255,255,0.2); padding-bottom: 2px;
+        }
+        #chart-tooltip .ct-row { display: flex; gap: 8px; align-items: baseline; }
+        #chart-tooltip .ct-swatch {
+            width: 8px; height: 8px; border-radius: 50%;
+            flex: 0 0 8px; margin-top: 3px;
+        }
+
         /* ── Panel resize grips ─────────────────────────────────── */
         .panel-grip {
             flex: 0 0 5px; cursor: ns-resize;
@@ -352,6 +401,7 @@
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1/dist/chartjs-plugin-annotation.min.js"></script>
 </head>
 <body>
+<div id="chart-tooltip"></div>
 
 <!-- TOP PANEL -->
 <div id="top-panel">
@@ -440,11 +490,20 @@
             <input type="text" id="split-regex" placeholder="e.g. DUT(\d+)" style="width:110px"></label>
         <button id="plot-btn" class="btn" style="padding:4px 12px" onclick="drawPlot()">&#9654; Plot</button>
         <button id="analyze-btn" type="button" onclick="_analyzeChart()"
-                title="Ask local Ollama llama3 to summarise the current chart&#10;Prerequisites: ollama serve  &amp;  ollama pull llama3">
+                title="Ask the selected Ollama model to summarise the current chart">
             &#129504; Analyze
         </button>
+        <select id="llm-model-sel" title="Select Ollama model — click &#8615; to pull a new one"
+                onchange="_updateChatBanner()">
+            <option value="llama3">llama3</option>
+        </select>
+        <button id="llm-pull-btn" type="button" onclick="_pullSelectedModel()"
+                title="Pull / download the selected model from Ollama registry">
+            &#8615;
+        </button>
+        <span id="llm-pull-status"></span>
         <button id="chat-toggle-btn" type="button" onclick="_toggleChat()"
-                title="Open a multi-turn chat with llama3 about your data&#10;Prerequisites: ollama serve  &amp;  ollama pull llama3">
+                title="Open a multi-turn chat with the selected Ollama model">
             &#128172; Chat
         </button>
         <label style="margin-left:8px;font-size:0.82em;color:#555">
@@ -542,7 +601,7 @@
     <div id="chat-drawer">
         <div class="panel-grip" id="chat-grip" title="Drag to resize"></div>
         <div id="chat-drawer-hdr">
-            <span>&#128172; Chat with llama3 &mdash; ask about your data</span>
+            <span id="chat-drawer-title">&#128172; Chat with llama3 &mdash; ask about your data</span>
             <div class="ch-btns">
                 <button type="button" onclick="_chatInjectContext()"
                         title="Re-send current chart statistics as context">&#8635; Inject context</button>
@@ -1581,7 +1640,7 @@ function _buildTileChart(canvas, ct, tileData, xCol, yCol, xRx, yRx, colCol, col
             options: {
                 animation: false, responsive: true, maintainAspectRatio: false,
                 plugins: { legend: { display: false }, annotation: ann,
-                    tooltip: { callbacks: {
+                    tooltip: { enabled: false, external: _htmlTooltip, callbacks: {
                         title: function(i){ return 'Centre: ' + i[0].label; },
                         label: function(i){ return 'Count: ' + i.parsed.y; }
                     }}},
@@ -1631,12 +1690,12 @@ function _buildTileChart(canvas, ct, tileData, xCol, yCol, xRx, yRx, colCol, col
             options: {
                 animation: false, responsive: true, maintainAspectRatio: false,
                 plugins: {
-                    legend: { display: cpDatasets.length > 1, position: 'right',
+                    legend: { display: cpDatasets.length > 1, position: 'bottom',
                               labels: { boxWidth: 10, font: { size: 9 } } },
                     annotation: ann,
-                    tooltip: { callbacks: { label: function(i){
-                        return i.dataset.label + ': x=' + i.parsed.x.toFixed(6) +
-                               ', P=' + (i.parsed.y*100).toFixed(2) + '%';
+                    tooltip: { enabled: false, external: _htmlTooltip, callbacks: { label: function(i){
+                        return i.dataset.label + ':  x=' + i.parsed.x.toFixed(6) +
+                               '  P=' + (i.parsed.y*100).toFixed(2) + '%';
                     }}}
                 },
                 scales: {
@@ -1676,11 +1735,11 @@ function _buildTileChart(canvas, ct, tileData, xCol, yCol, xRx, yRx, colCol, col
         options: {
             animation: false, responsive: true, maintainAspectRatio: false,
             plugins: {
-                legend: { display: datasets.length > 1, position: 'right',
+                legend: { display: datasets.length > 1, position: 'bottom',
                           labels: { boxWidth: 10, font: { size: 9 } } },
                 annotation: ann,
-                tooltip: { callbacks: { label: function(ctx) {
-                    return ctx.dataset.label + ': (' + ctx.parsed.x + ', ' + ctx.parsed.y + ')';
+                tooltip: { enabled: false, external: _htmlTooltip, callbacks: { label: function(ctx) {
+                    return ctx.dataset.label + ':  x=' + ctx.parsed.x + '  y=' + ctx.parsed.y;
                 }}}
             },
             scales: {
@@ -1790,6 +1849,57 @@ function _drawSplitCharts() {
         ' pts \u00b7 split by ' + scCol + (scRx ? ' ['+scRx+']' : '') + filtNote + _intervalNote();
 }
 
+/* ── Custom HTML tooltip handler (shared by all charts) ──────────────────
+   Renders outside the canvas so text is never clipped by plot width.
+   Attach via: plugins: { tooltip: { enabled:false, external: _htmlTooltip } }
+   ──────────────────────────────────────────────────────────────────────── */
+var _htmlTooltipEl = null;
+function _htmlTooltip(context) {
+    if (!_htmlTooltipEl) {
+        _htmlTooltipEl = document.getElementById('chart-tooltip');
+    }
+    var el    = _htmlTooltipEl;
+    var model = context.tooltip;
+
+    if (model.opacity === 0) {
+        el.style.display = 'none';
+        return;
+    }
+
+    /* Build HTML content */
+    var html = '';
+    if (model.title && model.title.length) {
+        html += '<div class="ct-title">' + escHtml(model.title.join(' ')) + '</div>';
+    }
+    model.body.forEach(function(bodyItem, i) {
+        var colors = model.labelColors[i];
+        var text   = bodyItem.lines.join('<br>');
+        var swatch = colors
+            ? '<span class="ct-swatch" style="background:' + colors.backgroundColor + ';border:1px solid ' + colors.borderColor + '"></span>'
+            : '';
+        html += '<div class="ct-row">' + swatch + '<span>' + escHtml(text) + '</span></div>';
+    });
+
+    el.innerHTML = html;
+    el.style.display = 'block';
+
+    /* Position: follow mouse via the canvas bounding rect + tooltip caretX/Y */
+    var canvas = context.chart.canvas;
+    var rect   = canvas.getBoundingClientRect();
+    var x = rect.left + model.caretX + 12;
+    var y = rect.top  + model.caretY - el.offsetHeight / 2;
+
+    /* Keep within viewport */
+    var vpW = window.innerWidth;
+    var vpH = window.innerHeight;
+    if (x + el.offsetWidth + 16 > vpW) x = rect.left + model.caretX - el.offsetWidth - 12;
+    if (y < 4) y = 4;
+    if (y + el.offsetHeight + 4 > vpH) y = vpH - el.offsetHeight - 4;
+
+    el.style.left = x + 'px';
+    el.style.top  = y + 'px';
+}
+
 function drawPlot() {
     _updatePlotCoverBanner();
     var scCol = document.getElementById('split-chart-col').value;
@@ -1890,12 +2000,12 @@ function drawScatterLine() {
             plugins: {
                 legend: {
                     display: datasets.length > 1,
-                    position: 'right',
+                    position: 'bottom',
                     labels: { boxWidth: 12, font: { size: 10 } }
                 },
-                tooltip: { callbacks: {
+                tooltip: { enabled: false, external: _htmlTooltip, callbacks: {
                     label: function(ctx) {
-                        return ctx.dataset.label + ': (' + ctx.parsed.x + ', ' + ctx.parsed.y + ')';
+                        return ctx.dataset.label + ':  x=' + ctx.parsed.x + '  y=' + ctx.parsed.y;
                     }
                 }},
                 annotation: { annotations: _buildAnnotations() }
@@ -1982,7 +2092,7 @@ function drawHistogram() {
             maintainAspectRatio: false,
             plugins: {
                 legend: { display: false },
-                tooltip: { callbacks: {
+                tooltip: { enabled: false, external: _htmlTooltip, callbacks: {
                     title: function(items){ return 'Centre: ' + items[0].label; },
                     label: function(item) { return 'Count: ' + item.parsed.y; }
                 }},
@@ -2069,12 +2179,12 @@ function drawCumProba() {
             responsive: true,
             maintainAspectRatio: false,
             plugins: {
-                legend: { display: true, position: 'right',
+                legend: { display: true, position: 'bottom',
                           labels: { boxWidth: 12, font: { size: 10 } } },
-                tooltip: { callbacks: {
+                tooltip: { enabled: false, external: _htmlTooltip, callbacks: {
                     label: function(item) {
-                        return item.dataset.label + ': x=' + item.parsed.x.toFixed(6) +
-                               ', P=' + (item.parsed.y * 100).toFixed(2) + '%';
+                        return item.dataset.label + ':  x=' + item.parsed.x.toFixed(6) +
+                               '  P=' + (item.parsed.y * 100).toFixed(2) + '%';
                     }
                 }},
                 annotation: { annotations: _buildAnnotations() }
@@ -2342,7 +2452,7 @@ async function _fetchSummary(prompt) {
     var resp = await fetch('/analyze', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ prompt: prompt })
+        body:    JSON.stringify({ prompt: prompt, model: _selectedModel() })
     });
     var d = await resp.json();
     if (!d.success) throw new Error(d.error || 'LLM error');
@@ -2371,7 +2481,7 @@ function _analyzeChart() {
 
     btn.disabled     = true;
     btn.textContent  = '\u23f3 Analyzing\u2026';
-    textEl.innerHTML = '<em style="color:#888">Contacting Ollama (llama3)\u2026</em>';
+    textEl.innerHTML = '<em style="color:#888">Contacting Ollama (' + _selectedModel() + ')\u2026</em>';
 
     var ct      = document.getElementById('chart-type').value;
     var xCol    = document.getElementById('x-col').value;
@@ -2608,7 +2718,7 @@ function _analyzeChart() {
             textEl.innerHTML =
                 '<span style="color:#dc3545">&#9888; ' + escHtml(e.message) + '</span>'
                 + '<br><small style="color:#888">Check: Ollama is running on port 11434 '
-                + 'and llama3 is pulled (<code>ollama pull llama3</code>).</small>';
+                + 'and the selected model is pulled (use the \u2193 button to pull).</small>';
         } finally {
             btn.disabled    = false;
             btn.textContent = '\uD83E\uDDE0 Analyze';
@@ -2638,6 +2748,91 @@ resetAll = function() {
     if (b) { b.disabled = false; b.textContent = '\uD83E\uDDE0 Analyze'; }
 };
 
+/* ── Model selector ─────────────────────────────────────────────────── */
+function _selectedModel() {
+    var sel = document.getElementById('llm-model-sel');
+    return (sel && sel.value) ? sel.value : 'llama3';
+}
+
+function _updateChatBanner() {
+    var el = document.getElementById('chat-drawer-title');
+    if (el) el.textContent = '\u{1F4AC} Chat with ' + _selectedModel() + ' \u2014 ask about your data';
+}
+
+/* Populate dropdown from /models (GET — Ollama's pulled model list) */
+async function _loadModelList() {
+    try {
+        var r    = await fetch('/models');
+        var data = await r.json();
+        if (!data.success || !data.models || !data.models.length) return;
+        var sel  = document.getElementById('llm-model-sel');
+        var prev = sel.value;
+        sel.innerHTML = '';
+        data.models.forEach(function(name) {
+            var o = document.createElement('option');
+            o.value = name; o.textContent = name;
+            sel.appendChild(o);
+        });
+        /* Restore previous selection if it still exists, else prefer llama3 */
+        if (data.models.indexOf(prev) >= 0) sel.value = prev;
+        else if (data.models.indexOf('llama3:latest') >= 0) sel.value = 'llama3:latest';
+        else if (data.models.indexOf('llama3') >= 0) sel.value = 'llama3';
+        _updateChatBanner();
+    } catch(e) { /* silently ignore — default 'llama3' stays */ }
+}
+
+/* Pull the currently selected model via /pull (POST).
+   Shows a live status stream (dots) while Ollama downloads. */
+async function _pullSelectedModel() {
+    var model  = _selectedModel();
+    var btn    = document.getElementById('llm-pull-btn');
+    var status = document.getElementById('llm-pull-status');
+    if (!model) return;
+
+    btn.disabled        = true;
+    status.style.display = '';
+    status.textContent  = '\u23f3 Pulling ' + model + '\u2026';
+
+    try {
+        var resp = await fetch('/pull', {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body:    JSON.stringify({ model: model })
+        });
+        var data = await resp.json();
+        if (data.success) {
+            status.textContent = '\u2705 ' + model + ' ready';
+            status.style.color = '#28a745';
+            await _loadModelList();
+            /* Re-select the just-pulled model */
+            var sel = document.getElementById('llm-model-sel');
+            for (var i = 0; i < sel.options.length; i++) {
+                if (sel.options[i].value === model ||
+                    sel.options[i].value === model + ':latest') {
+                    sel.selectedIndex = i; break;
+                }
+            }
+        } else {
+            status.textContent = '\u274c ' + (data.error || 'pull failed');
+            status.style.color = '#dc3545';
+        }
+    } catch(e) {
+        status.textContent = '\u274c ' + e.message;
+        status.style.color = '#dc3545';
+    }
+    btn.disabled = false;
+    /* Auto-hide status after 6 s */
+    setTimeout(function() {
+        status.style.display = 'none';
+        status.style.color   = '#6610f2';
+    }, 6000);
+}
+
+/* Load model list once DOM is ready */
+document.addEventListener('DOMContentLoaded', function() {
+    _loadModelList();
+});
+
 /* ── Chat session ────────────────────────────────────────────────────── */
 var _chatOpen         = false;
 var _chatBusy         = false;
@@ -2653,7 +2848,7 @@ function _toggleChat() {
         btn.classList.add('active');
         var msgs = document.getElementById('chat-messages');
         if (!msgs.firstChild) {
-            _chatAddNote('Chat ready \u2014 your first message will automatically include '
+            _chatAddNote('Chat ready (' + _selectedModel() + ') \u2014 your first message will automatically include '
                 + 'current chart statistics. Click \u21bb Inject context after changing the plot.');
             _chatContextDirty = true;   /* arm auto-inject for first message */
         }
@@ -2773,7 +2968,7 @@ function _buildChatContext() {
 
     /* ── Header ── */
     var lines = [];
-    lines.push('FDV Dashboard \u2014 chart context for llama3');
+    lines.push('FDV Dashboard \u2014 chart context for ' + _selectedModel());
     lines.push('Chart type: ' + ct);
     lines.push('X column: ' + xCol + (xRx ? '  (regex: /' + xRx + '/)' : ''));
     if (!isXOnly) lines.push('Y column: ' + yCol + (yRx ? '  (regex: /' + yRx + '/)' : ''));
@@ -2936,7 +3131,8 @@ function _chatSend() {
             body: JSON.stringify({
                 csv_id:  currentCsvId || '__default__',
                 message: msg,
-                context: context
+                context: context,
+                model:   _selectedModel()
             })
         })
         .then(function(r) { clearTimeout(chatTimer); return r.json(); })

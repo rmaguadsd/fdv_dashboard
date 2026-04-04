@@ -64,10 +64,12 @@ _LLM_SYSTEM_PROMPT = (
     'commands in one reply. Always explain in prose what you marked and why.'
 )
 
-def _call_llm(messages):
+_OLLAMA_BASE = 'http://localhost:11434'
+
+def _call_llm(messages, model=None):
     """POST a messages list to local Ollama and return the assistant reply string."""
     payload = json.dumps({
-        'model':       _LLM_MODEL,
+        'model':       model or _LLM_MODEL,
         'messages':    messages,
         'stream':      False,
         'temperature': 0.3
@@ -453,6 +455,8 @@ class RequestHandler(BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header('Content-Type', 'text/html; charset=utf-8')
             self.send_header('Content-Length', len(body))
+            self.send_header('Cache-Control', 'no-store, no-cache, must-revalidate')
+            self.send_header('Pragma', 'no-cache')
             self.end_headers()
             self.wfile.write(body)
 
@@ -608,6 +612,17 @@ class RequestHandler(BaseHTTPRequestHandler):
             self.send_header('Content-Length', len(resp))
             self.end_headers()
             self.wfile.write(resp)
+
+        elif self.path == '/models':
+            # Return list of locally pulled Ollama models
+            try:
+                req  = urllib.request.Request(_OLLAMA_BASE + '/api/tags')
+                with urllib.request.urlopen(req, timeout=5) as r:
+                    data = json.loads(r.read().decode('utf-8'))
+                names = sorted(m['name'] for m in data.get('models', []))
+                _send_json(self, 200, {'success': True, 'models': names})
+            except Exception as ex:
+                _send_json(self, 200, {'success': False, 'models': [_LLM_MODEL], 'error': str(ex)})
 
         else:
             self.send_error(404)
@@ -860,13 +875,14 @@ class RequestHandler(BaseHTTPRequestHandler):
                 length = int(self.headers.get('Content-Length', 0))
                 body   = json.loads(self.rfile.read(length).decode('utf-8'))
                 prompt = body.get('prompt', '').strip()
+                model  = body.get('model', '').strip() or None
                 if not prompt:
                     raise ValueError('Empty prompt')
                 messages = [
                     {'role': 'system', 'content': _LLM_SYSTEM_PROMPT},
                     {'role': 'user',   'content': prompt}
                 ]
-                summary = _call_llm(messages)
+                summary = _call_llm(messages, model=model)
                 _send_json(self, 200, {'success': True, 'summary': summary})
             except Exception as e:
                 _send_json(self, 200, {'success': False, 'error': str(e)})
@@ -879,6 +895,7 @@ class RequestHandler(BaseHTTPRequestHandler):
                 csv_id  = body.get('csv_id', 'default') or 'default'
                 message = body.get('message', '').strip()
                 context = body.get('context', '').strip()   # chart stats injected on first turn
+                model   = body.get('model', '').strip() or None
                 if not message:
                     raise ValueError('Empty message')
 
@@ -926,13 +943,41 @@ class RequestHandler(BaseHTTPRequestHandler):
                     messages_snapshot = list(_chat_sessions[csv_id])
 
                 # Call LLM outside the lock (slow network I/O)
-                reply = _call_llm(messages_snapshot)
+                reply = _call_llm(messages_snapshot, model=model)
 
                 with _chat_sessions_lock:
                     _chat_sessions[csv_id].append({'role': 'assistant', 'content': reply})
                     turn = sum(1 for m in _chat_sessions[csv_id] if m['role'] == 'user')
 
                 _send_json(self, 200, {'success': True, 'reply': reply, 'turn': turn})
+            except Exception as e:
+                _send_json(self, 200, {'success': False, 'error': str(e)})
+
+        elif self.path == '/pull':
+            # Pull a model from Ollama registry — blocking until complete
+            try:
+                length = int(self.headers.get('Content-Length', 0))
+                body   = json.loads(self.rfile.read(length).decode('utf-8'))
+                model  = body.get('model', '').strip()
+                if not model:
+                    raise ValueError('No model name provided')
+                # Use Ollama's /api/pull (stream=false for simplicity)
+                payload = json.dumps({'name': model, 'stream': False}).encode('utf-8')
+                req = urllib.request.Request(
+                    _OLLAMA_BASE + '/api/pull',
+                    data=payload,
+                    headers={'Content-Type': 'application/json'}
+                )
+                with urllib.request.urlopen(req, timeout=600) as r:
+                    resp_body = r.read().decode('utf-8')
+                # Ollama returns multiple JSON lines for stream=false; last line has status
+                last = [l for l in resp_body.strip().splitlines() if l.strip()][-1]
+                result = json.loads(last)
+                if result.get('status') == 'success':
+                    _send_json(self, 200, {'success': True, 'model': model})
+                else:
+                    _send_json(self, 200, {'success': False,
+                                           'error': result.get('status', 'unknown status')})
             except Exception as e:
                 _send_json(self, 200, {'success': False, 'error': str(e)})
 
