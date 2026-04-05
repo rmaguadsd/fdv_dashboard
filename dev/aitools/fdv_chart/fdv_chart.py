@@ -45,13 +45,16 @@ _LLM_SYSTEM_PROMPT = (
     'You are a data analysis assistant embedded in an engineering test-data viewer. '
     'The user gives you statistics extracted from parsed log file charts. '
     'Follow the TASK instruction in the prompt exactly. '
-    'When asked for a single-chart analysis: describe distribution shape, central tendency, '
-    'spread and outliers concisely. '
-    'When asked for a comparative analysis: compare each group directly against the others — '
-    'rank them by median or mean where useful, highlight which groups have wider spread, '
-    'higher extremes, or cross reference lines. '
-    'Always use engineering language. Never pad with generic disclaimers. '
-    'Respect the word limit stated in the TASK.\n\n'
+    'OUTPUT FORMAT — always respond in concise bullet points (•). '
+    'Use one bullet per key finding. Never write long prose paragraphs. '
+    'Each bullet must be a complete, self-contained observation. '
+    'Always cover every requested aspect: do not stop early or truncate. '
+    'When asked for a single-chart analysis cover: distribution shape, central tendency, '
+    'spread, and outliers — one bullet each minimum. '
+    'When asked for a comparative analysis cover every group — rank them by median or mean, '
+    'note which have wider spread, higher extremes, or cross reference lines. '
+    'Always use engineering language and concrete numbers from the statistics provided. '
+    'Never pad with generic disclaimers or repeat the input data verbatim.\n\n'
     'MARKER COMMANDS — you may add or remove reference lines on the chart by emitting '
     'these special tokens anywhere in your reply (they will be executed automatically '
     'and hidden from the displayed text):\n'
@@ -61,7 +64,7 @@ _LLM_SYSTEM_PROMPT = (
     'Examples: [MARKER: x=1000:spec_limit]  [MARKER: y=0.05:target]  [CLEAR_MARKERS]\n'
     'Use markers when the user asks to mark, highlight, or draw a line at a specific value, '
     'or when you identify a threshold worth highlighting. You may emit multiple MARKER '
-    'commands in one reply. Always explain in prose what you marked and why.'
+    'commands in one reply. Always explain in a bullet what you marked and why.'
 )
 
 _OLLAMA_BASE = 'http://localhost:11434'
@@ -624,6 +627,65 @@ class RequestHandler(BaseHTTPRequestHandler):
             except Exception as ex:
                 _send_json(self, 200, {'success': False, 'models': [_LLM_MODEL], 'error': str(ex)})
 
+        elif self.path.startswith('/store/check'):
+            # Validate a store directory: /store/check?dir=<path>
+            try:
+                from urllib.parse import urlparse, parse_qs
+                qs = parse_qs(urlparse(self.path).query)
+                d  = qs.get('dir', [''])[0].strip()
+                if not d:
+                    _send_json(self, 200, {'success': False, 'error': 'No directory specified'})
+                elif os.path.isdir(d):
+                    _send_json(self, 200, {'success': True, 'dir': d})
+                else:
+                    _send_json(self, 200, {'success': False, 'error': 'Directory not found: ' + d})
+            except Exception as e:
+                _send_json(self, 200, {'success': False, 'error': str(e)})
+
+        elif self.path.startswith('/store/list'):
+            # List recipe/session files in directory: /store/list?dir=<path>
+            try:
+                from urllib.parse import urlparse, parse_qs
+                qs  = parse_qs(urlparse(self.path).query)
+                d   = qs.get('dir', [''])[0].strip()
+                if not d or not os.path.isdir(d):
+                    _send_json(self, 200, {'success': False, 'error': 'Invalid directory', 'files': []})
+                else:
+                    files = []
+                    for fname in sorted(os.listdir(d)):
+                        if fname.endswith('.fdv_recipe') or fname.endswith('.fdv_session'):
+                            fpath = os.path.join(d, fname)
+                            files.append({
+                                'name': fname,
+                                'size': os.path.getsize(fpath),
+                                'mtime': os.path.getmtime(fpath)
+                            })
+                    _send_json(self, 200, {'success': True, 'files': files})
+            except Exception as e:
+                _send_json(self, 200, {'success': False, 'error': str(e), 'files': []})
+
+        elif self.path.startswith('/store/load'):
+            # Load a recipe/session file: /store/load?dir=<path>&file=<name>
+            try:
+                from urllib.parse import urlparse, parse_qs
+                qs    = parse_qs(urlparse(self.path).query)
+                d     = qs.get('dir', [''])[0].strip()
+                fname = qs.get('file', [''])[0].strip()
+                if not d or not fname:
+                    _send_json(self, 200, {'success': False, 'error': 'dir and file required'})
+                elif not (fname.endswith('.fdv_recipe') or fname.endswith('.fdv_session')):
+                    _send_json(self, 200, {'success': False, 'error': 'Invalid file type'})
+                else:
+                    fpath = os.path.join(d, os.path.basename(fname))
+                    if not os.path.isfile(fpath):
+                        _send_json(self, 200, {'success': False, 'error': 'File not found: ' + fname})
+                    else:
+                        with open(fpath, 'r', encoding='utf-8') as f:
+                            data = json.load(f)
+                        _send_json(self, 200, {'success': True, 'data': data})
+            except Exception as e:
+                _send_json(self, 200, {'success': False, 'error': str(e)})
+
         else:
             self.send_error(404)
 
@@ -989,6 +1051,50 @@ class RequestHandler(BaseHTTPRequestHandler):
                 csv_id = body.get('csv_id', 'default') or 'default'
                 with _chat_sessions_lock:
                     _chat_sessions.pop(csv_id, None)
+                _send_json(self, 200, {'success': True})
+            except Exception as e:
+                _send_json(self, 200, {'success': False, 'error': str(e)})
+
+        elif self.path == '/store/save':
+            # Save a recipe or session JSON file to disk
+            # Body: { dir, name, type: 'recipe'|'session', data: {...} }
+            try:
+                length = int(self.headers.get('Content-Length', 0))
+                body   = json.loads(self.rfile.read(length).decode('utf-8'))
+                d      = (body.get('dir', '') or '').strip()
+                name   = (body.get('name', '') or '').strip()
+                ftype  = (body.get('type', '') or '').strip()   # 'recipe' or 'session'
+                data   = body.get('data')
+                if not d or not name or ftype not in ('recipe', 'session') or data is None:
+                    raise ValueError('dir, name, type (recipe|session), and data are required')
+                if not os.path.isdir(d):
+                    raise ValueError('Directory not found: ' + d)
+                ext   = '.fdv_recipe' if ftype == 'recipe' else '.fdv_session'
+                fname = os.path.basename(name) + ext
+                fpath = os.path.join(d, fname)
+                with open(fpath, 'w', encoding='utf-8') as f:
+                    json.dump(data, f, ensure_ascii=False)
+                _send_json(self, 200, {'success': True, 'file': fname,
+                                       'size': os.path.getsize(fpath)})
+            except Exception as e:
+                _send_json(self, 200, {'success': False, 'error': str(e)})
+
+        elif self.path == '/store/delete':
+            # Delete a recipe or session file from disk
+            # Body: { dir, file }
+            try:
+                length = int(self.headers.get('Content-Length', 0))
+                body   = json.loads(self.rfile.read(length).decode('utf-8'))
+                d      = (body.get('dir', '') or '').strip()
+                fname  = os.path.basename((body.get('file', '') or '').strip())
+                if not d or not fname:
+                    raise ValueError('dir and file are required')
+                if not (fname.endswith('.fdv_recipe') or fname.endswith('.fdv_session')):
+                    raise ValueError('Invalid file type')
+                fpath = os.path.join(d, fname)
+                if not os.path.isfile(fpath):
+                    raise ValueError('File not found: ' + fname)
+                os.remove(fpath)
                 _send_json(self, 200, {'success': True})
             except Exception as e:
                 _send_json(self, 200, {'success': False, 'error': str(e)})

@@ -139,30 +139,41 @@
             overflow-x: auto;
             position: relative;
         }
-        /* Spacer makes the scrollbar reflect total row count */
-        #vt-spacer {
-            position: absolute;
-            top: 0; left: 0;
-            width: 1px;
-            pointer-events: none;
-        }
-        /* Table is sticky at top; tbody rows are absolutely positioned */
+        /* Table fills the scroller; thead is sticky so it stays visible.
+           display:block on table/thead/tbody lets tbody have an explicit height
+           so the scrollbar reflects the total row count without a separate spacer. */
         #result-table {
             width: 100%;
+            min-width: 100%;
             border-collapse: collapse;
             font-size: 0.82em;
+            display: block;
+        }
+        #result-table thead {
             position: sticky;
             top: 0;
-            z-index: 0;
+            z-index: 2;
+            display: block;
+            width: 100%;
+        }
+        #result-table thead tr {
+            display: flex;
+            width: 100%;
         }
         #result-table thead th {
             background: #343a40; color: #fff; padding: 6px 8px;
             text-align: left; white-space: nowrap;
             overflow: hidden; text-overflow: ellipsis;
             user-select: none;   /* prevent text selection while resizing */
+            flex: 1 1 0;
+            min-width: 60px;
         }
+        /* tbody height is set via JS to totalRows*ROW_H so the scrollbar is correct.
+           Rows are absolutely positioned within this in-flow block. */
         #result-table tbody {
             position: relative;   /* anchor for absolutely-placed rows */
+            display: block;       /* allows explicit height to take effect */
+            width: 100%;
         }
         #result-table tbody tr {
             position: absolute;
@@ -184,6 +195,8 @@
         /* FILTER ROW */
         #filter-row th {
             background: #495057; padding: 3px 4px;
+            flex: 1 1 0; min-width: 60px;
+            overflow: hidden;
         }
         #filter-row th input {
             width: 100%; padding: 2px 4px; font-size: 0.78em;
@@ -406,6 +419,7 @@
         #chat-drawer .panel-grip:hover { background: rgba(23,162,184,0.18); }
     </style>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@sgratzl/chartjs-chart-boxplot@4.4.5/build/index.umd.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1/dist/chartjs-plugin-annotation.min.js"></script>
 </head>
 <body>
@@ -466,6 +480,65 @@
         <button class="btn sec" onclick="resetAll()">&#10006; Clear</button>
         <button class="btn grn" id="download-btn" onclick="downloadCSV()" style="display:none">&#8595; CSV</button>
     </div>
+
+    <!-- Recipe + Session row — always visible at the landing page -->
+    <div class="ctrl-row" id="recipe-row" style="border-top:1px dashed #ced4da;padding-top:5px;margin-top:2px;flex-wrap:wrap;gap:6px">
+
+        <!-- Store directory group -->
+        <span class="ctrl-label" style="color:#6c757d;font-weight:bold;white-space:nowrap">&#128193;&nbsp;Store&nbsp;dir:</span>
+        <input type="text" id="store-dir-input" autocomplete="off"
+               placeholder="e.g. D:\FDV\recipes"
+               style="flex:1 1 200px;min-width:140px;max-width:320px;padding:3px 7px;font-size:0.85em;border:1px solid #adb5bd;border-radius:3px"
+               title="Directory where recipes and sessions are saved as files on disk"
+               onkeydown="if(event.key==='Enter')_storeDirSet()">
+        <button class="btn" style="padding:4px 10px;font-size:0.85em" onclick="_storeDirSet()"
+                title="Validate and activate this directory">&#10003;&nbsp;Set</button>
+        <span id="store-dir-status" style="font-size:0.8em;color:#6c757d;white-space:nowrap"></span>
+
+        <!-- Divider -->
+        <span style="color:#ced4da;font-size:1.1em;align-self:center">&#9474;</span>
+
+        <!-- Recipe group -->
+        <span class="ctrl-label" style="color:#6c757d;font-weight:bold;white-space:nowrap">&#128196;&nbsp;Recipe:</span>
+        <select id="recipe-sel" style="padding:3px 6px;font-size:0.85em;border:1px solid #adb5bd;border-radius:3px;min-width:140px"
+                title="Select a saved recipe">
+            <option value="">-- saved recipes --</option>
+        </select>
+        <button class="btn" style="padding:4px 12px;font-size:0.85em" onclick="_recipeLoad()"
+                title="Load the selected recipe — restores parse regex + all plot settings">&#8595;&nbsp;Load</button>
+        <button class="btn" style="padding:4px 12px;font-size:0.85em;background:#6f42c1;color:#fff;border-color:#6f42c1"
+                onclick="_recipePlay()"
+                title="Play recipe: parse (if needed) then plot — smart replay of the full session">&#9654;&#9654;&nbsp;Play</button>
+        <input type="text" id="recipe-name" autocomplete="off" placeholder="recipe name&hellip;"
+               style="width:120px;padding:3px 7px;font-size:0.85em;border:1px solid #adb5bd;border-radius:3px"
+               title="Name to use when saving">
+        <button class="btn grn" style="padding:4px 12px;font-size:0.85em" onclick="_recipeSave()"
+                title="Save current parse regex + all plot settings under this name">&#10003;&nbsp;Save</button>
+        <button class="btn sec" style="padding:4px 10px;font-size:0.85em" onclick="_recipeDelete()"
+                title="Delete the selected recipe">&#10006;</button>
+        <span id="recipe-status" style="font-size:0.8em;color:#6c757d"></span>
+
+        <!-- Divider -->
+        <span style="color:#ced4da;font-size:1.1em;align-self:center">&#9474;</span>
+
+        <!-- Session group -->
+        <span class="ctrl-label" style="color:#6c757d;font-weight:bold;white-space:nowrap">&#128190;&nbsp;Session:</span>
+        <select id="session-sel" style="padding:3px 6px;font-size:0.85em;border:1px solid #adb5bd;border-radius:3px;min-width:140px"
+                title="Select a saved session">
+            <option value="">-- saved sessions --</option>
+        </select>
+        <button class="btn" style="padding:4px 12px;font-size:0.85em" onclick="_sessionLoad()"
+                title="Restore all rows + settings from the selected session (no re-parse needed)">&#8635;&nbsp;Load</button>
+        <input type="text" id="session-name" autocomplete="off" placeholder="session name&hellip;"
+               style="width:120px;padding:3px 7px;font-size:0.85em;border:1px solid #adb5bd;border-radius:3px"
+               title="Name to use when saving">
+        <button class="btn grn" style="padding:4px 12px;font-size:0.85em" onclick="_sessionSave()"
+                title="Save all rows + current settings under this name (stored in browser localStorage)">&#10003;&nbsp;Save</button>
+        <button class="btn sec" style="padding:4px 10px;font-size:0.85em" onclick="_sessionDelete()"
+                title="Delete the selected session">&#10006;</button>
+        <span id="session-status" style="font-size:0.8em;color:#6c757d"></span>
+    </div>
+
     <div id="status-bar">Ready -- select a file and click Parse.</div>
 </div>
 
@@ -474,28 +547,36 @@
     <div id="plot-bar">
         <label>X:<select id="x-col"></select></label>
         <label style="margin-left:4px">X&nbsp;regex:
-            <input type="text" id="x-regex" placeholder="e.g. ([0-9]+)" style="width:110px"></label>
+            <input type="text" id="x-regex" placeholder="e.g. ([0-9]+)" autocomplete="off" style="width:110px"></label>
         <label id="y-col-label" style="margin-left:8px">Y:<select id="y-col"></select></label>
         <label id="y-regex-label" style="margin-left:4px">Y&nbsp;regex:
-            <input type="text" id="y-regex" placeholder="e.g. ([0-9]+)" style="width:110px"></label>
+            <input type="text" id="y-regex" placeholder="e.g. ([0-9]+)" autocomplete="off" style="width:110px"></label>
         <label id="color-col-label" style="margin-left:8px">Color&nbsp;by:
             <select id="color-col"><option value="">-- none --</option></select></label>
         <label id="color-rx-label" style="margin-left:4px">Color&nbsp;regex:
-            <input type="text" id="color-regex" placeholder="e.g. DUT(\d+)" style="width:110px"></label>
+            <input type="text" id="color-regex" placeholder="e.g. DUT(\d+)" autocomplete="off" style="width:110px"></label>
         <label style="margin-left:8px">Type:
             <select id="chart-type" onchange="onChartTypeChange()">
                 <option value="scatter">Scatter</option>
                 <option value="line">Line</option>
                 <option value="histogram">Histogram</option>
                 <option value="cumproba">Cum Proba</option>
+                <option value="boxplot">Box &amp; Whisker</option>
             </select>
         </label>
         <label id="bins-label" style="margin-left:4px;display:none">Bins:
-            <input type="number" id="hist-bins" min="2" max="500" placeholder="auto" style="width:60px"></label>
+            <input type="number" id="hist-bins" min="2" max="500" placeholder="auto" autocomplete="off" style="width:60px"></label>
+        <label id="bp-maxgroups-label" style="margin-left:4px;display:none"
+               title="Maximum number of X groups to render (more groups = slower)">Max&nbsp;groups:
+            <input type="number" id="bp-maxgroups" min="1" max="2000" value="200" autocomplete="off" style="width:60px"></label>
+        <label id="legend-col-label" style="margin-left:8px" title="Annotate each data point with a label extracted from this column (does not affect color grouping)">Label&nbsp;by:
+            <select id="legend-col"><option value="">-- none --</option></select></label>
+        <label id="legend-rx-label" style="margin-left:4px" title="Optional regex — first capture group is used as the label text">Label&nbsp;regex:
+            <input type="text" id="legend-regex" placeholder="e.g. DUT(\d+)" autocomplete="off" style="width:110px"></label>
         <label id="split-label" style="margin-left:8px;display:none">Split&nbsp;by:
             <select id="split-col"><option value="">-- none --</option></select></label>
         <label id="split-rx-label" style="margin-left:4px;display:none">Split&nbsp;regex:
-            <input type="text" id="split-regex" placeholder="e.g. DUT(\d+)" style="width:110px"></label>
+            <input type="text" id="split-regex" placeholder="e.g. DUT(\d+)" autocomplete="off" style="width:110px"></label>
         <button id="plot-btn" class="btn" style="padding:4px 12px" onclick="drawPlot()">&#9654; Plot</button>
         <button id="analyze-btn" type="button" onclick="_analyzeChart()"
                 title="Ask the selected Ollama model to summarise the current chart">
@@ -519,35 +600,35 @@
         <label style="margin-left:4px;font-size:0.82em;color:#555">
             <input type="checkbox" id="y-log"> Y&nbsp;log</label>
         <label id="x-min-label" style="margin-left:8px;font-size:0.82em;color:#555">X&nbsp;min:
-            <input type="number" id="x-min" placeholder="auto" style="width:70px;font-size:0.9em"></label>
+            <input type="number" id="x-min" placeholder="auto" autocomplete="off" style="width:70px;font-size:0.9em"></label>
         <label id="x-max-label" style="margin-left:2px;font-size:0.82em;color:#555">max:
-            <input type="number" id="x-max" placeholder="auto" style="width:70px;font-size:0.9em"></label>
+            <input type="number" id="x-max" placeholder="auto" autocomplete="off" style="width:70px;font-size:0.9em"></label>
         <label id="y-min-label" style="margin-left:8px;font-size:0.82em;color:#555">Y&nbsp;min:
-            <input type="number" id="y-min" placeholder="auto" style="width:70px;font-size:0.9em"></label>
+            <input type="number" id="y-min" placeholder="auto" autocomplete="off" style="width:70px;font-size:0.9em"></label>
         <label id="y-max-label" style="margin-left:2px;font-size:0.82em;color:#555">max:
-            <input type="number" id="y-max" placeholder="auto" style="width:70px;font-size:0.9em"></label>
+            <input type="number" id="y-max" placeholder="auto" autocomplete="off" style="width:70px;font-size:0.9em"></label>
         <label id="x-step-label" style="margin-left:8px;font-size:0.82em;color:#555"
                title="X-axis tick interval (stepSize). Leave blank for auto.">X&nbsp;tick:
-            <input type="number" id="x-step" placeholder="auto" min="0" style="width:66px;font-size:0.9em"></label>
+            <input type="number" id="x-step" placeholder="auto" min="0" autocomplete="off" style="width:66px;font-size:0.9em"></label>
         <label id="y-step-label" style="margin-left:2px;font-size:0.82em;color:#555"
                title="Y-axis tick interval (stepSize). Leave blank for auto.">Y&nbsp;tick:
-            <input type="number" id="y-step" placeholder="auto" min="0" style="width:66px;font-size:0.9em"></label>
+            <input type="number" id="y-step" placeholder="auto" min="0" autocomplete="off" style="width:66px;font-size:0.9em"></label>
         <div id="plot-spinner" title="Plotting\u2026"></div>
         <span id="plot-status" style="color:#555;font-size:0.85em;margin-left:4px"></span>
         <!-- Data interval filter row -->
         <div id="iv-row" style="width:100%;display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:3px">
             <span style="font-size:0.82em;color:#6f42c1;font-weight:bold">&#x25a3;&nbsp;Data&nbsp;interval:</span>
             <label style="font-size:0.82em;color:#6f42c1">X&nbsp;from:
-                <input type="number" id="x-ivlo" placeholder="&minus;&infin;" style="width:72px;font-size:0.9em" class="iv-input"
+                <input type="number" id="x-ivlo" placeholder="&minus;&infin;" autocomplete="off" style="width:72px;font-size:0.9em" class="iv-input"
                        title="Exclude data points where X < this value" onchange="drawPlot()"></label>
             <label style="font-size:0.82em;color:#6f42c1">to:
-                <input type="number" id="x-ivhi" placeholder="+&infin;" style="width:72px;font-size:0.9em" class="iv-input"
+                <input type="number" id="x-ivhi" placeholder="+&infin;" autocomplete="off" style="width:72px;font-size:0.9em" class="iv-input"
                        title="Exclude data points where X > this value" onchange="drawPlot()"></label>
             <label id="y-ivlo-label" style="font-size:0.82em;color:#6f42c1;margin-left:8px">Y&nbsp;from:
-                <input type="number" id="y-ivlo" placeholder="&minus;&infin;" style="width:72px;font-size:0.9em" class="iv-input"
+                <input type="number" id="y-ivlo" placeholder="&minus;&infin;" autocomplete="off" style="width:72px;font-size:0.9em" class="iv-input"
                        title="Exclude data points where Y < this value" onchange="drawPlot()"></label>
             <label id="y-ivhi-label" style="font-size:0.82em;color:#6f42c1">to:
-                <input type="number" id="y-ivhi" placeholder="+&infin;" style="width:72px;font-size:0.9em" class="iv-input"
+                <input type="number" id="y-ivhi" placeholder="+&infin;" autocomplete="off" style="width:72px;font-size:0.9em" class="iv-input"
                        title="Exclude data points where Y > this value" onchange="drawPlot()"></label>
             <button class="btn sec" style="padding:2px 8px;font-size:0.78em" onclick="_clearIntervals()"
                     title="Reset all interval filters">&#10006;&nbsp;Clear&nbsp;interval</button>
@@ -555,7 +636,7 @@
         <!-- Marker lines row -->
         <div id="marker-row" style="width:100%;display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:3px">
             <span style="font-size:0.82em;color:#e83e8c;font-weight:bold">&#x2015;&nbsp;Markers:</span>
-            <input id="marker-input" type="text"
+            <input id="marker-input" type="text" autocomplete="off"
                    placeholder="e.g.  x=5  or  y=0.01:red:Limit  — press Enter to add"
                    title="Format: x=VALUE[:COLOR[:LABEL]]  or  y=VALUE[:COLOR[:LABEL]]&#10;Examples:  x=100  |  y=0.5:orange:Threshold  |  x=200:#3366cc:UCL">
             <div id="marker-tag-list" style="display:flex;flex-wrap:wrap;gap:4px;align-items:center"></div>
@@ -567,20 +648,21 @@
              border-top:1px dashed #ced4da;padding-top:4px;margin-top:2px">
             <span style="font-size:0.82em;color:#17a2b8;font-weight:bold">&#9707;&nbsp;Split&nbsp;charts:</span>
             <label style="font-size:0.82em;color:#17a2b8">By:
-                <select id="split-chart-col" onchange="drawPlot()" style="border-color:#17a2b8">
+                <select id="split-chart-col" onchange="_onSplitColChange()" style="border-color:#17a2b8">
                     <option value="">-- none (single chart) --</option>
                 </select></label>
             <label style="font-size:0.82em;color:#17a2b8">Regex:
-                <input type="text" id="split-chart-rx" placeholder="e.g. DUT(\d+)"
-                       style="width:110px;border-color:#17a2b8" onchange="drawPlot()"></label>
+                <input type="text" id="split-chart-rx" placeholder="e.g. DUT(\d+)" autocomplete="off"
+                       style="width:110px;border-color:#17a2b8" onchange="_onSplitColChange()"
+                       title="Optional regex applied to each cell&#10;• One capture group → use that group as tile key  e.g. DUT(\d+)&#10;• No capture group → use full match as tile key&#10;• No regex → split cell on commas  e.g. A,B → two tiles&#10;• Regex matching multiple times in one cell → row goes into ALL matched tiles"></label>
             <label style="font-size:0.82em;color:#17a2b8">Cols:
-                <input type="number" id="split-chart-cols" value="3" min="1" max="10"
+                <input type="number" id="split-chart-cols" value="3" min="1" max="10" autocomplete="off"
                        style="width:46px;border-color:#17a2b8" onchange="_applySplitLayout()" title="Charts per row"></label>
             <label style="font-size:0.82em;color:#17a2b8">Tile&nbsp;H:
-                <input type="number" id="split-chart-h" value="200" min="80" max="800" step="20"
+                <input type="number" id="split-chart-h" value="200" min="80" max="800" step="20" autocomplete="off"
                        style="width:56px;border-color:#17a2b8" onchange="_applySplitLayout()" title="Height of each tile in px"></label>
             <label style="font-size:0.82em;color:#17a2b8">Grid&nbsp;H:
-                <input type="number" id="split-grid-h" value="340" min="100" max="2000" step="20"
+                <input type="number" id="split-grid-h" value="340" min="100" max="2000" step="20" autocomplete="off"
                        style="width:60px;border-color:#17a2b8" onchange="_applySplitLayout()" title="Max height of the grid container (px)"></label>
         </div>
     </div>
@@ -622,7 +704,7 @@
         </div>
         <div id="chat-messages"></div>
         <div id="chat-input-row">
-            <textarea id="chat-input"
+            <textarea id="chat-input" autocomplete="off"
                       placeholder="Ask a question, request analysis, or say e.g. &#8220;mark the mean&#8221; or &#8220;add a line at x=1000&#8221;&#8230;"
                       onkeydown="_chatKeydown(event)"></textarea>
             <button id="chat-send-btn" type="button" onclick="_chatSend()">Send &#9658;</button>
@@ -643,7 +725,6 @@
     <div id="empty-state">Parse a file to see results here</div>
     <!-- Virtual-scroll container: only ~50 DOM rows exist at any time -->
     <div id="table-scroller" style="display:none">
-        <div id="vt-spacer"></div>
         <table id="result-table">
             <thead id="table-head"></thead>
             <tbody id="table-body"></tbody>
@@ -676,6 +757,55 @@ var PALETTE = [
     '#007bff','#e83e8c','#28a745','#fd7e14','#6610f2',
     '#17a2b8','#dc3545','#20c997','#ffc107','#6f42c1'
 ];
+
+/* ================================================================
+   GLOBAL POINT-LABEL PLUGIN  (Chart.js 4 requires Chart.register)
+   Label data is stored per-chart-instance in a WeakMap so that
+   resize redraws and multi-chart pages never bleed across instances.
+   Call  _setPointLabels(chart, arrayOfArrays)  after new Chart().
+================================================================ */
+var _chartLabelMap = typeof WeakMap !== 'undefined' ? new WeakMap() : null;
+
+function _setPointLabels(chart, data) {
+    if (!_chartLabelMap) return;
+    _chartLabelMap.set(chart, data || null);
+    /* Use draw() directly — more reliable than update('none') for
+       scatter+showLine charts where update may skip afterDraw */
+    if (data && chart && typeof chart.draw === 'function') {
+        try { chart.draw(); } catch(e) {}
+    }
+}
+
+Chart.register({
+    id: 'fdvPointLabels',
+    afterDraw: function(chart) {
+        var lblData = _chartLabelMap ? _chartLabelMap.get(chart) : null;
+        if (!lblData) return;
+        var ctx = chart.ctx;
+        var ca  = chart.chartArea;   /* {left, right, top, bottom} */
+        ctx.save();
+        /* beginPath() is required before rect() for clip() to work correctly */
+        ctx.beginPath();
+        ctx.rect(ca.left, ca.top, ca.right - ca.left, ca.bottom - ca.top);
+        ctx.clip();
+        ctx.font = '9px sans-serif';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        ctx.fillStyle = 'rgba(0,0,0,0.75)';
+        lblData.forEach(function(lbls, di) {
+            if (!lbls || !lbls.length) return;
+            var meta = chart.getDatasetMeta(di);
+            if (!meta || meta.hidden) return;
+            lbls.forEach(function(lbl, pi) {
+                if (!lbl) return;
+                var el = meta.data[pi];
+                if (!el || isNaN(el.x) || isNaN(el.y)) return;
+                ctx.fillText(lbl, el.x + 5, el.y);
+            });
+        });
+        ctx.restore();
+    }
+});
 
 /* ================================================================
    UTILITIES
@@ -719,7 +849,7 @@ function _setPlotBtnLoading(loading) {
 /* ================================================================
    VIRTUAL SCROLL ENGINE
    Only renders rows visible in the viewport + VS_OVERSCAN.
-   #vt-spacer is sized to total height so the scrollbar is correct.
+   tbody height is set to totalRows*ROW_H so the scrollbar is correct.
 ================================================================ */
 function _vtTotalHeight() {
     return filteredIndices.length * ROW_H;
@@ -727,22 +857,27 @@ function _vtTotalHeight() {
 
 function _vtRender() {
     var scroller = document.getElementById('table-scroller');
-    var spacer   = document.getElementById('vt-spacer');
     var tbody    = document.getElementById('table-body');
-    if (!scroller || !tbody || !spacer) return;
-    if (filteredIndices.length === 0) { tbody.innerHTML = ''; return; }
+    if (!scroller || !tbody) return;
+    if (filteredIndices.length === 0) {
+        tbody.style.height = '0px';
+        tbody.innerHTML = '';
+        return;
+    }
 
-    /* Keep spacer sized to full dataset so scrollbar is accurate */
-    spacer.style.height = _vtTotalHeight() + 'px';
+    /* Set tbody height so the scroller's scrollbar reflects total row count */
+    tbody.style.height = _vtTotalHeight() + 'px';
 
     var scrollTop    = scroller.scrollTop;
     var viewH        = scroller.clientHeight;
     var headerH      = (document.getElementById('result-table').querySelector('thead') || {offsetHeight:33}).offsetHeight || 33;
-    var contentTop   = Math.max(0, scrollTop - headerH);
-    var firstVisible = Math.max(0, Math.floor(contentTop / ROW_H) - VS_OVERSCAN);
+    /* scrollTop 0 means thead visible; rows begin at headerH in the scroller.
+       Rows are positioned relative to tbody (which starts at headerH in the table). */
+    var tbodyTop     = Math.max(0, scrollTop - headerH);   // how far we've scrolled into tbody
+    var firstVisible = Math.max(0, Math.floor(tbodyTop / ROW_H) - VS_OVERSCAN);
     var lastVisible  = Math.min(
         filteredIndices.length - 1,
-        Math.ceil((contentTop + viewH) / ROW_H) + VS_OVERSCAN
+        Math.ceil((tbodyTop + viewH) / ROW_H) + VS_OVERSCAN
     );
 
     /* Skip re-render if the window AND content count haven't changed.
@@ -760,7 +895,8 @@ function _vtRender() {
         var row = allRows[filteredIndices[r]];
         var tr  = document.createElement('tr');
         if (r % 2 === 1) tr.className = 'row-even';
-        tr.style.top = (headerH + r * ROW_H) + 'px';
+        /* top is relative to tbody (not the scroller), so no headerH offset needed */
+        tr.style.top = (r * ROW_H) + 'px';
         var cells = '';
         for (var c = 0; c < row.length; c++) {
             /* Apply stored column width if available */
@@ -776,7 +912,7 @@ function _vtRender() {
     /* Calibrate ROW_H from actual rendered row height */
     if (tbody.children.length > 0 && tbody.children[0].offsetHeight > 0) {
         var measured = tbody.children[0].offsetHeight;
-        if (measured !== ROW_H) { ROW_H = measured; spacer.style.height = _vtTotalHeight() + 'px'; }
+        if (measured !== ROW_H) { ROW_H = measured; tbody.style.height = _vtTotalHeight() + 'px'; }
     }
 }
 
@@ -786,6 +922,12 @@ document.addEventListener('DOMContentLoaded', function() {
     if (scroller) {
         scroller.addEventListener('scroll', function() { _vtRender(); }, { passive: true });
     }
+    /* Populate saved recipes in the dropdown */
+    _recipeRebuildSel();
+    /* Populate saved sessions in the dropdown */
+    _sessionRebuildSel();
+    /* Restore saved store directory (may re-populate both dropdowns from disk) */
+    _storeDirInit();
     /* Restore session after browser refresh */
     _tryRestoreSession();
 });
@@ -925,6 +1067,8 @@ function toggleFilters() {
    SOURCE TAB SWITCHING
 ================================================================ */
 var _activeSrc = 'path';   // 'path' | 'files' | 'dir'
+var _pendingRecipeSnap = null;   // recipe snap waiting to be applied after parse
+var _lastParsedPath    = '';     // path-input value at last successful parse
 
 function _srcTab(el) {
     _activeSrc = el.dataset.src;
@@ -1087,6 +1231,7 @@ function _onParseResult(result, fname, t0) {
     domFullyLoaded    = false;
     totalExpectedRows = result.total_rows;
     allRows           = result.rows.slice();
+    _lastParsedPath   = (document.getElementById('path-input').value || '').trim();
 
     var total = result.total_rows;
     var tSecs = ((Date.now()-t0)/1000).toFixed(1);
@@ -1126,7 +1271,8 @@ function _buildTableHeader(headers) {
     });
     hhtml += '</tr><tr id="filter-row" style="display:none">';
     headers.forEach(function(h, i){
-        hhtml += '<th><input type="text" data-colidx="' + i + '" placeholder="\u26b2"' +
+        hhtml += '<th><input type="text" name="col-filter-' + i + '" autocomplete="off"' +
+                 ' data-colidx="' + i + '" placeholder="\u26b2"' +
                  ' oninput="applyFilters()"' +
                  ' title="Filter: substring / /regex/ / ==val / !=val / >=N / <=N"></th>';
     });
@@ -1153,6 +1299,14 @@ function _wireColResize() {
                 /* Apply to header cell immediately */
                 th.style.width    = newW + 'px';
                 th.style.minWidth = newW + 'px';
+                th.style.flex     = 'none';
+                /* Mirror width onto the matching filter-row <th> */
+                var filterThs = document.querySelectorAll('#filter-row th');
+                if (filterThs[colIdx]) {
+                    filterThs[colIdx].style.width    = newW + 'px';
+                    filterThs[colIdx].style.minWidth = newW + 'px';
+                    filterThs[colIdx].style.flex     = 'none';
+                }
                 /* Rerender body rows to pick up the new width */
                 vsFirstRow = -1;   /* force re-render */
                 _vtRender();
@@ -1186,9 +1340,9 @@ async function loadMoreRows(csv_id, ncols, offset, total, fname) {
         /* Recompute filtered view (pure JS array scan) */
         recomputeFilteredIndices();
 
-        /* Keep spacer height accurate so scrollbar moves during load */
-        var spacer = document.getElementById('vt-spacer');
-        if (spacer) spacer.style.height = _vtTotalHeight() + 'px';
+        /* Update tbody height so scrollbar stays accurate during progressive load */
+        var tbody = document.getElementById('table-body');
+        if (tbody) tbody.style.height = _vtTotalHeight() + 'px';
 
         var pct = Math.round(offset / total * 100);
         setTableInfo(total.toLocaleString() + ' rows \u00b7 ' + ncols +
@@ -1345,7 +1499,7 @@ function readFilteredFromMemory(xCol, yCol, groupCol, xRx, yRx, ivXlo, ivXhi, iv
         if (!isNaN(xHi) && xv > xHi) { skipped++; continue; }
         if (!isNaN(yLo) && yv < yLo) { skipped++; continue; }
         if (!isNaN(yHi) && yv > yHi) { skipped++; continue; }
-        var pt = { x: xv, y: yv };
+        var pt = { x: xv, y: yv, _ri: filteredIndices[r] };
         if (gRaw !== null) pt.group = gRaw;
         points.push(pt);
     }
@@ -1360,26 +1514,31 @@ function onChartTypeChange() {
     var isXOnly = ct === 'histogram' || ct === 'cumproba';
     var isCum   = ct === 'cumproba';
     var isHist  = ct === 'histogram';
+    var isBox   = ct === 'boxplot';
     function show(id, vis) { var el=document.getElementById(id); if(el) el.style.display=vis?'':'none'; }
+    /* boxplot: X = category col (label), Y = numeric value col — both shown */
     show('y-col-label',    !isXOnly);
-    show('y-regex-label',  !isXOnly);
-    show('color-col-label',!isXOnly);
-    show('color-rx-label', !isXOnly);
+    show('y-regex-label',  !isXOnly);             /* show Y regex for boxplot too */
+    show('color-col-label', !isBox);              /* boxplot groups come from X col */
+    show('color-rx-label',  !isBox);
     show('bins-label',      isHist);
-    show('split-label',     isCum);
-    show('split-rx-label',  isCum);
+    show('bp-maxgroups-label', isBox);
+    show('legend-col-label', !isBox);  /* label-by: scatter/line/cumproba */
+    show('legend-rx-label',  !isBox);
+    show('split-label',     false);               /* cumproba now uses color-col for grouping */
+    show('split-rx-label',  false);
     show('y-min-label',    !isXOnly);
     show('y-max-label',    !isXOnly);
     show('y-ivlo-label',   !isXOnly);
     show('y-ivhi-label',   !isXOnly);
-    show('y-step-label',   !isXOnly);
+    show('y-step-label',   !isXOnly || isBox);
 }
 
 function populatePlotSelectors(headers) {
     currentHeaders = headers;
-    ['x-col','y-col','color-col','split-col','split-chart-col'].forEach(function(id) {
+    ['x-col','y-col','color-col','split-col','split-chart-col','legend-col'].forEach(function(id) {
         var sel = document.getElementById(id), prev = sel.value;
-        sel.innerHTML = (id==='color-col'||id==='split-col'||id==='split-chart-col')
+        sel.innerHTML = (id==='color-col'||id==='split-col'||id==='split-chart-col'||id==='legend-col')
             ? '<option value="">-- none --</option>' : '';
         headers.forEach(function(h) {
             var o = document.createElement('option');
@@ -1398,6 +1557,20 @@ function populatePlotSelectors(headers) {
     tryDefault('x-col',    ['WL','BLK','SB','BL','LINE#']);
     tryDefault('y-col',    ['RBER','BYBER','RBER_LIMIT','Measurement']);
     tryDefault('color-col',['DUT','RESULT','PAGETYPE','Type']);
+    /* Apply any pending recipe column-selector values (deferred from _recipeApply) */
+    if (_pendingRecipeSnap) {
+        var pending = _pendingRecipeSnap;
+        _pendingRecipeSnap = null;
+        /* Restore column selectors */
+        ['x-col','y-col','color-col','legend-col','split-col','split-chart-col'].forEach(function(id) {
+            if (!(id in pending)) return;
+            var el = document.getElementById(id);
+            if (el && pending[id]) el.value = pending[id];
+        });
+        /* Restore column filter values via shared helper (now that filter-row inputs exist) */
+        _recipeApplyColFilters(pending);
+        onChartTypeChange();
+    }
 }
 
 function extractNum(val, rxStr) {
@@ -1441,6 +1614,550 @@ function _clearIntervals() {
         document.getElementById(id).value = '';
     });
     drawPlot();
+}
+
+/* ================================================================
+   RECIPE  —  save / load / delete plot settings in localStorage
+================================================================ */
+var _RECIPE_KEY = 'fdv_recipes_v1';
+
+function _recipeIds() {
+    /* The IDs of all inputs to capture in a recipe (parse + plot) */
+    return [
+        'path-input','dir-recursive',                           /* source */
+        'regex-input',                                          /* parse regex */
+        'chart-type','x-col','y-col','x-regex','y-regex',
+        'color-col','color-regex','legend-col','legend-regex',
+        'split-col','split-regex',
+        'split-chart-col','split-chart-rx','split-chart-cols','split-chart-h','split-grid-h',
+        'hist-bins','bp-maxgroups',
+        'x-log','y-log',
+        'x-min','x-max','x-step','y-min','y-max','y-step',
+        'x-ivlo','x-ivhi','y-ivlo','y-ivhi'
+    ];
+}
+
+function _recipeSnapshot() {
+    var snap = {};
+    _recipeIds().forEach(function(id) {
+        var el = document.getElementById(id);
+        if (!el) return;
+        snap[id] = el.type === 'checkbox' ? el.checked : el.value;
+    });
+    /* Capture active source tab ('path' | 'files' | 'dir') */
+    snap['__src'] = _activeSrc || 'path';
+    /* Capture filter-mode radio (include / exclude) */
+    var modeEl = document.querySelector('input[name="filter-mode"]:checked');
+    snap['__filter_mode'] = modeEl ? modeEl.value : 'include';
+    /* Capture column filter values (keyed by header name so they survive re-parse) */
+    var colFilters = {};
+    document.querySelectorAll('#filter-row input').forEach(function(inp) {
+        var val = inp.value.trim();
+        if (!val) return;
+        var idx = parseInt(inp.dataset.colidx);
+        var header = (currentHeaders && currentHeaders[idx]) || ('col' + idx);
+        colFilters[header] = val;
+    });
+    snap['__col_filters']     = JSON.stringify(colFilters);
+    snap['__filters_visible'] = filtersVisible;
+    /* Also capture marker lines */
+    snap['__markers'] = JSON.stringify(_markers || []);
+    return snap;
+}
+
+function _recipeApply(snap) {
+    /* Restore source tab first (so path-input row becomes visible) */
+    if (snap['__src']) {
+        var srcTabEl = document.querySelector('.src-tab[data-src="' + snap['__src'] + '"]');
+        if (srcTabEl) _srcTab(srcTabEl);
+    }
+    /* Restore all captured element values */
+    _recipeIds().forEach(function(id) {
+        if (!(id in snap)) return;
+        var el = document.getElementById(id);
+        if (!el) return;
+        /* Column selectors — defer if not yet populated (no data loaded) */
+        if ((id==='x-col'||id==='y-col'||id==='color-col'||id==='legend-col'||
+             id==='split-col'||id==='split-chart-col') && el.options.length <= 1) return;
+        if (el.type === 'checkbox') el.checked = !!snap[id];
+        else el.value = snap[id];
+    });
+    /* Restore filter-mode radio */
+    if (snap['__filter_mode']) {
+        var modeEl = document.querySelector(
+            'input[name="filter-mode"][value="' + snap['__filter_mode'] + '"]');
+        if (modeEl) modeEl.checked = true;
+    }
+    /* Restore markers */
+    if (snap['__markers']) {
+        try { _markers = JSON.parse(snap['__markers']); } catch(e) { _markers = []; }
+        _rebuildMarkerTags();
+    }
+    /* Restore filter row visibility (actual filter values deferred until headers are loaded) */
+    if ('__filters_visible' in snap) {
+        var wantVisible = !!snap['__filters_visible'];
+        var filterRow = document.getElementById('filter-row');
+        /* Only toggle visibility here when no data is loaded yet (deferred case).
+           When data IS loaded, _recipeApplyColFilters handles visibility correctly. */
+        var hasFilterInputs = document.querySelectorAll('#filter-row input').length > 0;
+        if (!hasFilterInputs && filterRow && wantVisible !== filtersVisible) toggleFilters();
+    }
+    /* Restore column filter values — immediate if headers already loaded, deferred otherwise */
+    _recipeApplyColFilters(snap);
+    /* If column selectors are not yet populated, queue deferred restore */
+    var needsDefer = ['x-col','y-col','color-col','legend-col','split-col','split-chart-col']
+        .some(function(id){ var el=document.getElementById(id); return el && el.options.length<=1; });
+    if (needsDefer) _pendingRecipeSnap = snap;
+    onChartTypeChange();
+}
+
+/* Apply __col_filters from a snap immediately (when headers/filter-row inputs already exist).
+   Called both from _recipeApply (direct) and from populatePlotSelectors (deferred). */
+function _recipeApplyColFilters(snap) {
+    if (!snap['__col_filters']) return;
+    var filterInputs = document.querySelectorAll('#filter-row input');
+    if (!filterInputs.length) return;   /* filter row not built yet — will be done after parse */
+    try {
+        var colFilters = JSON.parse(snap['__col_filters']);
+        var hasFilters = Object.keys(colFilters).length > 0;
+        /* Clear all existing filter inputs first */
+        filterInputs.forEach(function(inp) { inp.value = ''; inp.className = ''; });
+        if (hasFilters) {
+            /* Show filter row if it's hidden */
+            if (!filtersVisible) toggleFilters();
+            filterInputs.forEach(function(inp) {
+                var idx = parseInt(inp.dataset.colidx);
+                var header = currentHeaders && currentHeaders[idx];
+                if (header && colFilters[header]) inp.value = colFilters[header];
+            });
+        } else {
+            /* No filters in recipe — hide the filter row if currently visible */
+            if (filtersVisible) toggleFilters();
+        }
+        applyFilters();
+    } catch(e) {}
+}
+
+function _loadRecipeStore() {
+    try { return JSON.parse(localStorage.getItem(_RECIPE_KEY) || '{}'); } catch(e) { return {}; }
+}
+function _saveRecipeStore(store) {
+    try { localStorage.setItem(_RECIPE_KEY, JSON.stringify(store)); } catch(e) {}
+}
+
+function _recipeRebuildSel() {
+    var sel = document.getElementById('recipe-sel');
+    var cur = sel.value;
+    if (_storeDir) {
+        _storeListFiles().then(function(lists) {
+            sel.innerHTML = '<option value="">-- saved recipes --</option>';
+            lists.recipes.forEach(function(f) {
+                var name = f.name.replace(/\.fdv_recipe$/, '');
+                var kb   = Math.round(f.size / 1024);
+                var o    = document.createElement('option');
+                o.value = name; o.textContent = name + (kb ? ' (' + kb + ' KB)' : '');
+                sel.appendChild(o);
+            });
+            if (cur) sel.value = cur;
+        });
+    } else {
+        var store = _loadRecipeStore();
+        var names = Object.keys(store).sort();
+        sel.innerHTML = '<option value="">-- saved recipes --</option>';
+        names.forEach(function(n) {
+            var o = document.createElement('option');
+            o.value = n; o.textContent = n; sel.appendChild(o);
+        });
+        if (cur && store[cur]) sel.value = cur;
+    }
+}
+
+function _recipeSave() {
+    var name = (document.getElementById('recipe-name').value || '').trim();
+    if (!name) { _recipeStatus('Enter a recipe name first.', 'error'); return; }
+    var snap = _recipeSnapshot();
+    if (_storeDir) {
+        _recipeStatus('Saving\u2026', 'ok');
+        fetch('/store/save', { method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ dir: _storeDir, name: name, type: 'recipe', data: snap })
+        }).then(function(r){ return r.json(); }).then(function(d) {
+            if (d.success) {
+                _recipeRebuildSel();
+                document.getElementById('recipe-sel').value = name;
+                _recipeStatus('\u2713 Saved \u201c' + name + '\u201d \u2014 ' +
+                              Math.round((d.size||0)/1024) + ' KB', 'ok');
+            } else { _recipeStatus('\u26a0 ' + d.error, 'error'); }
+        }).catch(function(e){ _recipeStatus('\u26a0 ' + e.message, 'error'); });
+    } else {
+        var store = _loadRecipeStore();
+        store[name] = snap;
+        _saveRecipeStore(store);
+        _recipeRebuildSel();
+        document.getElementById('recipe-sel').value = name;
+        _recipeStatus('\u2713 Saved \u201c' + name + '\u201d', 'ok');
+    }
+}
+
+function _recipeLoad() {
+    var sel  = document.getElementById('recipe-sel');
+    var name = sel.value;
+    if (!name) return;
+    if (_storeDir) {
+        _recipeStatus('Loading\u2026', 'ok');
+        fetch('/store/load?dir=' + encodeURIComponent(_storeDir) + '&file=' + encodeURIComponent(name + '.fdv_recipe'))
+            .then(function(r){ return r.json(); }).then(function(d) {
+                if (!d.success) { _recipeStatus('\u26a0 ' + d.error, 'error'); return; }
+                document.getElementById('recipe-name').value = name;
+                _recipeApply(d.data);
+                var rx = (d.data['regex-input'] || '');
+                _recipeStatus('\u2713 Loaded \u201c' + name + '\u201d' + (rx ? ' | regex: ' + rx : ''), 'ok');
+            }).catch(function(e){ _recipeStatus('\u26a0 ' + e.message, 'error'); });
+    } else {
+        var store = _loadRecipeStore();
+        if (!store[name]) { _recipeStatus('Recipe not found.', 'error'); return; }
+        document.getElementById('recipe-name').value = name;
+        _recipeApply(store[name]);
+        var rx = store[name]['regex-input'] || '';
+        _recipeStatus('\u2713 Loaded \u201c' + name + '\u201d' + (rx ? ' | regex: ' + rx : ''), 'ok');
+    }
+}
+
+function _recipeDelete() {
+    var sel  = document.getElementById('recipe-sel');
+    var name = sel.value || (document.getElementById('recipe-name').value || '').trim();
+    if (!name) { _recipeStatus('Select or type a recipe name to delete.', 'error'); return; }
+    if (_storeDir) {
+        fetch('/store/delete', { method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ dir: _storeDir, file: name + '.fdv_recipe' })
+        }).then(function(r){ return r.json(); }).then(function(d) {
+            if (d.success) { _recipeRebuildSel(); _recipeStatus('\u2713 Deleted \u201c' + name + '\u201d', 'ok'); }
+            else { _recipeStatus('\u26a0 ' + d.error, 'error'); }
+        }).catch(function(e){ _recipeStatus('\u26a0 ' + e.message, 'error'); });
+    } else {
+        var store = _loadRecipeStore();
+        if (!store[name]) { _recipeStatus('Recipe \u201c' + name + '\u201d not found.', 'error'); return; }
+        delete store[name];
+        _saveRecipeStore(store);
+        _recipeRebuildSel();
+        _recipeStatus('\u2713 Deleted \u201c' + name + '\u201d', 'ok');
+    }
+}
+
+function _recipePlay() {
+    /* Resolve which recipe to play: selected in dropdown, or typed name */
+    var sel  = document.getElementById('recipe-sel');
+    var name = sel.value || (document.getElementById('recipe-name').value || '').trim();
+    if (!name) { _recipeStatus('Select a recipe to play.', 'error'); return; }
+
+    function _doPlay(snap) {
+        _recipeApply(snap);
+        document.getElementById('recipe-name').value = name;
+        var savedPath   = (snap['path-input'] || '').trim();
+        var currentPath = (document.getElementById('path-input').value || '').trim();
+        var needsParse  = !currentCsvId
+            || (savedPath && savedPath !== _lastParsedPath)
+            || currentPath !== _lastParsedPath;
+        if (needsParse) {
+            if (!savedPath && !currentPath) { _recipeStatus('No file path in recipe and no data loaded.', 'error'); return; }
+            _pendingRecipeSnap = snap;
+            _recipeStatus('\u25b6\u25b6 Parsing\u2026', 'ok');
+            parseFile();
+        } else {
+            _recipeStatus('\u25b6\u25b6 Plotting\u2026', 'ok');
+            drawPlot();
+            setTimeout(function(){ _recipeStatus('\u2713 Done', 'ok'); }, 400);
+        }
+    }
+
+    if (_storeDir) {
+        _recipeStatus('Loading\u2026', 'ok');
+        fetch('/store/load?dir=' + encodeURIComponent(_storeDir) + '&file=' + encodeURIComponent(name + '.fdv_recipe'))
+            .then(function(r){ return r.json(); }).then(function(d) {
+                if (!d.success) { _recipeStatus('\u26a0 ' + d.error, 'error'); return; }
+                _doPlay(d.data);
+            }).catch(function(e){ _recipeStatus('\u26a0 ' + e.message, 'error'); });
+    } else {
+        var store = _loadRecipeStore();
+        var snap  = store[name];
+        if (!snap) { _recipeStatus('Recipe \u201c' + name + '\u201d not found.', 'error'); return; }
+        _doPlay(snap);
+    }
+}
+
+function _recipeStatus(msg, cls) {
+    var el = document.getElementById('recipe-status');
+    if (!el) return;
+    el.textContent = msg;
+    el.style.color = cls === 'error' ? '#dc3545' : '#28a745';
+    clearTimeout(el._t);
+    el._t = setTimeout(function(){ el.textContent = ''; }, 3000);
+}
+
+/* ================================================================
+   SESSION  —  save / load / delete complete data + settings
+   Stored in localStorage under key  fdv_sessions_v1
+   Each session entry: { headers, rows, fname, snap }
+   'rows' is the full allRows[] array — allows restore without re-parse.
+================================================================ */
+/* ================================================================
+   STORE DIRECTORY  —  optional disk-based save/load for recipes & sessions
+   When _storeDir is set, all recipe/session Save/Load/Delete operations
+   go to the server-side /store/* endpoints instead of localStorage.
+   The chosen directory is remembered in localStorage across page loads.
+================================================================ */
+var _storeDir = '';    /* active store directory — empty means localStorage mode */
+var _STORE_DIR_KEY = 'fdv_store_dir';
+
+function _storeDirSet() {
+    var val = (document.getElementById('store-dir-input').value || '').trim();
+    if (!val) {
+        /* Clear — revert to localStorage mode */
+        _storeDir = '';
+        try { localStorage.removeItem(_STORE_DIR_KEY); } catch(e) {}
+        _storeDirStatusOk('localStorage mode (no directory set)');
+        _recipeRebuildSel();
+        _sessionRebuildSel();
+        return;
+    }
+    _storeDirStatus('Checking\u2026', '#6c757d');
+    fetch('/store/check?dir=' + encodeURIComponent(val))
+        .then(function(r){ return r.json(); })
+        .then(function(d) {
+            if (d.success) {
+                _storeDir = val;
+                try { localStorage.setItem(_STORE_DIR_KEY, val); } catch(e) {}
+                _storeDirStatusOk('\u2713 ' + val);
+                /* Rebuild both dropdowns from disk */
+                _recipeRebuildSel();
+                _sessionRebuildSel();
+            } else {
+                _storeDirStatus('\u26a0 ' + (d.error || 'Not found'), '#dc3545');
+            }
+        })
+        .catch(function(e){ _storeDirStatus('\u26a0 ' + e.message, '#dc3545'); });
+}
+
+function _storeDirStatus(msg, color) {
+    var el = document.getElementById('store-dir-status');
+    if (!el) return;
+    el.textContent = msg;
+    el.style.color = color || '#6c757d';
+}
+function _storeDirStatusOk(msg) { _storeDirStatus(msg, '#28a745'); }
+
+/* List files in the store directory; return Promise<{recipes:[],sessions:[]}> */
+function _storeListFiles() {
+    return fetch('/store/list?dir=' + encodeURIComponent(_storeDir))
+        .then(function(r){ return r.json(); })
+        .then(function(d) {
+            if (!d.success) return { recipes: [], sessions: [] };
+            var recipes  = d.files.filter(function(f){ return f.name.endsWith('.fdv_recipe'); });
+            var sessions = d.files.filter(function(f){ return f.name.endsWith('.fdv_session'); });
+            return { recipes: recipes, sessions: sessions };
+        });
+}
+
+/* Restore the saved store directory on page load */
+function _storeDirInit() {
+    var saved;
+    try { saved = localStorage.getItem(_STORE_DIR_KEY) || ''; } catch(e) { saved = ''; }
+    if (!saved) return;
+    document.getElementById('store-dir-input').value = saved;
+    /* Silently validate — if it still exists, activate it */
+    fetch('/store/check?dir=' + encodeURIComponent(saved))
+        .then(function(r){ return r.json(); })
+        .then(function(d) {
+            if (d.success) {
+                _storeDir = saved;
+                _storeDirStatusOk('\u2713 ' + saved);
+                _recipeRebuildSel();
+                _sessionRebuildSel();
+            } else {
+                _storeDirStatus('\u26a0 Saved dir not found: ' + saved, '#e67e22');
+            }
+        })
+        .catch(function(){});
+}
+
+var _SESSION_KEY = 'fdv_sessions_v1';
+
+function _sessionStatus(msg, cls) {
+    var el = document.getElementById('session-status');
+    if (!el) return;
+    el.textContent = msg;
+    el.style.color = cls === 'error' ? '#dc3545' : '#28a745';
+    clearTimeout(el._t);
+    el._t = setTimeout(function(){ el.textContent = ''; }, 4000);
+}
+
+function _loadSessionIndex() {
+    /* Index maps name → size_bytes (lightweight, always kept current) */
+    try { return JSON.parse(localStorage.getItem(_SESSION_KEY + '_index') || '{}'); } catch(e) { return {}; }
+}
+function _saveSessionIndex(idx) {
+    try { localStorage.setItem(_SESSION_KEY + '_index', JSON.stringify(idx)); } catch(e) {}
+}
+
+function _sessionRebuildSel() {
+    var sel = document.getElementById('session-sel');
+    var cur = sel.value;
+    if (_storeDir) {
+        _storeListFiles().then(function(lists) {
+            sel.innerHTML = '<option value="">-- saved sessions --</option>';
+            lists.sessions.forEach(function(f) {
+                var name = f.name.replace(/\.fdv_session$/, '');
+                var kb   = Math.round(f.size / 1024);
+                var o    = document.createElement('option');
+                o.value = name; o.textContent = name + (kb ? ' (' + kb + ' KB)' : '');
+                sel.appendChild(o);
+            });
+            if (cur) sel.value = cur;
+        });
+    } else {
+        var idx   = _loadSessionIndex();
+        var names = Object.keys(idx).sort();
+        sel.innerHTML = '<option value="">-- saved sessions --</option>';
+        names.forEach(function(n) {
+            var kb = Math.round((idx[n] || 0) / 1024);
+            var o  = document.createElement('option');
+            o.value = n; o.textContent = n + (kb ? ' (' + kb + ' KB)' : '');
+            sel.appendChild(o);
+        });
+        if (cur && idx[cur]) sel.value = cur;
+    }
+}
+
+/* Shared inner logic: apply a loaded session entry to the current state */
+function _sessionApplyEntry(entry, name) {
+    if (!entry.headers || !entry.rows) {
+        _sessionStatus('Incomplete session data.', 'error'); return;
+    }
+    document.getElementById('session-name').value = name;
+    if (chartInst) { chartInst.destroy(); chartInst = null; }
+    _destroySplitCharts();
+    currentCsvId      = 'session:' + name;
+    currentHeaders    = entry.headers;
+    allRows           = entry.rows;
+    totalExpectedRows = entry.rows.length;
+    domFullyLoaded    = true;
+    _lastParsedPath   = (entry.snap && entry.snap['path-input']) || '';
+    _buildTableHeader(entry.headers);
+    recomputeFilteredIndices();
+    vsFirstRow = 0;
+    document.getElementById('empty-state').style.display       = 'none';
+    document.getElementById('table-scroller').style.display    = '';
+    document.getElementById('filter-toggle-btn').style.display = '';
+    document.getElementById('download-btn').style.display      = 'none';
+    document.getElementById('plot-panel').style.display        = 'flex';
+    var tbody = document.getElementById('table-body');
+    if (tbody) tbody.style.height = _vtTotalHeight() + 'px';
+    _vtRender();
+    populatePlotSelectors(entry.headers);
+    if (entry.snap) { _pendingRecipeSnap = null; _recipeApply(entry.snap); }
+    var rowStr = entry.rows.length.toLocaleString();
+    var colStr = entry.headers.length;
+    setStatus('Session \u201c' + name + '\u201d loaded \u2022 ' + rowStr + ' rows \u2022 ' + colStr + ' columns');
+    setTableInfo(rowStr + ' rows \u00b7 ' + colStr + ' columns \u00b7 ' + (entry.fname || name));
+    _setPlotBtnLoading(false);
+    _updatePlotCoverBanner();
+    drawPlot();
+    _sessionStatus('\u2713 Loaded \u201c' + name + '\u201d', 'ok');
+}
+
+function _sessionSave() {
+    if (!currentCsvId || !allRows.length) {
+        _sessionStatus('Parse a file first before saving a session.', 'error'); return;
+    }
+    var name = (document.getElementById('session-name').value || '').trim();
+    if (!name) { _sessionStatus('Enter a session name first.', 'error'); return; }
+
+    _sessionStatus('Saving\u2026', 'ok');
+    setTimeout(function() {
+        var entry = {
+            headers: currentHeaders,
+            rows:    allRows,
+            fname:   document.getElementById('path-input').value.trim() ||
+                     (currentHeaders.length + ' cols'),
+            snap:    _recipeSnapshot()
+        };
+        if (_storeDir) {
+            fetch('/store/save', { method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ dir: _storeDir, name: name, type: 'session', data: entry })
+            }).then(function(r){ return r.json(); }).then(function(d) {
+                if (d.success) {
+                    _sessionRebuildSel();
+                    document.getElementById('session-sel').value = name;
+                    _sessionStatus('\u2713 Saved \u201c' + name + '\u201d \u2014 ' +
+                                   Math.round((d.size||0)/1024) + ' KB', 'ok');
+                } else { _sessionStatus('\u26a0 ' + d.error, 'error'); }
+            }).catch(function(e){ _sessionStatus('\u26a0 ' + e.message, 'error'); });
+        } else {
+            var json;
+            try { json = JSON.stringify(entry); } catch(e) {
+                _sessionStatus('Serialisation error: ' + e.message, 'error'); return;
+            }
+            var bytes = json.length;
+            try { localStorage.setItem(_SESSION_KEY + ':' + name, json); } catch(e) {
+                _sessionStatus('Storage full (' + Math.round(bytes/1024) + ' KB). Use a store directory for large sessions.', 'error');
+                return;
+            }
+            var idx = _loadSessionIndex();
+            idx[name] = bytes;
+            _saveSessionIndex(idx);
+            _sessionRebuildSel();
+            document.getElementById('session-sel').value = name;
+            _sessionStatus('\u2713 Saved \u201c' + name + '\u201d \u2014 ' + Math.round(bytes/1024) + ' KB', 'ok');
+        }
+    }, 20);
+}
+
+function _sessionLoad() {
+    var sel  = document.getElementById('session-sel');
+    var name = sel.value;
+    if (!name) { _sessionStatus('Select a session to load.', 'error'); return; }
+    _sessionStatus('Loading\u2026', 'ok');
+    if (_storeDir) {
+        fetch('/store/load?dir=' + encodeURIComponent(_storeDir) + '&file=' + encodeURIComponent(name + '.fdv_session'))
+            .then(function(r){ return r.json(); }).then(function(d) {
+                if (!d.success) { _sessionStatus('\u26a0 ' + d.error, 'error'); return; }
+                setTimeout(function(){ _sessionApplyEntry(d.data, name); }, 20);
+            }).catch(function(e){ _sessionStatus('\u26a0 ' + e.message, 'error'); });
+    } else {
+        setTimeout(function() {
+            var raw;
+            try { raw = localStorage.getItem(_SESSION_KEY + ':' + name); } catch(e) { raw = null; }
+            if (!raw) { _sessionStatus('Session \u201c' + name + '\u201d not found.', 'error'); return; }
+            var entry;
+            try { entry = JSON.parse(raw); } catch(e) { _sessionStatus('Corrupt session data.', 'error'); return; }
+            _sessionApplyEntry(entry, name);
+        }, 20);
+    }
+}
+
+function _sessionDelete() {
+    var sel  = document.getElementById('session-sel');
+    var name = sel.value || (document.getElementById('session-name').value || '').trim();
+    if (!name) { _sessionStatus('Select or type a session name to delete.', 'error'); return; }
+    if (_storeDir) {
+        fetch('/store/delete', { method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ dir: _storeDir, file: name + '.fdv_session' })
+        }).then(function(r){ return r.json(); }).then(function(d) {
+            if (d.success) { _sessionRebuildSel(); _sessionStatus('\u2713 Deleted \u201c' + name + '\u201d', 'ok'); }
+            else { _sessionStatus('\u26a0 ' + d.error, 'error'); }
+        }).catch(function(e){ _sessionStatus('\u26a0 ' + e.message, 'error'); });
+    } else {
+        var idx = _loadSessionIndex();
+        if (!idx[name]) { _sessionStatus('Session \u201c' + name + '\u201d not found.', 'error'); return; }
+        try { localStorage.removeItem(_SESSION_KEY + ':' + name); } catch(e) {}
+        delete idx[name];
+        _saveSessionIndex(idx);
+        _sessionRebuildSel();
+        _sessionStatus('\u2713 Deleted \u201c' + name + '\u201d', 'ok');
+    }
 }
 
 /* Brief label shown in plot-status when any interval is active */
@@ -1576,9 +2293,74 @@ function _splitChartKey(row, colIdx, rxStr) {
     var raw = row[colIdx] != null ? String(row[colIdx]) : '(blank)';
     if (!rxStr) return raw;
     try {
-        var m = new RegExp(rxStr).exec(raw);
-        return m ? (m[1] !== undefined ? m[1] : m[0]) : '(no match)';
+        var rx = new RegExp(rxStr, 'g');
+        var matches = [], m;
+        while ((m = rx.exec(raw)) !== null) {
+            /* Use first capture group if present, else full match */
+            matches.push(m[1] !== undefined ? m[1] : m[0]);
+            /* Guard against zero-width matches causing infinite loop */
+            if (m[0].length === 0) { rx.lastIndex++; }
+        }
+        if (!matches.length) return '(no match)';
+        return matches.length === 1 ? matches[0] : matches;
     } catch(e) { return raw; }
+}
+
+/* Returns always an array of tile-keys for a row.
+   Multi-value rules:
+   1. No regex  → split raw cell value on commas  ("A,B" → ["A","B"])
+   2. Regex with capture groups → join ALL defined capture groups with ", "
+      e.g. PGTYPE_(..)_.*_BL_(\d) on "BLAH_PGTYPE_UP_BLAH_BL_3" → ["UP, 3"]
+   3. Regex matches multiple times in one cell → one key per match occurrence
+      e.g. (DUT\d+) on "DUT1 DUT2" → ["DUT1", "DUT2"]
+   4. No capture groups → use full match string as key */
+function _splitChartKeys(row, colIdx, rxStr) {
+    if (colIdx < 0) return ['(blank)'];
+    var raw = row[colIdx] != null ? String(row[colIdx]) : '(blank)';
+
+    if (!rxStr) {
+        /* No regex: split on comma and trim each part */
+        var parts = raw.split(',').map(function(s){ return s.trim(); })
+                                  .filter(function(s){ return s.length > 0; });
+        return parts.length > 0 ? parts : ['(blank)'];
+    }
+
+    /* Regex: collect all global matches, joining capture groups per match */
+    try {
+        var rx = new RegExp(rxStr, 'g');
+        var keys = [], m;
+        while ((m = rx.exec(raw)) !== null) {
+            /* Collect all defined capture groups (m[1], m[2], …) */
+            var groups = [];
+            for (var g = 1; g < m.length; g++) {
+                if (m[g] !== undefined) groups.push(m[g]);
+            }
+            /* Key = captured groups joined, or full match if no groups */
+            keys.push(groups.length > 0 ? groups.join(', ') : m[0]);
+            /* Guard against zero-width matches causing infinite loop */
+            if (m[0].length === 0) { rx.lastIndex++; }
+        }
+        return keys.length > 0 ? keys : ['(no match)'];
+    } catch(e) { return [raw]; }
+}
+
+/* Extracts a single color/group key from a raw string value using a regex.
+   Like _splitChartKeys but returns ONE compound key string (not an array).
+   Multiple capture groups are joined with ", " — e.g. PGTYPE_(..)_.*_BL_(\d)
+   on "BLAH_PGTYPE_UP_BLAH_BL_3" → "UP, 3".
+   No regex: returns raw value.
+   No capture groups: returns full match. */
+function _extractGroupKey(raw, rxStr) {
+    if (!rxStr) return raw || '(blank)';
+    try {
+        var m = new RegExp(rxStr).exec(raw);
+        if (!m) return '(no match)';
+        var groups = [];
+        for (var g = 1; g < m.length; g++) {
+            if (m[g] !== undefined) groups.push(m[g]);
+        }
+        return groups.length > 0 ? groups.join(', ') : m[0];
+    } catch(e) { return raw || '(blank)'; }
 }
 
 function _applySplitLayout() {
@@ -1610,11 +2392,7 @@ function _buildTileChart(canvas, ct, tileData, xCol, yCol, xRx, yRx, colCol, col
     function colorKey(pt) {
         if (!colCol) return '(all)';
         var raw = pt.group != null ? String(pt.group) : '(blank)';
-        if (!colorRx) return raw;
-        try {
-            var m = new RegExp(colorRx).exec(raw);
-            return m ? (m[1] !== undefined ? m[1] : m[0]) : '(no match)';
-        } catch(e) { return raw; }
+        return _extractGroupKey(raw, colorRx);
     }
 
     function innerSplitKey(pt) {
@@ -1630,6 +2408,55 @@ function _buildTileChart(canvas, ct, tileData, xCol, yCol, xRx, yRx, colCol, col
     var ann = { annotations: _buildAnnotations() };
     var xScale = getAxisScale('x-min', 'x-max', 'x-step');
     var yScale = getAxisScale('y-min', 'y-max', 'y-step');
+
+    /* ── Box & Whisker tile ── */
+    if (ct === 'boxplot') {
+        if (!tileData.length) return null;
+        /* For boxplot tiles: X col = category (stored in pt.group), Y col = numeric (pt.y).
+           Use seen-set for O(1) dedup; cap at MAX_GROUPS to stay responsive. */
+        var _maxGrpEl2 = document.getElementById('bp-maxgroups');
+        var MAX_BP = (_maxGrpEl2 && parseInt(_maxGrpEl2.value) >= 1) ? parseInt(_maxGrpEl2.value) : 200;
+        var bpGroups = {}, bpOrder = [], bpSeen = {}, bpCapped = false;
+        tileData.forEach(function(pt) {
+            var g = pt.group != null ? String(pt.group) : xCol;
+            if (!bpSeen[g]) {
+                if (Object.keys(bpSeen).length >= MAX_BP) { bpCapped = true; return; }
+                bpSeen[g] = true;
+                bpGroups[g] = [];
+                bpOrder.push(g);
+            }
+            bpGroups[g].push(pt.y);
+        });
+        var bpKeys = bpOrder.slice()
+                            .sort(function(a,b){ return a.localeCompare(b,undefined,{numeric:true}); });
+        if (!bpKeys.length) return null;
+        var bpDataset = [{
+            label: yCol,
+            data: bpKeys.map(function(k){ return bpGroups[k]; }),
+            backgroundColor: bpKeys.map(function(_,i){ return PALETTE[i%PALETTE.length]+'55'; }),
+            borderColor:     bpKeys.map(function(_,i){ return PALETTE[i%PALETTE.length]; }),
+            borderWidth: 1.5,
+            outlierBackgroundColor: bpKeys.map(function(_,i){ return PALETTE[i%PALETTE.length]; }),
+            outlierRadius: 3,
+            medianColor: '#fff'
+        }];
+        return new Chart(ctx, {
+            type: 'boxplot',
+            data: { labels: bpKeys, datasets: bpDataset },
+            options: {
+                animation: false, responsive: true, maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false }, annotation: ann,
+                    tooltip: { enabled: false, external: _htmlTooltip }
+                },
+                scales: {
+                    x: { type: 'category', title: { display: true, text: xCol },
+                         ticks: { maxRotation: 45, autoSkip: false }, offset: true },
+                    y: Object.assign({ title: { display: true, text: yCol } }, yScale)
+                }
+            }
+        });
+    }
 
     /* ── Histogram tile ── */
     if (ct === 'histogram') {
@@ -1789,35 +2616,56 @@ function _drawSplitCharts() {
                     colCol || null, xRx, isXOnly ? null : yRx,
                     iv.xLo, iv.xHi, isXOnly ? '' : iv.yLo, isXOnly ? '' : iv.yHi);
 
-    /* Attach split key to each point using raw filteredIndices */
+    /* Attach split key to each point using raw filteredIndices.
+       A row may match MULTIPLE keys (multi-capture regex) — it goes into each bucket. */
     var buckets = {};
     var bucketOrder = [];
+    var xi_bp = ct === 'boxplot' ? currentHeaders.indexOf(xCol) : -1;
+    var yi_bp = ct === 'boxplot' ? currentHeaders.indexOf(yCol) : -1;
+    var yLo_bp = (ct === 'boxplot' && iv.yLo !== '') ? parseFloat(iv.yLo) : NaN;
+    var yHi_bp = (ct === 'boxplot' && iv.yHi !== '') ? parseFloat(iv.yHi) : NaN;
     for (var r = 0; r < filteredIndices.length; r++) {
         var row = allRows[filteredIndices[r]];
-        var key = _splitChartKey(row, scIdx, scRx) || '(blank)';
-        if (!buckets[key]) { buckets[key] = []; bucketOrder.push(key); }
-        /* match point index — points were built in same filteredIndices order,
-           but readFilteredFromMemory skips non-numeric rows; re-extract here */
-        var xv = extractNum(row[currentHeaders.indexOf(xCol)] != null
-            ? String(row[currentHeaders.indexOf(xCol)]) : '', xRx);
-        var yv = isXOnly ? xv : extractNum(
-            row[currentHeaders.indexOf(yCol)] != null
-            ? String(row[currentHeaders.indexOf(yCol)]) : '', yRx);
-        if (xv === null || (!isXOnly && yv === null)) continue;
-        var xLo = iv.xLo !== '' ? parseFloat(iv.xLo) : NaN;
-        var xHi = iv.xHi !== '' ? parseFloat(iv.xHi) : NaN;
-        var yLo = (!isXOnly && iv.yLo !== '') ? parseFloat(iv.yLo) : NaN;
-        var yHi = (!isXOnly && iv.yHi !== '') ? parseFloat(iv.yHi) : NaN;
-        if (!isNaN(xLo) && xv < xLo) continue;
-        if (!isNaN(xHi) && xv > xHi) continue;
-        if (!isNaN(yLo) && yv < yLo) continue;
-        if (!isNaN(yHi) && yv > yHi) continue;
-        var gi  = colCol   ? currentHeaders.indexOf(colCol)   : -1;
-        var si  = splitCol ? currentHeaders.indexOf(splitCol) : -1;
-        var pt  = { x: xv, y: isXOnly ? xv : yv };
-        if (gi >= 0 && row[gi] != null)  pt.group      = String(row[gi]);
-        if (si >= 0 && row[si] != null)  pt.splitGroup = String(row[si]);
-        buckets[key].push(pt);
+        var keys_r = _splitChartKeys(row, scIdx, scRx).map(function(k){ return k || '(blank)'; });
+        keys_r.forEach(function(key) {
+            if (!buckets[key]) { buckets[key] = []; bucketOrder.push(key); }
+
+            if (ct === 'boxplot') {
+                /* X is category string, Y is numeric */
+                if (yi_bp < 0) return;
+                var bpYraw = row[yi_bp] != null ? String(row[yi_bp]) : '';
+                var bpYv   = extractNum(bpYraw, yRx);
+                if (bpYv === null) return;
+                if (!isNaN(yLo_bp) && bpYv < yLo_bp) return;
+                if (!isNaN(yHi_bp) && bpYv > yHi_bp) return;
+                var bpXraw = xi_bp >= 0 && row[xi_bp] != null ? String(row[xi_bp]).trim() : xCol;
+                var bpPt = { x: 0, y: bpYv, group: bpXraw };
+                buckets[key].push(bpPt);
+                return;
+            }
+
+            /* Non-boxplot: re-extract numeric values for this row */
+            var xv2 = extractNum(row[currentHeaders.indexOf(xCol)] != null
+                ? String(row[currentHeaders.indexOf(xCol)]) : '', xRx);
+            var yv2 = isXOnly ? xv2 : extractNum(
+                row[currentHeaders.indexOf(yCol)] != null
+                ? String(row[currentHeaders.indexOf(yCol)]) : '', yRx);
+            if (xv2 === null || (!isXOnly && yv2 === null)) return;
+            var xLo2 = iv.xLo !== '' ? parseFloat(iv.xLo) : NaN;
+            var xHi2 = iv.xHi !== '' ? parseFloat(iv.xHi) : NaN;
+            var yLo2 = (!isXOnly && iv.yLo !== '') ? parseFloat(iv.yLo) : NaN;
+            var yHi2 = (!isXOnly && iv.yHi !== '') ? parseFloat(iv.yHi) : NaN;
+            if (!isNaN(xLo2) && xv2 < xLo2) return;
+            if (!isNaN(xHi2) && xv2 > xHi2) return;
+            if (!isNaN(yLo2) && yv2 < yLo2) return;
+            if (!isNaN(yHi2) && yv2 > yHi2) return;
+            var gi2  = colCol   ? currentHeaders.indexOf(colCol)   : -1;
+            var si2  = splitCol ? currentHeaders.indexOf(splitCol) : -1;
+            var pt2  = { x: xv2, y: isXOnly ? xv2 : yv2 };
+            if (gi2 >= 0 && row[gi2] != null)  pt2.group      = String(row[gi2]);
+            if (si2 >= 0 && row[si2] != null)  pt2.splitGroup = String(row[si2]);
+            buckets[key].push(pt2);
+        });
     }
 
     var keys    = bucketOrder.filter(function(k,i){ return bucketOrder.indexOf(k)===i; })
@@ -1853,9 +2701,12 @@ function _drawSplitCharts() {
         if (inst) _splitInsts.push(inst);
     });
 
-    var filtNote = hasActiveFilters() ? ' \u2014 filtered' : '';
-    status.textContent = keys.length + ' charts \u00b7 ' + res.points.length.toLocaleString() +
-        ' pts \u00b7 split by ' + scCol + (scRx ? ' ['+scRx+']' : '') + filtNote + _intervalNote();
+    var filtNote  = hasActiveFilters() ? ' \u2014 filtered' : '';
+    var totalBucketed = keys.reduce(function(s, k){ return s + (buckets[k]||[]).length; }, 0);
+    status.textContent = keys.length + ' tiles \u00b7 ' + totalBucketed.toLocaleString() +
+        ' pts \u00b7 split by ' + scCol + (scRx ? ' ['+scRx+']' : '') +
+        ' \u2192 keys: ' + (keys.length <= 8 ? keys.join(', ') : keys.slice(0,8).join(', ') + '\u2026') +
+        filtNote + _intervalNote();
     _spinStop();
 }
 
@@ -1910,17 +2761,35 @@ function _htmlTooltip(context) {
     el.style.top  = y + 'px';
 }
 
+function _onSplitColChange() {
+    /* When split-chart column/regex changes, destroy existing split tiles
+       and prompt the user to press Plot — do NOT auto-render (can be slow). */
+    var scCol  = document.getElementById('split-chart-col').value;
+    var status = document.getElementById('plot-status');
+    _destroySplitCharts();
+    if (chartInst) { chartInst.destroy(); chartInst = null; }
+    if (scCol) {
+        status.textContent = '\u23f3 Split-chart ready \u2014 press \u25b6 Plot to render';
+        status.style.color = '#17a2b8';
+    } else {
+        status.textContent = '';
+        status.style.color = '#555';
+    }
+}
+
 function _spinStart() {
     var s = document.getElementById('plot-spinner');
     if (s) s.style.display = 'block';
+    var st = document.getElementById('plot-status');
+    if (st) st.style.color = '#555';
     var btn = document.getElementById('plot-btn');
-    if (btn) { btn.disabled = true; btn.style.opacity = '0.6'; }
+    if (btn) { btn.style.opacity = '0.6'; btn.style.cursor = 'wait'; }
 }
 function _spinStop() {
     var s = document.getElementById('plot-spinner');
     if (s) s.style.display = 'none';
     var btn = document.getElementById('plot-btn');
-    if (btn) { btn.disabled = false; btn.style.opacity = ''; }
+    if (btn) { btn.style.opacity = ''; btn.style.cursor = ''; }
 }
 
 function drawPlot() {
@@ -1932,38 +2801,47 @@ function drawPlot() {
     var singleArea = document.getElementById('plot-area');
     var gridArea   = document.getElementById('plot-grid');
 
-    if (scCol) {
-        /* Split-chart mode */
-        if (chartInst) { chartInst.destroy(); chartInst = null; }
-        singleArea.style.display = 'none';
-        _drawSplitCharts();
-        return;
-    }
+    try {
+        if (scCol) {
+            /* Split-chart mode */
+            if (chartInst) { chartInst.destroy(); chartInst = null; }
+            singleArea.style.display = 'none';
+            _drawSplitCharts();
+            return;
+        }
 
-    /* Single-chart mode */
-    _destroySplitCharts();
-    gridArea.style.display   = 'none';
-    singleArea.style.display = '';
-    /* Restore a sensible floor if the handle had previously collapsed it */
-    if (!singleArea.style.minHeight || parseInt(singleArea.style.minHeight) < 80) {
-        singleArea.style.minHeight = '220px';
-        singleArea.style.maxHeight = '340px';
-    }
+        /* Single-chart mode */
+        _destroySplitCharts();
+        gridArea.style.display   = 'none';
+        singleArea.style.display = '';
+        /* Restore a sensible floor if the handle had previously collapsed it */
+        if (!singleArea.style.minHeight || parseInt(singleArea.style.minHeight) < 80) {
+            singleArea.style.minHeight = '220px';
+            singleArea.style.maxHeight = '340px';
+        }
 
-    var ct = document.getElementById('chart-type').value;
-    if (ct === 'histogram') { drawHistogram(); return; }
-    if (ct === 'cumproba')  { drawCumProba();  return; }
-    drawScatterLine();
+        var ct = document.getElementById('chart-type').value;
+        if (ct === 'histogram') { drawHistogram(); return; }
+        if (ct === 'cumproba')  { drawCumProba();  return; }
+        if (ct === 'boxplot')   { drawBoxPlot();   return; }
+        drawScatterLine();
+    } catch(e) {
+        var st = document.getElementById('plot-status');
+        if (st) st.textContent = 'Plot error: ' + e.message;
+        _spinStop();
+    }
 }
 
 /* ── Scatter / Line ──────────────────────────────────────────────────── */
 function drawScatterLine() {
-    var xCol    = document.getElementById('x-col').value;
-    var yCol    = document.getElementById('y-col').value;
-    var xRx     = document.getElementById('x-regex').value.trim();
-    var yRx     = document.getElementById('y-regex').value.trim();
-    var colCol  = document.getElementById('color-col').value;
-    var colorRx = document.getElementById('color-regex').value.trim();
+    var xCol     = document.getElementById('x-col').value;
+    var yCol     = document.getElementById('y-col').value;
+    var xRx      = document.getElementById('x-regex').value.trim();
+    var yRx      = document.getElementById('y-regex').value.trim();
+    var colCol   = document.getElementById('color-col').value;
+    var colorRx  = document.getElementById('color-regex').value.trim();
+    var legendCol = document.getElementById('legend-col').value;
+    var legendRx  = document.getElementById('legend-regex').value.trim();
     var ct      = document.getElementById('chart-type').value;
     var xLog    = document.getElementById('x-log').checked;
     var yLog    = document.getElementById('y-log').checked;
@@ -1977,6 +2855,22 @@ function drawScatterLine() {
     var points  = res.points;
     var skipped = res.skipped;
 
+    /* Legend-by: extract label from legend column (does not affect grouping) */
+    var legendIdx = legendCol ? currentHeaders.indexOf(legendCol) : -1;
+    var legendRxRe = null;
+    if (legendIdx >= 0 && legendRx) {
+        try { legendRxRe = new RegExp(legendRx); } catch(e) { legendRxRe = null; }
+    }
+    function legendKey(pt) {
+        if (legendIdx < 0) return '';
+        var row = allRows[pt._ri];
+        if (!row) return '';
+        var raw = row[legendIdx] != null ? String(row[legendIdx]) : '';
+        if (!legendRxRe) return raw;
+        var m = legendRxRe.exec(raw);
+        return m ? (m[1] !== undefined ? m[1] : m[0]) : '';
+    }
+
     var MAX_PTS = 10000, plotPts = points, sampled = false;
     if (points.length > MAX_PTS && ct !== 'line') {
         var step = Math.ceil(points.length / MAX_PTS);
@@ -1987,18 +2881,17 @@ function drawScatterLine() {
     function colorKey(pt) {
         if (!colCol) return '(all)';
         var raw = pt.group != null ? String(pt.group) : '(blank)';
-        if (!colorRx) return raw;
-        try {
-            var m = new RegExp(colorRx).exec(raw);
-            return m ? (m[1] !== undefined ? m[1] : m[0]) : '(no match)';
-        } catch(e) { return raw; }
+        return _extractGroupKey(raw, colorRx);
     }
 
     var groups = {};
+    var useLegend = legendIdx >= 0;
     plotPts.forEach(function(pt) {
         var g = colorKey(pt);
         if (!groups[g]) groups[g] = [];
-        groups[g].push({ x: pt.x, y: pt.y });
+        var dp = { x: pt.x, y: pt.y };
+        if (useLegend) dp._lbl = legendKey(pt);
+        groups[g].push(dp);
     });
 
     var datasets = Object.keys(groups).map(function(g, i) {
@@ -2013,6 +2906,7 @@ function drawScatterLine() {
         };
     });
 
+    /* Feed the global fdvPointLabels plugin: array-of-arrays, one per dataset */
     if (chartInst) chartInst.destroy();
     chartInst = new Chart(document.getElementById('plot-canvas').getContext('2d'), {
         type: 'scatter',
@@ -2048,12 +2942,17 @@ function drawScatterLine() {
             }
         }
     });
+    /* Attach per-instance label data AFTER chart creation */
+    _setPointLabels(chartInst, useLegend
+        ? datasets.map(function(ds){ return ds.data.map(function(dp){ return dp._lbl || ''; }); })
+        : null);
 
     var filtNote = hasActiveFilters() ? ' \u2014 filtered' : '';
     var sampNote = sampled
         ? ' (sampled ' + plotPts.length.toLocaleString() + '/' + points.length.toLocaleString() + ')' : '';
+    var lblNote  = useLegend ? ' \u00b7 labelled by ' + legendCol : '';
     status.textContent = points.length.toLocaleString() + ' pts' + sampNote +
-        (skipped > 0 ? ', ' + skipped + ' skipped' : '') + filtNote + _intervalNote();
+        (skipped > 0 ? ', ' + skipped + ' skipped' : '') + filtNote + lblNote + _intervalNote();
     _spinStop();
 }
 
@@ -2062,8 +2961,12 @@ function autoBins(n) { return Math.min(200, Math.max(2, Math.ceil(Math.log2(n) +
 
 function buildHistBins(values, nBins) {
     if (!values.length) return { bins: [], counts: [], width: 0 };
-    var mn = Math.min.apply(null, values);
-    var mx = Math.max.apply(null, values);
+    /* Use loop instead of Math.min/max.apply — avoids stack overflow on large arrays */
+    var mn = values[0], mx = values[0];
+    for (var i = 1; i < values.length; i++) {
+        if (values[i] < mn) mn = values[i];
+        if (values[i] > mx) mx = values[i];
+    }
     var w  = (mx - mn || 1) / nBins;
     var bins = [], counts = [];
     for (var i = 0; i < nBins; i++) { bins.push(mn + i*w + w/2); counts.push(0); }
@@ -2097,6 +3000,7 @@ function drawHistogram() {
     var h = buildHistBins(vals, nBins);
 
     if (chartInst) chartInst.destroy();
+    try {
     chartInst = new Chart(document.getElementById('plot-canvas').getContext('2d'), {
         type: 'bar',
         data: {
@@ -2138,6 +3042,11 @@ function drawHistogram() {
             }
         }
     });
+    } catch(e) {
+        status.textContent = 'Chart error: ' + e.message;
+        _spinStop();
+        return;
+    }
 
     var filtNote = hasActiveFilters() ? ' \u2014 filtered' : '';
     status.textContent = vals.length.toLocaleString() + ' values, ' + nBins + ' bins' + autoLbl +
@@ -2149,8 +3058,10 @@ function drawHistogram() {
 function drawCumProba() {
     var xCol     = document.getElementById('x-col').value;
     var xRx      = document.getElementById('x-regex').value.trim();
-    var splitCol = document.getElementById('split-col').value;
-    var splitRx  = document.getElementById('split-regex').value.trim();
+    var splitCol = document.getElementById('color-col').value;
+    var splitRx  = document.getElementById('color-regex').value.trim();
+    var legendCol = document.getElementById('legend-col').value;
+    var legendRx  = document.getElementById('legend-regex').value.trim();
     var xLog     = document.getElementById('x-log').checked;
     var status   = document.getElementById('plot-status');
 
@@ -2167,26 +3078,22 @@ function drawCumProba() {
     function groupKey(pt) {
         if (!splitCol) return '(all)';
         var raw = pt.group != null ? String(pt.group) : '(blank)';
-        if (!splitRx) return raw;
-        try {
-            var m = new RegExp(splitRx).exec(raw);
-            return m ? (m[1] !== undefined ? m[1] : m[0]) : '(no match)';
-        } catch(e) { return raw; }
+        return _extractGroupKey(raw, splitRx);
     }
 
     var groups = {};
     points.forEach(function(pt) {
         var g = groupKey(pt);
         if (!groups[g]) groups[g] = [];
-        groups[g].push(pt.x);
+        groups[g].push({ v: pt.x, _ri: pt._ri });
     });
 
     var datasets = Object.keys(groups).sort().map(function(g, i) {
-        var vals = groups[g].slice().sort(function(a,b){ return a-b; });
-        var n    = vals.length;
+        var sorted = groups[g].slice().sort(function(a,b){ return a.v - b.v; });
+        var n      = sorted.length;
         return {
             label: g + ' (n=' + n.toLocaleString() + ')',
-            data:  vals.map(function(v, j){ return { x: v, y: (j+1)/n }; }),
+            data:  sorted.map(function(item, j){ return { x: item.v, y: (j+1)/n, _ri: item._ri }; }),
             borderColor:     PALETTE[i % PALETTE.length],
             backgroundColor: 'transparent',
             borderWidth: 1.8,
@@ -2196,7 +3103,28 @@ function drawCumProba() {
         };
     });
 
+    /* Legend-by: extract label from legend column (does not affect grouping) */
+    var legendIdx = legendCol ? currentHeaders.indexOf(legendCol) : -1;
+    var legendRxRe = null;
+    if (legendIdx >= 0 && legendRx) {
+        try { legendRxRe = new RegExp(legendRx); } catch(e) { legendRxRe = null; }
+    }
+    function cumLegendKey(ri) {
+        if (legendIdx < 0 || ri == null) return '';
+        var row = allRows[ri];
+        if (!row) return '';
+        var raw = row[legendIdx] != null ? String(row[legendIdx]) : '';
+        if (!legendRxRe) return raw;
+        var m = legendRxRe.exec(raw);
+        return m ? (m[1] !== undefined ? m[1] : m[0]) : '';
+    }
+    var useLegend = legendIdx >= 0;
+
+    /* Feed the global fdvPointLabels plugin: build labels per dataset in same order as datasets[] */
+    /* Done after datasets are built — see below */
+
     if (chartInst) chartInst.destroy();
+    try {
     chartInst = new Chart(document.getElementById('plot-canvas').getContext('2d'), {
         type: 'scatter',
         data: { datasets: datasets },
@@ -2229,14 +3157,146 @@ function drawCumProba() {
             }
         }
     });
+    } catch(e) { status.textContent = 'Chart error: ' + e.message; _spinStop(); return; }
+
+    /* Attach per-instance label data and redraw so labels appear */
+    _setPointLabels(chartInst, useLegend
+        ? datasets.map(function(ds){ return ds.data.map(function(dp){ return cumLegendKey(dp._ri) || ''; }); })
+        : null);
 
     var filtNote  = hasActiveFilters() ? ' \u2014 filtered' : '';
     var nGroups   = Object.keys(groups).length;
     var splitDesc = splitCol
-        ? (' split by ' + splitCol + (splitRx ? ' [' + splitRx + ']' : '')) : '';
+        ? (' grouped by ' + splitCol + (splitRx ? ' [' + splitRx + ']' : '')) : '';
+    var lblNote   = useLegend ? ' \u00b7 labelled by ' + legendCol : '';
     status.textContent = points.length.toLocaleString() + ' values' + splitDesc +
         (nGroups > 1 ? ', ' + nGroups + ' groups' : '') +
-        (skipped > 0 ? ', ' + skipped + ' skipped' : '') + filtNote + _intervalNote();
+        (skipped > 0 ? ', ' + skipped + ' skipped' : '') + filtNote + lblNote + _intervalNote();
+    _spinStop();
+}
+
+/* ── Box & Whisker ───────────────────────────────────────────────────── */
+function drawBoxPlot() {
+    /* X col = category (string groups on X axis)
+       Y col = numeric values whose distribution is shown per group */
+    var xCol    = document.getElementById('x-col').value;
+    var yCol    = document.getElementById('y-col').value;
+    var yRx     = document.getElementById('y-regex').value.trim();
+    var status  = document.getElementById('plot-status');
+
+    if (!currentCsvId) { status.textContent = 'Session expired \u2014 re-parse file.'; _spinStop(); return; }
+    if (!yCol)         { status.textContent = 'Select a Y column for the numeric values.'; _spinStop(); return; }
+    status.textContent = 'Computing\u2026';
+
+    var xi = currentHeaders.indexOf(xCol);
+    var yi = currentHeaders.indexOf(yCol);
+    if (xi < 0 || yi < 0) { status.textContent = 'Column not found.'; _spinStop(); return; }
+
+    var iv  = _getIntervals();
+    var yLo = iv.yLo !== '' ? parseFloat(iv.yLo) : NaN;
+    var yHi = iv.yHi !== '' ? parseFloat(iv.yHi) : NaN;
+
+    /* Safety cap: more than this many groups will freeze the browser */
+    var _maxGrpEl = document.getElementById('bp-maxgroups');
+    var MAX_GROUPS = (_maxGrpEl && parseInt(_maxGrpEl.value) >= 1) ? parseInt(_maxGrpEl.value) : 200;
+
+    /* Collect {group (string from xCol), value (numeric from yCol)} pairs.
+       Use a seen-set for O(1) dedup instead of indexOf (avoids O(n²) hang). */
+    var groups = {}, order = [], seen = {}, skipped = 0, total = 0, capped = false;
+    for (var r = 0; r < filteredIndices.length; r++) {
+        var row  = allRows[filteredIndices[r]];
+        var xRaw = row[xi] != null ? String(row[xi]).trim() : '(blank)';
+        var yRaw = row[yi] != null ? String(row[yi]) : '';
+        var yv   = extractNum(yRaw, yRx);
+        if (yv === null) { skipped++; continue; }
+        if (!isNaN(yLo) && yv < yLo) { skipped++; continue; }
+        if (!isNaN(yHi) && yv > yHi) { skipped++; continue; }
+        total++;
+        /* Group label */
+        var g = (xCol === yCol) ? yCol : xRaw;
+        if (!seen[g]) {
+            if (Object.keys(seen).length >= MAX_GROUPS) { capped = true; continue; }
+            seen[g] = true;
+            groups[g] = [];
+            order.push(g);
+        }
+        groups[g].push(yv);
+    }
+
+    var keys = order.slice()
+                    .sort(function(a,b){ return a.localeCompare(b, undefined, {numeric:true}); });
+
+    if (!keys.length) { status.textContent = 'No numeric values in column ' + yCol; _spinStop(); return; }
+
+    var datasets = [{
+        label: yCol,
+        data: keys.map(function(k){ return groups[k]; }),
+        backgroundColor: keys.map(function(_,i){ return PALETTE[i % PALETTE.length] + '55'; }),
+        borderColor:     keys.map(function(_,i){ return PALETTE[i % PALETTE.length]; }),
+        borderWidth: 1.5,
+        outlierBackgroundColor: keys.map(function(_,i){ return PALETTE[i % PALETTE.length]; }),
+        outlierRadius: 3,
+        medianColor: '#fff'
+    }];
+
+    if (chartInst) chartInst.destroy();
+    try {
+    chartInst = new Chart(document.getElementById('plot-canvas').getContext('2d'), {
+        type: 'boxplot',
+        data: { labels: keys, datasets: datasets },
+        options: {
+            animation: false,
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    enabled: false,
+                    external: _htmlTooltip,
+                    callbacks: {
+                        title: function(items) {
+                            return items.length ? 'Group: ' + items[0].label : '';
+                        },
+                        label: function(item) {
+                            var s = item.raw;
+                            if (!s) return '';
+                            return [
+                                'n='   + (s.items ? s.items.length : '?'),
+                                'min=' + (s.min    != null ? s.min.toFixed(4)    : '?'),
+                                'Q1='  + (s.q1     != null ? s.q1.toFixed(4)     : '?'),
+                                'med=' + (s.median != null ? s.median.toFixed(4) : '?'),
+                                'Q3='  + (s.q3     != null ? s.q3.toFixed(4)     : '?'),
+                                'max=' + (s.max    != null ? s.max.toFixed(4)    : '?')
+                            ];
+                        }
+                    }
+                },
+                annotation: { annotations: _buildAnnotations() }
+            },
+            scales: {
+                x: {
+                    type: 'category',
+                    title: { display: true, text: xCol },
+                    ticks: {
+                        maxRotation: 45,
+                        minRotation: 0,
+                        autoSkip: false
+                    },
+                    offset: true
+                },
+                y: Object.assign({
+                    title: { display: true, text: yCol + (yRx ? ' [' + yRx + ']' : '') }
+                }, getAxisScale('y-min', 'y-max', 'y-step'))
+            }
+        }
+    });
+    } catch(e) { status.textContent = 'Chart error: ' + e.message; _spinStop(); return; }
+
+    var filtNote = hasActiveFilters() ? ' \u2014 filtered' : '';
+    var capNote  = capped ? ' \u26a0 capped at ' + MAX_GROUPS + ' groups \u2014 use X regex to reduce' : '';
+    status.textContent = total.toLocaleString() + ' values, '
+        + keys.length + ' group' + (keys.length !== 1 ? 's' : '')
+        + (skipped > 0 ? ', ' + skipped + ' skipped' : '') + filtNote + _intervalNote() + capNote;
     _spinStop();
 }
 
@@ -2300,14 +3360,16 @@ function _buildChartPrompt(ct, xCol, yCol, xRx, yRx, points, groupStats) {
             if (g.ySt) lines.push('    Y: ' + _fmtStats(g.ySt));
         });
         lines.push('');
-        lines.push('TASK: Provide a focused analysis of this single chart. '
-            + 'Compare the groups above — highlight differences in distribution, '
-            + 'spread, central tendency and any outliers. Be concise (max 150 words).');
+        lines.push('TASK: Analyse this chart. Respond in bullet points (•). '
+            + 'Cover every group — for each: distribution shape, central tendency, '
+            + 'spread, and outliers with concrete numbers. '
+            + 'Then add a final bullet comparing the groups. Be complete, do not truncate.');
     } else {
         lines.push('');
-        lines.push('TASK: Provide a focused analysis of this single chart. '
-            + 'Describe the distribution shape, central tendency, spread and any '
-            + 'notable outliers. Be concise (max 120 words).');
+        lines.push('TASK: Analyse this chart. Respond in bullet points (•). '
+            + 'Cover: distribution shape, central tendency (mean/median), '
+            + 'spread (std/range), and any notable outliers — each as its own bullet. '
+            + 'Use concrete numbers. Be complete, do not truncate.');
     }
 
     /* Marker lines */
@@ -2365,13 +3427,12 @@ function _buildSplitPrompt(ct, xCol, yCol, xRx, yRx, scCol, tileStats) {
     }
 
     lines.push('');
-    lines.push('TASK: Perform a comparative analysis across all ' + tileStats.length
-        + ' groups split by "' + scCol + '". '
-        + 'For each group discuss its distribution relative to the others. '
-        + 'Identify which group(s) stand out, rank them if meaningful, and explain '
-        + 'key differences in spread, median and extremes. '
-        + 'If marker lines are present, note which groups cross or approach them. '
-        + 'Be concise and engineering-focused (max 200 words total).');
+    lines.push('TASK: Comparative analysis — ' + tileStats.length
+        + ' groups split by "' + scCol + '". Respond in bullet points (•). '
+        + 'Dedicate at least one bullet per group with its key stats. '
+        + 'Add bullets for: ranking by median/mean, widest spread, extreme outliers, '
+        + 'and any groups crossing marker lines. '
+        + 'Be complete — cover every group, do not truncate.');
 
     var af = buildActiveFilters();
     if (af.length) lines.push('Active column filters: ' + af.length + ' column(s)');
@@ -2423,15 +3484,13 @@ function _buildCrossPrompt(ct, xCol, yCol, xRx, yRx, scCol, colorCol, crossStats
     }
 
     lines.push('');
-    lines.push('TASK: Perform a two-dimensional comparative analysis.');
-    lines.push('  1. Within each tile (' + scCol + '): compare the color groups ('
-        + colorCol + ') — which color group has the highest/lowest values, widest spread?');
-    lines.push('  2. Across tiles (' + scCol + '): for each color group, how does it change '
-        + 'from tile to tile? Are certain color groups consistently higher or more variable?');
-    lines.push('  3. Summarise the strongest interaction: which combination of ['
-        + scCol + ' \u00d7 ' + colorCol + '] is the outlier overall?');
-    lines.push('  If marker lines are present, note which combinations cross or approach them.');
-    lines.push('  Be concise and engineering-focused (max 250 words total).');
+    lines.push('TASK: Two-dimensional comparative analysis. Respond in bullet points (•). '
+        + 'Within each tile (' + scCol + '): one bullet per color group (' + colorCol + ') '
+        + 'with its key stats and how it compares to the others in that tile. '
+        + 'Across tiles: one bullet per color group noting how it changes tile-to-tile. '
+        + 'Final bullet: the single [' + scCol + ' \u00d7 ' + colorCol + '] combination '
+        + 'that stands out most and why. Note any marker line crossings. '
+        + 'Be complete — cover every group and tile, do not truncate.');
 
     var af = buildActiveFilters();
     if (af.length) lines.push('Active column filters: ' + af.length + ' column(s)');
@@ -2530,11 +3589,7 @@ function _analyzeChart() {
     function inChartKey(rawVal) {
         if (!inChartGroupCol) return null;
         var raw = rawVal != null ? String(rawVal) : '(blank)';
-        if (!inChartGroupRx) return raw;
-        try {
-            var m = new RegExp(inChartGroupRx).exec(raw);
-            return m ? (m[1] !== undefined ? m[1] : m[0]) : '(no match)';
-        } catch(e) { return raw; }
+        return _extractGroupKey(raw, inChartGroupRx);
     }
 
     /* Bucket rows by a given key function → returns {keys[], buckets{key→[{x,y}]}} */

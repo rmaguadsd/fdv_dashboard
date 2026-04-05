@@ -23,6 +23,9 @@ function Stop-ByPort([int]$Port) {
 
 Stop-ByPort -Port $Port
 
+# Also restart the fdv_chart.py server on port 5058
+Stop-ByPort -Port 5058
+
 if ($StopOnly) {
   Write-Output "StopOnly specified; exiting after stopping listeners on port $Port."
   exit 0
@@ -68,3 +71,22 @@ else {
   Write-Output "Venv python not found. Falling back to 'py -3.12'"
   Start-Process -FilePath "py" -ArgumentList "-3.12", $script -WorkingDirectory $workDir -RedirectStandardOutput $logFile -RedirectStandardError $errFile -WindowStyle Hidden
 }
+
+# ── Restart fdv_chart.py (port 5058) ───────────────────────────────────
+$chartScript = Join-Path $PSScriptRoot "fdv_chart\fdv_chart.py"
+$chartWorkDir = Join-Path $PSScriptRoot "fdv_chart"
+$chartLog = Join-Path $logDir "fdv_chart_server.log"
+$chartErr = Join-Path $logDir "fdv_chart_server.err.log"
+"[restart] Launching fdv_chart.py at $(Get-Date -Format o)" | Out-File -FilePath $chartLog -Append -Encoding utf8
+
+if ($python -and (Test-Path $python)) {
+  Write-Output "Starting fdv_chart.py via venv: $python $chartScript"
+  Start-Process -FilePath $python -ArgumentList $chartScript -WorkingDirectory $chartWorkDir -RedirectStandardOutput $chartLog -RedirectStandardError $chartErr -WindowStyle Hidden
+}
+else {
+  Write-Output "Starting fdv_chart.py via py -3.12"
+  $pyExe = (Get-Command py -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source)
+  if (-not $pyExe) { $pyExe = "py" }
+  Start-Process -FilePath $pyExe -ArgumentList "-3.12", $chartScript -WorkingDirectory $chartWorkDir -RedirectStandardOutput $chartLog -RedirectStandardError $chartErr -WindowStyle Hidden
+}
+Write-Output "fdv_chart.py server (re)started on port 5058"
