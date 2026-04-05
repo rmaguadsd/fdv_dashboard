@@ -257,6 +257,14 @@
         }
         #analyze-btn:hover    { background: #520dc2; }
         #analyze-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+        /* ── Plot spinner ───────────────────────────────────────── */
+        #plot-spinner {
+            display: none; width: 15px; height: 15px; flex-shrink: 0;
+            border: 2px solid #ced4da; border-top-color: #007bff;
+            border-radius: 50%; animation: _spin 0.7s linear infinite;
+            margin-left: 6px;
+        }
+        @keyframes _spin { to { transform: rotate(360deg); } }
         /* Model selector */
         #llm-model-sel {
             padding: 3px 5px; font-size: 0.82em;
@@ -524,7 +532,8 @@
         <label id="y-step-label" style="margin-left:2px;font-size:0.82em;color:#555"
                title="Y-axis tick interval (stepSize). Leave blank for auto.">Y&nbsp;tick:
             <input type="number" id="y-step" placeholder="auto" min="0" style="width:66px;font-size:0.9em"></label>
-        <span id="plot-status" style="color:#555;font-size:0.85em;margin-left:6px"></span>
+        <div id="plot-spinner" title="Plotting\u2026"></div>
+        <span id="plot-status" style="color:#555;font-size:0.85em;margin-left:4px"></span>
         <!-- Data interval filter row -->
         <div id="iv-row" style="width:100%;display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:3px">
             <span style="font-size:0.82em;color:#6f42c1;font-weight:bold">&#x25a3;&nbsp;Data&nbsp;interval:</span>
@@ -589,7 +598,7 @@
         <div class="panel-grip" id="analysis-grip" title="Drag to resize"></div>
         <div id="analysis-panel-body">
         <div class="an-header">
-            <strong>&#129504; AI Summary &mdash; llama3 (Ollama)</strong>
+            <strong id="analysis-panel-title">&#129504; AI Summary &mdash; llama3 (Ollama)</strong>
             <button class="an-close"
                     onclick="document.getElementById('analysis-panel').style.display='none'"
                     title="Close">&#10006;</button>
@@ -1771,7 +1780,7 @@ function _drawSplitCharts() {
     var status    = document.getElementById('plot-status');
 
     var scIdx = currentHeaders.indexOf(scCol);
-    if (scIdx < 0) { status.textContent = 'Split-chart column not found.'; return; }
+    if (scIdx < 0) { status.textContent = 'Split-chart column not found.'; _spinStop(); return; }
 
     /* Collect all points, bucket by split key */
     var isXOnly = ct === 'histogram' || ct === 'cumproba';
@@ -1847,6 +1856,7 @@ function _drawSplitCharts() {
     var filtNote = hasActiveFilters() ? ' \u2014 filtered' : '';
     status.textContent = keys.length + ' charts \u00b7 ' + res.points.length.toLocaleString() +
         ' pts \u00b7 split by ' + scCol + (scRx ? ' ['+scRx+']' : '') + filtNote + _intervalNote();
+    _spinStop();
 }
 
 /* ── Custom HTML tooltip handler (shared by all charts) ──────────────────
@@ -1900,8 +1910,22 @@ function _htmlTooltip(context) {
     el.style.top  = y + 'px';
 }
 
+function _spinStart() {
+    var s = document.getElementById('plot-spinner');
+    if (s) s.style.display = 'block';
+    var btn = document.getElementById('plot-btn');
+    if (btn) { btn.disabled = true; btn.style.opacity = '0.6'; }
+}
+function _spinStop() {
+    var s = document.getElementById('plot-spinner');
+    if (s) s.style.display = 'none';
+    var btn = document.getElementById('plot-btn');
+    if (btn) { btn.disabled = false; btn.style.opacity = ''; }
+}
+
 function drawPlot() {
     _updatePlotCoverBanner();
+    _spinStart();
     var scCol = document.getElementById('split-chart-col').value;
 
     /* Toggle between single-chart and split-chart modes */
@@ -1945,7 +1969,7 @@ function drawScatterLine() {
     var yLog    = document.getElementById('y-log').checked;
     var status  = document.getElementById('plot-status');
 
-    if (!currentCsvId) { status.textContent = 'Session expired \u2014 re-parse file.'; return; }
+    if (!currentCsvId) { status.textContent = 'Session expired \u2014 re-parse file.'; _spinStop(); return; }
     status.textContent = 'Computing\u2026';
 
     var iv      = _getIntervals();
@@ -2030,6 +2054,7 @@ function drawScatterLine() {
         ? ' (sampled ' + plotPts.length.toLocaleString() + '/' + points.length.toLocaleString() + ')' : '';
     status.textContent = points.length.toLocaleString() + ' pts' + sampNote +
         (skipped > 0 ? ', ' + skipped + ' skipped' : '') + filtNote + _intervalNote();
+    _spinStop();
 }
 
 /* ── Histogram ───────────────────────────────────────────────────────── */
@@ -2056,7 +2081,7 @@ function drawHistogram() {
     var binsEl = document.getElementById('hist-bins');
     var status = document.getElementById('plot-status');
 
-    if (!currentCsvId) { status.textContent = 'Session expired \u2014 re-parse file.'; return; }
+    if (!currentCsvId) { status.textContent = 'Session expired \u2014 re-parse file.'; _spinStop(); return; }
     status.textContent = 'Computing\u2026';
 
     var iv      = _getIntervals();
@@ -2064,7 +2089,7 @@ function drawHistogram() {
     var vals    = res.points.map(function(p){ return p.x; });
     var skipped = res.skipped;
 
-    if (!vals.length) { status.textContent = 'No numeric values in column ' + xCol; return; }
+    if (!vals.length) { status.textContent = 'No numeric values in column ' + xCol; _spinStop(); return; }
 
     var userBins = parseInt(binsEl.value);
     var nBins    = userBins >= 2 ? userBins : autoBins(vals.length);
@@ -2117,6 +2142,7 @@ function drawHistogram() {
     var filtNote = hasActiveFilters() ? ' \u2014 filtered' : '';
     status.textContent = vals.length.toLocaleString() + ' values, ' + nBins + ' bins' + autoLbl +
         (skipped > 0 ? ', ' + skipped + ' skipped' : '') + filtNote + _intervalNote();
+    _spinStop();
 }
 
 /* ── Cumulative Probability ──────────────────────────────────────────── */
@@ -2128,7 +2154,7 @@ function drawCumProba() {
     var xLog     = document.getElementById('x-log').checked;
     var status   = document.getElementById('plot-status');
 
-    if (!currentCsvId) { status.textContent = 'Session expired \u2014 re-parse file.'; return; }
+    if (!currentCsvId) { status.textContent = 'Session expired \u2014 re-parse file.'; _spinStop(); return; }
     status.textContent = 'Computing\u2026';
 
     var iv      = _getIntervals();
@@ -2136,7 +2162,7 @@ function drawCumProba() {
     var points  = res.points;
     var skipped = res.skipped;
 
-    if (!points.length) { status.textContent = 'No numeric values in column ' + xCol; return; }
+    if (!points.length) { status.textContent = 'No numeric values in column ' + xCol; _spinStop(); return; }
 
     function groupKey(pt) {
         if (!splitCol) return '(all)';
@@ -2211,6 +2237,7 @@ function drawCumProba() {
     status.textContent = points.length.toLocaleString() + ' values' + splitDesc +
         (nGroups > 1 ? ', ' + nGroups + ' groups' : '') +
         (skipped > 0 ? ', ' + skipped + ' skipped' : '') + filtNote + _intervalNote();
+    _spinStop();
 }
 
 /* ================================================================
@@ -2755,8 +2782,11 @@ function _selectedModel() {
 }
 
 function _updateChatBanner() {
-    var el = document.getElementById('chat-drawer-title');
-    if (el) el.textContent = '\u{1F4AC} Chat with ' + _selectedModel() + ' \u2014 ask about your data';
+    var model   = _selectedModel();
+    var chat    = document.getElementById('chat-drawer-title');
+    var analyse = document.getElementById('analysis-panel-title');
+    if (chat)    chat.textContent    = '\uD83D\uDCAC Chat with ' + model + ' \u2014 ask about your data';
+    if (analyse) analyse.textContent = '\uD83E\uDDE0 AI Summary \u2014 ' + model + ' (Ollama)';
 }
 
 /* Populate dropdown from /models (GET — Ollama's pulled model list) */
@@ -2830,7 +2860,8 @@ async function _pullSelectedModel() {
 
 /* Load model list once DOM is ready */
 document.addEventListener('DOMContentLoaded', function() {
-    _loadModelList();
+    _loadModelList();       /* populates dropdown + calls _updateChatBanner() */
+    _updateChatBanner();    /* set both banners immediately with the default value */
 });
 
 /* ── Chat session ────────────────────────────────────────────────────── */
