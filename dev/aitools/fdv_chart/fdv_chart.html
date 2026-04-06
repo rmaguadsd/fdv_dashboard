@@ -270,6 +270,37 @@
         }
         #analyze-btn:hover    { background: #520dc2; }
         #analyze-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+        /* Summary button */
+        #summary-btn {
+            padding: 4px 10px; background: #20c997; color: #fff;
+            border: none; border-radius: 4px; cursor: pointer;
+            font-size: 0.88em; white-space: nowrap; margin-left: 0;
+        }
+        #summary-btn:hover    { background: #17a589; }
+        #summary-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+        /* Summary table */
+        .summary-table {
+            border-collapse: collapse; width: 100%; font-size: 1em; margin-top: 4px;
+        }
+        .summary-table th {
+            background: #20c997; color: #fff; padding: 4px 8px;
+            text-align: center; white-space: nowrap; position: sticky; top: 0; z-index: 1;
+        }
+        .summary-table th:first-child { text-align: left; min-width: 120px; }
+        .summary-table td {
+            padding: 3px 8px; border-bottom: 1px solid #d4f5ec;
+            text-align: right; white-space: nowrap; font-family: monospace; font-size: 1em;
+        }
+        .summary-table td:first-child {
+            text-align: left; font-family: sans-serif; font-weight: bold;
+            color: #0a6b52; max-width: 240px; overflow: hidden; text-overflow: ellipsis;
+        }
+        .summary-table tr:nth-child(even) td { background: #f0faf7; }
+        .summary-table tr:hover td { background: #d4f5ec; }
+        .summary-table tfoot td {
+            background: #c3ede2; font-weight: bold; color: #065040;
+            border-top: 2px solid #20c997;
+        }
         /* ── Plot spinner ───────────────────────────────────────── */
         #plot-spinner {
             display: none; width: 15px; height: 15px; flex-shrink: 0;
@@ -581,26 +612,85 @@
         <button id="plot-btn" class="btn" style="padding:4px 12px" onclick="drawPlot()">&#9654; Plot</button>
         <button id="save-png-btn" class="btn sec" style="padding:4px 10px" onclick="_savePlotPng()"
                 title="Save the current chart as a PNG image">&#128247; Save PNG</button>
-        <!-- Axis title overrides row -->
+        <!-- Axis labels / XY-scale / Data-interval — combined row -->
         <div style="width:100%;display:flex;align-items:center;gap:6px;flex-wrap:wrap;
                     border-top:1px dashed #ced4da;padding-top:4px;margin-top:2px">
+            <!-- Axis labels -->
             <span style="font-size:0.82em;color:#495057;font-weight:bold">&#128218;&nbsp;Axis&nbsp;labels:</span>
-            <label style="font-size:0.82em;color:#495057">X&nbsp;title:
-                <input type="text" id="x-title-override" placeholder="(auto from column)" autocomplete="off"
-                       style="width:160px" title="Override the X axis label shown on the chart"></label>
-            <label style="font-size:0.82em;color:#495057">Y&nbsp;title:
-                <input type="text" id="y-title-override" placeholder="(auto from column)" autocomplete="off"
-                       style="width:160px" title="Override the Y axis label shown on the chart"></label>
-            <button class="btn sec" style="padding:2px 8px;font-size:0.78em"
+            <label style="font-size:0.82em;color:#495057">X:
+                <input type="text" id="x-title-override" placeholder="(auto)" autocomplete="off"
+                       style="width:120px" title="Override the X axis label shown on the chart"></label>
+            <label style="font-size:0.82em;color:#495057">Y:
+                <input type="text" id="y-title-override" placeholder="(auto)" autocomplete="off"
+                       style="width:120px" title="Override the Y axis label shown on the chart"></label>
+            <button class="btn sec" style="padding:2px 7px;font-size:0.78em"
                     onclick="document.getElementById('x-title-override').value='';
                              document.getElementById('y-title-override').value='';
                              drawPlot();"
-                    title="Reset axis labels to column names">&#10006;&nbsp;Reset</button>
+                    title="Reset axis labels to column names">&#10006;</button>
+            <!-- Divider -->
+            <span style="color:#ced4da;font-size:1.1em;margin:0 2px">|</span>
+            <!-- XY scale -->
+            <span style="font-size:0.82em;color:#555;font-weight:bold">Scale:</span>
+            <label style="font-size:0.82em;color:#555">
+                <input type="checkbox" id="x-log"> X&nbsp;log</label>
+            <label style="font-size:0.82em;color:#555">
+                <input type="checkbox" id="y-log"> Y&nbsp;log</label>
+            <label id="x-min-label" style="font-size:0.82em;color:#555">X&nbsp;min:
+                <input type="number" id="x-min" placeholder="auto" autocomplete="off" style="width:64px;font-size:0.9em"></label>
+            <label id="x-max-label" style="font-size:0.82em;color:#555">max:
+                <input type="number" id="x-max" placeholder="auto" autocomplete="off" style="width:64px;font-size:0.9em"></label>
+            <label id="y-min-label" style="font-size:0.82em;color:#555">Y&nbsp;min:
+                <input type="number" id="y-min" placeholder="auto" autocomplete="off" style="width:64px;font-size:0.9em"></label>
+            <label id="y-max-label" style="font-size:0.82em;color:#555">max:
+                <input type="number" id="y-max" placeholder="auto" autocomplete="off" style="width:64px;font-size:0.9em"></label>
+            <label id="x-step-label" style="font-size:0.82em;color:#555"
+                   title="X-axis tick interval (stepSize). Leave blank for auto.">X&nbsp;tick:
+                <input type="number" id="x-step" placeholder="auto" min="0" autocomplete="off" style="width:60px;font-size:0.9em"></label>
+            <label id="y-step-label" style="font-size:0.82em;color:#555"
+                   title="Y-axis tick interval (stepSize). Leave blank for auto.">Y&nbsp;tick:
+                <input type="number" id="y-step" placeholder="auto" min="0" autocomplete="off" style="width:60px;font-size:0.9em"></label>
+            <!-- Divider -->
+            <span style="color:#ced4da;font-size:1.1em;margin:0 2px">|</span>
+            <!-- Data interval -->
+            <span id="iv-row" style="display:contents">
+            <span style="font-size:0.82em;color:#6f42c1;font-weight:bold">&#x25a3;&nbsp;Interval:</span>
+            <label style="font-size:0.82em;color:#6f42c1">X&nbsp;from:
+                <input type="number" id="x-ivlo" placeholder="&minus;&infin;" autocomplete="off" style="width:68px;font-size:0.9em" class="iv-input"
+                       title="Exclude data points where X < this value" onchange="drawPlot()"></label>
+            <label style="font-size:0.82em;color:#6f42c1">to:
+                <input type="number" id="x-ivhi" placeholder="+&infin;" autocomplete="off" style="width:68px;font-size:0.9em" class="iv-input"
+                       title="Exclude data points where X > this value" onchange="drawPlot()"></label>
+            <label id="y-ivlo-label" style="font-size:0.82em;color:#6f42c1">Y&nbsp;from:
+                <input type="number" id="y-ivlo" placeholder="&minus;&infin;" autocomplete="off" style="width:68px;font-size:0.9em" class="iv-input"
+                       title="Exclude data points where Y < this value" onchange="drawPlot()"></label>
+            <label id="y-ivhi-label" style="font-size:0.82em;color:#6f42c1">to:
+                <input type="number" id="y-ivhi" placeholder="+&infin;" autocomplete="off" style="width:68px;font-size:0.9em" class="iv-input"
+                       title="Exclude data points where Y > this value" onchange="drawPlot()"></label>
+            <button class="btn sec" style="padding:2px 7px;font-size:0.78em" onclick="_clearIntervals()"
+                    title="Reset all interval filters">&#10006;</button>
+            </span>
+            <!-- spinner / status stay inline -->
+            <div id="plot-spinner" title="Plotting\u2026"></div>
+            <span id="plot-status" style="color:#555;font-size:0.85em;margin-left:4px"></span>
         </div>
         <button id="analyze-btn" type="button" onclick="_analyzeChart()"
                 title="Ask the selected Ollama model to summarise the current chart">
             &#129504; Analyze
         </button>
+        <button id="summary-btn" type="button" onclick="_showSummary()"
+                title="Show instant statistical summary table for each group in the current chart">
+            &#128202; Summary
+        </button>
+        <select id="summary-font-size" title="Summary table font size"
+                style="font-size:0.8em;padding:2px 4px;border-radius:3px;border:1px solid #20c997;
+                       color:#0a6b52;cursor:pointer;margin-left:0">
+            <option value="0.72em">XS</option>
+            <option value="0.82em">S</option>
+            <option value="0.92em" selected>M</option>
+            <option value="1.05em">L</option>
+            <option value="1.2em">XL</option>
+        </select>
         <select id="llm-model-sel" title="Select Ollama model — click &#8615; to pull a new one"
                 onchange="_updateChatBanner()">
             <option value="llama3">llama3</option>
@@ -614,44 +704,6 @@
                 title="Open a multi-turn chat with the selected Ollama model">
             &#128172; Chat
         </button>
-        <label style="margin-left:8px;font-size:0.82em;color:#555">
-            <input type="checkbox" id="x-log"> X&nbsp;log</label>
-        <label style="margin-left:4px;font-size:0.82em;color:#555">
-            <input type="checkbox" id="y-log"> Y&nbsp;log</label>
-        <label id="x-min-label" style="margin-left:8px;font-size:0.82em;color:#555">X&nbsp;min:
-            <input type="number" id="x-min" placeholder="auto" autocomplete="off" style="width:70px;font-size:0.9em"></label>
-        <label id="x-max-label" style="margin-left:2px;font-size:0.82em;color:#555">max:
-            <input type="number" id="x-max" placeholder="auto" autocomplete="off" style="width:70px;font-size:0.9em"></label>
-        <label id="y-min-label" style="margin-left:8px;font-size:0.82em;color:#555">Y&nbsp;min:
-            <input type="number" id="y-min" placeholder="auto" autocomplete="off" style="width:70px;font-size:0.9em"></label>
-        <label id="y-max-label" style="margin-left:2px;font-size:0.82em;color:#555">max:
-            <input type="number" id="y-max" placeholder="auto" autocomplete="off" style="width:70px;font-size:0.9em"></label>
-        <label id="x-step-label" style="margin-left:8px;font-size:0.82em;color:#555"
-               title="X-axis tick interval (stepSize). Leave blank for auto.">X&nbsp;tick:
-            <input type="number" id="x-step" placeholder="auto" min="0" autocomplete="off" style="width:66px;font-size:0.9em"></label>
-        <label id="y-step-label" style="margin-left:2px;font-size:0.82em;color:#555"
-               title="Y-axis tick interval (stepSize). Leave blank for auto.">Y&nbsp;tick:
-            <input type="number" id="y-step" placeholder="auto" min="0" autocomplete="off" style="width:66px;font-size:0.9em"></label>
-        <div id="plot-spinner" title="Plotting\u2026"></div>
-        <span id="plot-status" style="color:#555;font-size:0.85em;margin-left:4px"></span>
-        <!-- Data interval filter row -->
-        <div id="iv-row" style="width:100%;display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:3px">
-            <span style="font-size:0.82em;color:#6f42c1;font-weight:bold">&#x25a3;&nbsp;Data&nbsp;interval:</span>
-            <label style="font-size:0.82em;color:#6f42c1">X&nbsp;from:
-                <input type="number" id="x-ivlo" placeholder="&minus;&infin;" autocomplete="off" style="width:72px;font-size:0.9em" class="iv-input"
-                       title="Exclude data points where X < this value" onchange="drawPlot()"></label>
-            <label style="font-size:0.82em;color:#6f42c1">to:
-                <input type="number" id="x-ivhi" placeholder="+&infin;" autocomplete="off" style="width:72px;font-size:0.9em" class="iv-input"
-                       title="Exclude data points where X > this value" onchange="drawPlot()"></label>
-            <label id="y-ivlo-label" style="font-size:0.82em;color:#6f42c1;margin-left:8px">Y&nbsp;from:
-                <input type="number" id="y-ivlo" placeholder="&minus;&infin;" autocomplete="off" style="width:72px;font-size:0.9em" class="iv-input"
-                       title="Exclude data points where Y < this value" onchange="drawPlot()"></label>
-            <label id="y-ivhi-label" style="font-size:0.82em;color:#6f42c1">to:
-                <input type="number" id="y-ivhi" placeholder="+&infin;" autocomplete="off" style="width:72px;font-size:0.9em" class="iv-input"
-                       title="Exclude data points where Y > this value" onchange="drawPlot()"></label>
-            <button class="btn sec" style="padding:2px 8px;font-size:0.78em" onclick="_clearIntervals()"
-                    title="Reset all interval filters">&#10006;&nbsp;Clear&nbsp;interval</button>
-        </div>
         <!-- Marker lines row -->
         <div id="marker-row" style="width:100%;display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:3px">
             <span style="font-size:0.82em;color:#e83e8c;font-weight:bold">&#x2015;&nbsp;Markers:</span>
@@ -3712,6 +3764,181 @@ function _renderAnalysisTiles(results) {
         block.appendChild(lbl);
         block.appendChild(body);
         el.appendChild(block);
+    });
+}
+
+/* ── Summary table ──────────────────────────────────────────────────── */
+var _summaryRows = null, _summaryIsXOnly = false;
+var _summaryXLabel = '', _summaryYLabel = '', _summaryGroupDim = '';
+
+function _showSummary() {
+    var panel  = document.getElementById('analysis-panel');
+    var textEl = document.getElementById('analysis-text');
+    panel.style.display = 'flex';
+
+    if (!currentCsvId || !filteredIndices.length) {
+        textEl.innerHTML = '<span style="color:#e67e00">&#9888; No data — parse a file first.</span>';
+        return;
+    }
+    var ct       = document.getElementById('chart-type').value;
+    var xCol     = document.getElementById('x-col').value;
+    var yCol     = document.getElementById('y-col').value;
+    var xRx      = document.getElementById('x-regex').value.trim();
+    var yRx      = document.getElementById('y-regex').value.trim();
+    var colCol   = document.getElementById('color-col').value;
+    var colorRx  = document.getElementById('color-regex').value.trim();
+    var scCol    = document.getElementById('split-chart-col').value;
+    var scRx     = document.getElementById('split-chart-rx').value.trim();
+    var splitCol = document.getElementById('split-col').value;
+    var splitRx  = document.getElementById('split-regex').value.trim();
+    var isXOnly  = (ct === 'histogram' || ct === 'cumproba');
+    var showY    = !isXOnly;
+    var iv       = _getIntervals();
+    var inGroupCol = isXOnly ? (splitCol || colCol) : colCol;
+    var inGroupRx  = isXOnly ? (splitCol ? splitRx : colorRx) : colorRx;
+
+    function bucketRows(keyFn) {
+        var buckets = {}, order = [];
+        var xLo = iv.xLo !== '' ? parseFloat(iv.xLo) : NaN;
+        var xHi = iv.xHi !== '' ? parseFloat(iv.xHi) : NaN;
+        var yLo = (!isXOnly && iv.yLo !== '') ? parseFloat(iv.yLo) : NaN;
+        var yHi = (!isXOnly && iv.yHi !== '') ? parseFloat(iv.yHi) : NaN;
+        var xi  = currentHeaders.indexOf(xCol);
+        var yi  = isXOnly ? -1 : currentHeaders.indexOf(yCol);
+        for (var ri = 0; ri < filteredIndices.length; ri++) {
+            var row = allRows[filteredIndices[ri]];
+            var xv  = extractNum(row[xi] != null ? String(row[xi]) : '', xRx);
+            var yv  = isXOnly ? xv : extractNum(row[yi] != null ? String(row[yi]) : '', yRx);
+            if (xv === null || (!isXOnly && yv === null)) continue;
+            if (!isNaN(xLo) && xv < xLo) continue;
+            if (!isNaN(xHi) && xv > xHi) continue;
+            if (!isNaN(yLo) && yv < yLo) continue;
+            if (!isNaN(yHi) && yv > yHi) continue;
+            var key = keyFn(row) || '(all)';
+            if (!buckets[key]) { buckets[key] = []; order.push(key); }
+            buckets[key].push({ x: xv, y: isXOnly ? xv : yv });
+        }
+        var seen = {};
+        var keys = order.filter(function(k) {
+            if (seen[k]) return false; seen[k] = true; return true;
+        }).sort(function(a, b) { return a.localeCompare(b, undefined, { numeric: true }); });
+        return { keys: keys, buckets: buckets };
+    }
+
+    var rows, groupDim;
+    if (scCol) {
+        var scIdx = currentHeaders.indexOf(scCol);
+        if (inGroupCol) {
+            var gcIdx = currentHeaders.indexOf(inGroupCol);
+            groupDim = scCol + ' \u00d7 ' + inGroupCol;
+            rows = bucketRows(function(row) {
+                var tk = _extractGroupKey(row[scIdx] != null ? String(row[scIdx]) : '', scRx);
+                var ck = _extractGroupKey(row[gcIdx] != null ? String(row[gcIdx]) : '', inGroupRx);
+                return tk + ' \u00d7 ' + ck;
+            });
+        } else {
+            groupDim = scCol + (scRx ? ' [' + scRx + ']' : '');
+            rows = bucketRows(function(row) {
+                return _extractGroupKey(row[scIdx] != null ? String(row[scIdx]) : '', scRx);
+            });
+        }
+    } else if (inGroupCol) {
+        var gcIdx2 = currentHeaders.indexOf(inGroupCol);
+        groupDim = inGroupCol + (inGroupRx ? ' [' + inGroupRx + ']' : '');
+        rows = bucketRows(function(row) {
+            return _extractGroupKey(row[gcIdx2] != null ? String(row[gcIdx2]) : '', inGroupRx);
+        });
+    } else {
+        groupDim = '(all data)';
+        rows = bucketRows(function() { return '(all)'; });
+    }
+
+    var xLabel = _axisXTitle(xCol + (xRx ? ' [' + xRx + ']' : ''));
+    var yLabel = showY ? _axisYTitle(yCol + (yRx ? ' [' + yRx + ']' : '')) : '';
+    var f4 = function(v) { return v == null ? '\u2014' : Number(v).toPrecision(5); };
+    var fi = function(v) { return v == null ? '\u2014' : Math.round(v).toLocaleString(); };
+    var fsSel = document.getElementById('summary-font-size');
+    var fontSize = fsSel ? fsSel.value : '0.92em';
+
+    function buildTable(dim, getter) {
+        var t = '<div style="font-weight:bold;color:#0a6b52;font-size:0.8em;margin:6px 0 2px">'
+              + escHtml(dim) + '</div>';
+        t += '<div style="overflow-x:auto"><table class="summary-table"><thead><tr>';
+        t += '<th>' + escHtml(groupDim) + '</th>';
+        ['n','min','max','mean','std','p5','p25','median','p75','p95'].forEach(function(c) {
+            t += '<th>' + c + '</th>';
+        });
+        t += '</tr></thead><tbody>';
+        var allVals = [];
+        rows.keys.forEach(function(key) {
+            var vals = rows.buckets[key].map(getter);
+            vals.forEach(function(v) { allVals.push(v); });
+            var st = _descStats(vals);
+            t += '<tr><td title="' + escHtml(key) + '">' + escHtml(key) + '</td>';
+            t += '<td>' + fi(st.n) + '</td><td>' + f4(st.min) + '</td><td>' + f4(st.max) + '</td>';
+            t += '<td>' + f4(st.mean) + '</td><td>' + f4(st.std) + '</td>';
+            t += '<td>' + f4(st.p5) + '</td><td>' + f4(st.p25) + '</td>';
+            t += '<td>' + f4(st.p50) + '</td><td>' + f4(st.p75) + '</td><td>' + f4(st.p95) + '</td></tr>';
+        });
+        if (rows.keys.length > 1 && allVals.length) {
+            var tot = _descStats(allVals);
+            t += '</tbody><tfoot><tr>';
+            t += '<td>\u03a3 ALL (' + rows.keys.length + ' groups)</td>';
+            t += '<td>' + fi(tot.n) + '</td><td>' + f4(tot.min) + '</td><td>' + f4(tot.max) + '</td>';
+            t += '<td>' + f4(tot.mean) + '</td><td>' + f4(tot.std) + '</td>';
+            t += '<td>' + f4(tot.p5) + '</td><td>' + f4(tot.p25) + '</td>';
+            t += '<td>' + f4(tot.p50) + '</td><td>' + f4(tot.p75) + '</td><td>' + f4(tot.p95) + '</td>';
+            t += '</tr></tfoot>';
+        }
+        t += '</table></div>';
+        return t;
+    }
+
+    var html = '<div style="font-size:' + fontSize + '">'
+             + '<div style="font-size:0.9em;color:#0a6b52;font-weight:bold;margin-bottom:4px">'
+             + '&#128202; Statistical Summary &mdash; ' + escHtml(ct)
+             + ' &mdash; ' + escHtml(xLabel);
+    if (showY) html += ' vs ' + escHtml(yLabel);
+    if (groupDim !== '(all data)') html += ' &mdash; grouped by ' + escHtml(groupDim);
+    html += '</div>';
+    html += buildTable(xLabel, function(pt) { return pt.x; });
+    if (showY) html += buildTable(yLabel, function(pt) { return pt.y; });
+    html += '<div style="margin-top:6px">'
+          + '<button onclick="_summaryCopyCSV()" style="padding:2px 8px;font-size:0.85em;'
+          + 'background:#20c997;color:#fff;border:none;border-radius:3px;cursor:pointer">'
+          + '&#128203; Copy as CSV</button>'
+          + '<span id="sum-copy-note" style="font-size:0.85em;color:#28a745;margin-left:6px"></span>'
+          + '</div>'
+          + '</div>';
+
+    textEl.innerHTML = html;
+    _summaryRows = rows; _summaryIsXOnly = isXOnly;
+    _summaryXLabel = xLabel; _summaryYLabel = yLabel; _summaryGroupDim = groupDim;
+}
+
+function _summaryCopyCSV() {
+    if (!_summaryRows) return;
+    var f4 = function(v) { return v == null ? '' : Number(v).toPrecision(5); };
+    var header = [_summaryGroupDim, 'dim', 'n', 'min', 'max', 'mean', 'std', 'p5', 'p25', 'median', 'p75', 'p95'].join(',');
+    var lines = [header];
+    function addRows(dim, getter) {
+        _summaryRows.keys.forEach(function(key) {
+            var st = _descStats(_summaryRows.buckets[key].map(getter));
+            lines.push(['"' + key.replace(/"/g, '""') + '"', '"' + dim + '"',
+                st.n, f4(st.min), f4(st.max), f4(st.mean), f4(st.std),
+                f4(st.p5), f4(st.p25), f4(st.p50), f4(st.p75), f4(st.p95)].join(','));
+        });
+    }
+    addRows(_summaryXLabel, function(pt) { return pt.x; });
+    if (!_summaryIsXOnly) addRows(_summaryYLabel, function(pt) { return pt.y; });
+    var csv = lines.join('\n');
+    navigator.clipboard.writeText(csv).then(function() {
+        var note = document.getElementById('sum-copy-note');
+        if (note) note.textContent = '\u2713 Copied ' + (lines.length - 1) + ' rows';
+    }).catch(function() {
+        var ta = document.createElement('textarea');
+        ta.value = csv; document.body.appendChild(ta); ta.select();
+        document.execCommand('copy'); document.body.removeChild(ta);
     });
 }
 
