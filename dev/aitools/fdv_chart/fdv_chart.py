@@ -1035,6 +1035,108 @@ class RequestHandler(BaseHTTPRequestHandler):
             except Exception as e:
                 _send_json(self, 200, {'success': False, 'error': str(e)})
 
+        elif self.path == '/chat_stream':
+            # Streaming chat via Server-Sent Events — tokens arrive as they are generated.
+            # Same session management as /chat but uses Ollama's stream=True native API.
+            try:
+                length  = int(self.headers.get('Content-Length', 0))
+                body    = json.loads(self.rfile.read(length).decode('utf-8'))
+                csv_id  = body.get('csv_id', 'default') or 'default'
+                message = body.get('message', '').strip()
+                context = body.get('context', '').strip()
+                model   = body.get('model', '').strip() or _LLM_MODEL
+                if not message:
+                    raise ValueError('Empty message')
+
+                # ── Build / update session history (same logic as /chat) ──
+                with _chat_sessions_lock:
+                    if csv_id not in _chat_sessions:
+                        sess = [{'role': 'system', 'content': _LLM_SYSTEM_PROMPT}]
+                        if context:
+                            sess.append({'role': 'system',
+                                         'content': 'Current chart context:\n' + context})
+                        _chat_sessions[csv_id] = sess
+                    elif context:
+                        sess = _chat_sessions[csv_id]
+                        replaced = False
+                        for i, m in enumerate(sess):
+                            if m['role'] == 'system' and (
+                                    m['content'].startswith('Current chart context:') or
+                                    m['content'].startswith('Updated chart context:')):
+                                sess[i] = {'role': 'system',
+                                           'content': 'Updated chart context:\n' + context}
+                                replaced = True
+                                break
+                        if not replaced:
+                            sess.append({'role': 'system',
+                                         'content': 'Updated chart context:\n' + context})
+
+                    _chat_sessions[csv_id].append({'role': 'user', 'content': message})
+
+                    # Trim history
+                    sess        = _chat_sessions[csv_id]
+                    system_msgs = [m for m in sess if m['role'] == 'system']
+                    conv_msgs   = [m for m in sess if m['role'] != 'system']
+                    max_conv    = _CHAT_MAX_TURNS * 2
+                    if len(conv_msgs) > max_conv:
+                        conv_msgs = conv_msgs[-max_conv:]
+                    _chat_sessions[csv_id] = system_msgs + conv_msgs
+                    messages_snapshot = list(_chat_sessions[csv_id])
+
+                # ── Send SSE headers ──
+                self.send_response(200)
+                self.send_header('Content-Type', 'text/event-stream; charset=utf-8')
+                self.send_header('Cache-Control', 'no-cache')
+                self.send_header('X-Accel-Buffering', 'no')
+                self.end_headers()
+
+                # ── Stream from Ollama native /api/chat ──
+                payload = json.dumps({
+                    'model':       model,
+                    'messages':    messages_snapshot,
+                    'stream':      True,
+                    'temperature': 0.3
+                }).encode('utf-8')
+                req = urllib.request.Request(
+                    _OLLAMA_BASE + '/api/chat',
+                    data=payload,
+                    headers={'Content-Type': 'application/json'}
+                )
+                full_reply = []
+                with urllib.request.urlopen(req, timeout=_LLM_TIMEOUT) as r:
+                    for raw_line in r:
+                        line = raw_line.decode('utf-8').strip()
+                        if not line:
+                            continue
+                        try:
+                            chunk = json.loads(line)
+                        except Exception:
+                            continue
+                        token = chunk.get('message', {}).get('content', '')
+                        if token:
+                            full_reply.append(token)
+                            data_str = json.dumps({'token': token})
+                            self.wfile.write(('data: ' + data_str + '\n\n').encode('utf-8'))
+                            self.wfile.flush()
+                        if chunk.get('done'):
+                            break
+
+                # Save assistant reply to history
+                reply = ''.join(full_reply)
+                with _chat_sessions_lock:
+                    _chat_sessions[csv_id].append({'role': 'assistant', 'content': reply})
+
+                self.wfile.write(b'data: {"done":true}\n\n')
+                self.wfile.flush()
+
+            except Exception as e:
+                try:
+                    err_data = json.dumps({'error': str(e)})
+                    self.wfile.write(('data: ' + err_data + '\n\n').encode('utf-8'))
+                    self.wfile.flush()
+                except Exception:
+                    pass
+
         elif self.path == '/pull':
             # Pull a model from Ollama registry — blocking until complete
             try:

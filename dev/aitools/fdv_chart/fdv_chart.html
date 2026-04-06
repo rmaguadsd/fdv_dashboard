@@ -4387,15 +4387,23 @@ function _chatSend() {
     }
 
     (function() {
-        /* Client-side timeout — abort if server takes longer than 200 s.
-           (Server has its own 180 s Ollama timeout; this is a safety net.) */
-        var controller = new AbortController();
-        var chatTimer  = setTimeout(function() { controller.abort(); }, 200000);
+        var controller  = new AbortController();
+        var chatTimer   = setTimeout(function() { controller.abort(); }, 200000);
+        var assistantEl = null;   /* bubble built incrementally on first token */
+        var fullText    = '';
 
-        fetch('/chat', {
-            method: 'POST',
+        function _finishStream() {
+            if (!fullText) { _chatSetBusy(false); return; }
+            var result = _chatExecMarkerCmds(fullText);
+            if (assistantEl) assistantEl.textContent = result.text;
+            result.actions.forEach(function(a) { _chatAddNote('\uD83D\uDCCC ' + a); });
+            _chatSetBusy(false);
+        }
+
+        fetch('/chat_stream', {
+            method:  'POST',
             headers: {'Content-Type': 'application/json'},
-            signal: controller.signal,
+            signal:  controller.signal,
             body: JSON.stringify({
                 csv_id:  currentCsvId || '__default__',
                 message: msg,
@@ -4403,21 +4411,46 @@ function _chatSend() {
                 model:   _selectedModel()
             })
         })
-        .then(function(r) { clearTimeout(chatTimer); return r.json(); })
-        .then(function(data) {
+        .then(function(r) {
+            clearTimeout(chatTimer);
             if (thinking && thinking.parentNode) thinking.parentNode.removeChild(thinking);
-            if (data.success) {
-                /* Execute any marker commands embedded in the reply */
-                var result = _chatExecMarkerCmds(data.reply);
-                _chatAddMsg('assistant', result.text);
-                /* Show a confirmation chip for each marker action */
-                result.actions.forEach(function(a) {
-                    _chatAddNote('\uD83D\uDCCC ' + a);
+
+            var reader  = r.body.getReader();
+            var decoder = new TextDecoder();
+            var buf     = '';
+
+            function pump() {
+                return reader.read().then(function(result) {
+                    if (result.done) { _finishStream(); return; }
+                    buf += decoder.decode(result.value, {stream: true});
+                    /* SSE chunks: "data: {...}\n\n" */
+                    var parts = buf.split('\n\n');
+                    buf = parts.pop();   /* keep incomplete trailing chunk */
+                    parts.forEach(function(part) {
+                        var line = part.trim();
+                        if (!line.startsWith('data:')) return;
+                        try {
+                            var d = JSON.parse(line.slice(5).trim());
+                            if (d.error) {
+                                _chatAddMsg('note', '\u26a0 Error: ' + d.error);
+                                _chatSetBusy(false); return;
+                            }
+                            if (d.done) { _finishStream(); return; }
+                            if (d.token) {
+                                fullText += d.token;
+                                if (!assistantEl) {
+                                    assistantEl = _chatAddMsg('assistant', fullText);
+                                } else {
+                                    assistantEl.textContent = fullText;
+                                    _chatScrollBottom();
+                                }
+                            }
+                        } catch(e) {}
+                    });
+                    return pump();
                 });
-            } else {
-                _chatAddMsg('note', '\u26a0 Error: ' + (data.error || 'unknown'));
             }
-            _chatSetBusy(false);
+            return pump();
         })
         .catch(function(err) {
             clearTimeout(chatTimer);
