@@ -679,6 +679,26 @@ class RequestHandler(BaseHTTPRequestHandler):
                     fpath = os.path.join(d, os.path.basename(fname))
                     if not os.path.isfile(fpath):
                         _send_json(self, 200, {'success': False, 'error': 'File not found: ' + fname})
+                    elif fname.endswith('.fdv_session'):
+                        # Stream session files directly — they can be very large (many rows).
+                        # Wrap the raw file bytes in {"success":true,"data": ... }
+                        # by writing the envelope prefix/suffix around the file content.
+                        file_size = os.path.getsize(fpath)
+                        prefix    = b'{"success":true,"data":'
+                        suffix    = b'}'
+                        total_len = len(prefix) + file_size + len(suffix)
+                        self.send_response(200)
+                        self.send_header('Content-Type', 'application/json; charset=utf-8')
+                        self.send_header('Content-Length', total_len)
+                        self.end_headers()
+                        self.wfile.write(prefix)
+                        with open(fpath, 'rb') as f:
+                            while True:
+                                chunk = f.read(256 * 1024)
+                                if not chunk:
+                                    break
+                                self.wfile.write(chunk)
+                        self.wfile.write(suffix)
                     else:
                         with open(fpath, 'r', encoding='utf-8') as f:
                             data = json.load(f)
@@ -1076,6 +1096,68 @@ class RequestHandler(BaseHTTPRequestHandler):
                     json.dump(data, f, ensure_ascii=False)
                 _send_json(self, 200, {'success': True, 'file': fname,
                                        'size': os.path.getsize(fpath)})
+            except Exception as e:
+                _send_json(self, 200, {'success': False, 'error': str(e)})
+
+        elif self.path == '/store/save_session':
+            # Save a full session file server-side using rows already in parsed_cache.
+            # Payload option A (normal parse): { dir, name, csv_id, snap, fname }
+            # Payload option B (re-save of loaded session): { dir, name, session_csv_id, snap, fname }
+            #   where session_csv_id was returned by /store/register_session at load time.
+            # The server writes { headers, rows, fname, snap } to disk — no JS serialisation limit.
+            try:
+                length  = int(self.headers.get('Content-Length', 0))
+                body    = json.loads(self.rfile.read(length).decode('utf-8'))
+                d       = (body.get('dir', '') or '').strip()
+                name    = (body.get('name', '') or '').strip()
+                csv_id  = (body.get('csv_id', '') or '').strip()
+                snap    = body.get('snap', {})
+                fname   = (body.get('fname', '') or name).strip()
+                if not d or not name or not csv_id:
+                    raise ValueError('dir, name and csv_id are required')
+                if not os.path.isdir(d):
+                    raise ValueError('Directory not found: ' + d)
+                cached = parsed_cache.get(csv_id)
+                if cached is None:
+                    raise ValueError('csv_id not found in cache — re-parse the file first')
+                entry = {
+                    'headers': cached['headers'],
+                    'rows':    cached['rows'],
+                    'fname':   fname,
+                    'snap':    snap,
+                }
+                fpath = os.path.join(d, os.path.basename(name) + '.fdv_session')
+                with open(fpath, 'w', encoding='utf-8') as f:
+                    json.dump(entry, f, ensure_ascii=False)
+                _send_json(self, 200, {'success': True, 'file': os.path.basename(fpath),
+                                       'size': os.path.getsize(fpath)})
+            except Exception as e:
+                _send_json(self, 200, {'success': False, 'error': str(e)})
+
+        elif self.path == '/store/register_session':
+            # Load a session file's rows+headers into parsed_cache and return a csv_id.
+            # Called by JS when a session is loaded so that re-saving works via /store/save_session.
+            # Body: { dir, file }
+            try:
+                length = int(self.headers.get('Content-Length', 0))
+                body   = json.loads(self.rfile.read(length).decode('utf-8'))
+                d      = (body.get('dir', '') or '').strip()
+                fname  = os.path.basename((body.get('file', '') or '').strip())
+                if not d or not fname:
+                    raise ValueError('dir and file are required')
+                fpath = os.path.join(d, fname)
+                if not os.path.isfile(fpath):
+                    raise ValueError('File not found: ' + fname)
+                with open(fpath, 'r', encoding='utf-8') as f:
+                    entry = json.load(f)
+                headers = entry.get('headers')
+                rows    = entry.get('rows')
+                if not headers or rows is None:
+                    raise ValueError('Session file missing headers or rows')
+                csv_id = 'csv_' + uuid.uuid4().hex[:8]
+                parsed_cache[csv_id] = {'headers': headers, 'rows': rows}
+                _send_json(self, 200, {'success': True, 'csv_id': csv_id,
+                                       'total_rows': len(rows), 'headers': headers})
             except Exception as e:
                 _send_json(self, 200, {'success': False, 'error': str(e)})
 

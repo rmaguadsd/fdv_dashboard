@@ -421,6 +421,7 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@sgratzl/chartjs-chart-boxplot@4.4.5/build/index.umd.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1/dist/chartjs-plugin-annotation.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
 </head>
 <body>
 <div id="chart-tooltip"></div>
@@ -578,6 +579,24 @@
         <label id="split-rx-label" style="margin-left:4px;display:none">Split&nbsp;regex:
             <input type="text" id="split-regex" placeholder="e.g. DUT(\d+)" autocomplete="off" style="width:110px"></label>
         <button id="plot-btn" class="btn" style="padding:4px 12px" onclick="drawPlot()">&#9654; Plot</button>
+        <button id="save-png-btn" class="btn sec" style="padding:4px 10px" onclick="_savePlotPng()"
+                title="Save the current chart as a PNG image">&#128247; Save PNG</button>
+        <!-- Axis title overrides row -->
+        <div style="width:100%;display:flex;align-items:center;gap:6px;flex-wrap:wrap;
+                    border-top:1px dashed #ced4da;padding-top:4px;margin-top:2px">
+            <span style="font-size:0.82em;color:#495057;font-weight:bold">&#128218;&nbsp;Axis&nbsp;labels:</span>
+            <label style="font-size:0.82em;color:#495057">X&nbsp;title:
+                <input type="text" id="x-title-override" placeholder="(auto from column)" autocomplete="off"
+                       style="width:160px" title="Override the X axis label shown on the chart"></label>
+            <label style="font-size:0.82em;color:#495057">Y&nbsp;title:
+                <input type="text" id="y-title-override" placeholder="(auto from column)" autocomplete="off"
+                       style="width:160px" title="Override the Y axis label shown on the chart"></label>
+            <button class="btn sec" style="padding:2px 8px;font-size:0.78em"
+                    onclick="document.getElementById('x-title-override').value='';
+                             document.getElementById('y-title-override').value='';
+                             drawPlot();"
+                    title="Reset axis labels to column names">&#10006;&nbsp;Reset</button>
+        </div>
         <button id="analyze-btn" type="button" onclick="_analyzeChart()"
                 title="Ask the selected Ollama model to summarise the current chart">
             &#129504; Analyze
@@ -1633,7 +1652,8 @@ function _recipeIds() {
         'hist-bins','bp-maxgroups',
         'x-log','y-log',
         'x-min','x-max','x-step','y-min','y-max','y-step',
-        'x-ivlo','x-ivhi','y-ivlo','y-ivhi'
+        'x-ivlo','x-ivhi','y-ivlo','y-ivhi',
+        'x-title-override','y-title-override'
     ];
 }
 
@@ -2031,27 +2051,13 @@ function _sessionRebuildSel() {
 
 /* Shared inner logic: apply a loaded session entry to the current state */
 function _sessionApplyEntry(entry, name) {
-    /* Lightweight store-dir session: no rows embedded — re-parse from path */
-    if (entry._noRows) {
-        document.getElementById('session-name').value = name;
-        if (entry.snap) {
-            /* Apply recipe: restores path-input, regex, filter mode, etc.
-               Column selectors are deferred via _pendingRecipeSnap until after parse. */
-            _recipeApply(entry.snap);
-        }
-        setTableInfo((entry.fname || name) + ' \u2014 re-parsing\u2026');
-        _sessionStatus('\u23f3 Settings restored for \u201c' + name + '\u201d \u2014 re-parsing file\u2026', 'ok');
-        /* Trigger a parse now that path-input is populated */
-        setTimeout(function() { parseFile(); }, 80);
-        return;
-    }
     if (!entry.headers || !entry.rows) {
         _sessionStatus('Incomplete session data.', 'error'); return;
     }
     document.getElementById('session-name').value = name;
     if (chartInst) { chartInst.destroy(); chartInst = null; }
     _destroySplitCharts();
-    currentCsvId      = 'session:' + name;
+    currentCsvId      = 'session:' + name;   /* placeholder — updated below if store-dir */
     currentHeaders    = entry.headers;
     allRows           = entry.rows;
     totalExpectedRows = entry.rows.length;
@@ -2069,7 +2075,14 @@ function _sessionApplyEntry(entry, name) {
     if (tbody) tbody.style.height = _vtTotalHeight() + 'px';
     _vtRender();
     populatePlotSelectors(entry.headers);
-    if (entry.snap) { _pendingRecipeSnap = null; _recipeApply(entry.snap); }
+    if (entry.snap) {
+        _pendingRecipeSnap = null;
+        _recipeApply(entry.snap);
+        /* _recipeApplyColFilters calls applyFilters() which is debounced (100 ms).
+           Call _doApplyFilters directly so filteredIndices is correct before drawPlot(). */
+        clearTimeout(_filterTimer);
+        _doApplyFilters();
+    }
     var rowStr = entry.rows.length.toLocaleString();
     var colStr = entry.headers.length;
     setStatus('Session \u201c' + name + '\u201d loaded \u2022 ' + rowStr + ' rows \u2022 ' + colStr + ' columns');
@@ -2078,6 +2091,17 @@ function _sessionApplyEntry(entry, name) {
     _updatePlotCoverBanner();
     drawPlot();
     _sessionStatus('\u2713 Loaded \u201c' + name + '\u201d', 'ok');
+
+    /* Register loaded rows into server parsed_cache so re-saving works without re-parsing.
+       Fire-and-forget — failure is silent (save will show its own error if csv_id is missing). */
+    if (_storeDir) {
+        fetch('/store/register_session', { method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ dir: _storeDir, file: name + '.fdv_session' })
+        }).then(function(r){ return r.json(); }).then(function(d) {
+            if (d.success) { currentCsvId = d.csv_id; }
+        }).catch(function(){});
+    }
 }
 
 function _sessionSave() {
@@ -2097,21 +2121,22 @@ function _sessionSave() {
             snap:    _recipeSnapshot()
         };
         if (_storeDir) {
-            /* For store-dir sessions: omit rows/headers — they will be re-parsed
-               from the stored path on load, avoiding the JSON string-length limit
-               that hits with large datasets. */
-            var liteEntry = {
-                _noRows: true,
-                fname:   entry.fname,
-                snap:    entry.snap
-            };
+            /* Send a lightweight request — the server reads rows from its own parsed_cache
+               and writes the full session file to disk, bypassing the JS string-length limit. */
             var storeBody;
-            try { storeBody = JSON.stringify({ dir: _storeDir, name: name, type: 'session', data: liteEntry }); }
-            catch(e) {
-                _sessionStatus('\u26a0 Session too large to serialise (' + e.message + '). ', 'error');
+            try {
+                storeBody = JSON.stringify({
+                    dir:    _storeDir,
+                    name:   name,
+                    csv_id: currentCsvId,
+                    snap:   entry.snap,
+                    fname:  entry.fname
+                });
+            } catch(e) {
+                _sessionStatus('\u26a0 Failed to build save request: ' + e.message, 'error');
                 return;
             }
-            fetch('/store/save', { method: 'POST',
+            fetch('/store/save_session', { method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: storeBody
             }).then(function(r){ return r.json(); }).then(function(d) {
@@ -2487,9 +2512,9 @@ function _buildTileChart(canvas, ct, tileData, xCol, yCol, xRx, yRx, colCol, col
                     tooltip: { enabled: false, external: _htmlTooltip }
                 },
                 scales: {
-                    x: { type: 'category', title: { display: true, text: xCol },
+                    x: { type: 'category', title: { display: true, text: _axisXTitle(xCol) },
                          ticks: { maxRotation: 45, autoSkip: false }, offset: true },
-                    y: Object.assign({ title: { display: true, text: yCol } }, yScale)
+                    y: Object.assign({ title: { display: true, text: _axisYTitle(yCol) } }, yScale)
                 }
             }
         });
@@ -2518,13 +2543,13 @@ function _buildTileChart(canvas, ct, tileData, xCol, yCol, xRx, yRx, colCol, col
                         label: function(i){ return 'Count: ' + i.parsed.y; }
                     }}},
                 scales: {
-                    x: Object.assign({ title: { display: true, text: xCol },
+                    x: Object.assign({ title: { display: true, text: _axisXTitle(xCol) },
                         ticks: Object.assign({ maxTicksLimit: 8, maxRotation: 45 },
                             (function(){ var s=parseFloat(document.getElementById('x-step').value);
                                          return (!isNaN(s)&&s>0)?{stepSize:s}:{}; })())
                     }, xScale),
                     y: Object.assign({ type: yLog ? 'logarithmic' : 'linear',
-                        title: { display: true, text: 'Count' }, beginAtZero: !yLog }, yScale)
+                        title: { display: true, text: _axisYTitle('Count') }, beginAtZero: !yLog }, yScale)
                 }
             }
         });
@@ -2573,8 +2598,8 @@ function _buildTileChart(canvas, ct, tileData, xCol, yCol, xRx, yRx, colCol, col
                 },
                 scales: {
                     x: Object.assign({ type: xLog ? 'logarithmic' : 'linear',
-                        title: { display: true, text: xCol + (xRx ? ' ['+xRx+']' : '') } }, xScale),
-                    y: { title: { display: true, text: 'Cum. Proba' }, min: 0, max: 1,
+                        title: { display: true, text: _axisXTitle(xCol + (xRx ? ' ['+xRx+']' : '')) } }, xScale),
+                    y: { title: { display: true, text: _axisYTitle('Cum. Proba') }, min: 0, max: 1,
                          ticks: { callback: function(v){ return (v*100).toFixed(0)+'%'; } } }
                 }
             }
@@ -2617,9 +2642,9 @@ function _buildTileChart(canvas, ct, tileData, xCol, yCol, xRx, yRx, colCol, col
             },
             scales: {
                 x: Object.assign({ type: xLog ? 'logarithmic' : 'linear',
-                    title: { display: true, text: xCol + (xRx ? ' ['+xRx+']' : '') } }, xScale),
+                    title: { display: true, text: _axisXTitle(xCol + (xRx ? ' ['+xRx+']' : '')) } }, xScale),
                 y: Object.assign({ type: yLog ? 'logarithmic' : 'linear',
-                    title: { display: true, text: yCol + (yRx ? ' ['+yRx+']' : '') } }, yScale)
+                    title: { display: true, text: _axisYTitle(yCol + (yRx ? ' ['+yRx+']' : '')) } }, yScale)
             }
         }
     });
@@ -2829,6 +2854,119 @@ function _spinStop() {
     if (btn) { btn.style.opacity = ''; btn.style.cursor = ''; }
 }
 
+/* ── Axis title helpers ──────────────────────────────────────────────── */
+function _axisXTitle(defaultVal) {
+    var ov = (document.getElementById('x-title-override') || {}).value || '';
+    return ov.trim() || defaultVal;
+}
+function _axisYTitle(defaultVal) {
+    var ov = (document.getElementById('y-title-override') || {}).value || '';
+    return ov.trim() || defaultVal;
+}
+
+/* ── Save plot panel to PNG ─────────────────────────────────────────── */
+function _savePlotPng() {
+    /* Build filename */
+    var xCol  = (document.getElementById('x-col')  || {}).value || 'x';
+    var yCol  = (document.getElementById('y-col')  || {}).value || 'y';
+    var ctype = (document.getElementById('chart-type') || {}).value || 'plot';
+    var ts    = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    var fname = [ctype, xCol, 'vs', yCol, ts].join('_').replace(/[^a-zA-Z0-9_\-]/g, '_') + '.png';
+
+    var btn = document.getElementById('save-png-btn');
+    if (btn) { btn.disabled = true; btn.textContent = '\u23f3 Capturing\u2026'; }
+
+    function _done(url) {
+        var a = document.createElement('a');
+        a.href = url; a.download = fname;
+        document.body.appendChild(a); a.click();
+        setTimeout(function() { document.body.removeChild(a); URL.revokeObjectURL(url); }, 1000);
+        if (btn) { btn.disabled = false; btn.innerHTML = '&#128247; Save PNG'; }
+        setStatus('PNG saved: ' + fname);
+    }
+    function _fail(msg) {
+        if (btn) { btn.disabled = false; btn.innerHTML = '&#128247; Save PNG'; }
+        setStatus('PNG export failed: ' + msg, 'error');
+    }
+
+    var isSplit = _splitInsts && _splitInsts.length > 0;
+
+    /* ── Single chart: ask Chart.js directly for its canvas image ── */
+    if (!isSplit) {
+        if (!chartInst) { _fail('No chart drawn yet.'); return; }
+        var dataUrl = chartInst.toBase64Image('image/png', 1.0);
+        if (!dataUrl || dataUrl === 'data:,') { _fail('Chart canvas is empty.'); return; }
+        /* Convert dataURL → Blob */
+        var arr  = dataUrl.split(','), mime = arr[0].match(/:(.*?);/)[1];
+        var bstr = atob(arr[1]), n = bstr.length, u8 = new Uint8Array(n);
+        while (n--) u8[n] = bstr.charCodeAt(n);
+        _done(URL.createObjectURL(new Blob([u8], { type: mime })));
+        return;
+    }
+
+    /* ── Split charts: composite all tile canvases onto one output canvas ── */
+    var tiles = document.querySelectorAll('#plot-grid .split-tile');
+    if (!tiles.length) { _fail('No chart tiles found.'); return; }
+
+    var cols      = parseInt(document.getElementById('split-chart-cols').value) || 3;
+    var tileH     = parseInt(document.getElementById('split-chart-h').value)    || 200;
+    var PAD       = 6;    /* gap between tiles (matches CSS gap) */
+    var TITLE_H   = 22;   /* split-tile-title bar height */
+
+    /* Measure actual rendered tile width from the first tile */
+    var firstTile  = tiles[0];
+    var tileW      = firstTile.getBoundingClientRect().width || 300;
+
+    var nTiles     = tiles.length;
+    var nRows      = Math.ceil(nTiles / cols);
+    var outW       = Math.round(cols * tileW + (cols - 1) * PAD + PAD * 2);
+    var outH       = Math.round(nRows * (tileH + TITLE_H) + (nRows - 1) * PAD + PAD * 2);
+
+    var out = document.createElement('canvas');
+    out.width  = outW;
+    out.height = outH;
+    var ctx = out.getContext('2d');
+    ctx.fillStyle = '#f8f9fa';
+    ctx.fillRect(0, 0, outW, outH);
+
+    var drawn = 0;
+    tiles.forEach(function(tile, i) {
+        var col = i % cols;
+        var row = Math.floor(i / cols);
+        var dx  = PAD + col * (tileW + PAD);
+        var dy  = PAD + row * (tileH + TITLE_H + PAD);
+
+        /* Draw tile background + border */
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(dx, dy, tileW, tileH + TITLE_H);
+        ctx.strokeStyle = '#dee2e6';
+        ctx.strokeRect(dx + 0.5, dy + 0.5, tileW - 1, tileH + TITLE_H - 1);
+
+        /* Draw title bar */
+        var titleEl = tile.querySelector('.split-tile-title');
+        ctx.fillStyle = '#e9ecef';
+        ctx.fillRect(dx, dy, tileW, TITLE_H);
+        if (titleEl) {
+            ctx.fillStyle = '#495057';
+            ctx.font = 'bold 11px sans-serif';
+            ctx.fillText(titleEl.textContent || '', dx + 6, dy + 15, tileW - 12);
+        }
+
+        /* Draw chart canvas */
+        var canvasEl = tile.querySelector('canvas');
+        if (canvasEl && canvasEl.width > 0 && canvasEl.height > 0) {
+            ctx.drawImage(canvasEl, dx, dy + TITLE_H, tileW, tileH);
+        }
+
+        drawn++;
+        if (drawn === nTiles) {
+            out.toBlob(function(blob) {
+                _done(URL.createObjectURL(blob));
+            }, 'image/png');
+        }
+    });
+}
+
 function drawPlot() {
     _updatePlotCoverBanner();
     _spinStart();
@@ -2972,12 +3110,12 @@ function drawScatterLine() {
                 x: Object.assign({
                     type: xLog ? 'logarithmic' : 'linear',
                     title: { display: true,
-                             text: xCol + (xRx ? ' [' + xRx + ']' : '') + (xLog ? ' (log)' : '') }
+                             text: _axisXTitle(xCol + (xRx ? ' [' + xRx + ']' : '') + (xLog ? ' (log)' : '')) }
                 }, getAxisScale('x-min', 'x-max', 'x-step')),
                 y: Object.assign({
                     type: yLog ? 'logarithmic' : 'linear',
                     title: { display: true,
-                             text: yCol + (yRx ? ' [' + yRx + ']' : '') + (yLog ? ' (log)' : '') }
+                             text: _axisYTitle(yCol + (yRx ? ' [' + yRx + ']' : '') + (yLog ? ' (log)' : '')) }
                 }, getAxisScale('y-min', 'y-max', 'y-step'))
             }
         }
@@ -3069,14 +3207,14 @@ function drawHistogram() {
             },
             scales: {
                 x: Object.assign({
-                    title: { display: true, text: xCol + (xRx ? ' [' + xRx + ']' : '') },
+                    title: { display: true, text: _axisXTitle(xCol + (xRx ? ' [' + xRx + ']' : '')) },
                     ticks: Object.assign({ maxTicksLimit: 12, maxRotation: 45 },
                            (function(){ var s=parseFloat(document.getElementById('x-step').value);
                                         return (!isNaN(s)&&s>0)?{stepSize:s}:{}; })())
                 }, getAxisScale('x-min', 'x-max')),
                 y: Object.assign({
                     type: yLog ? 'logarithmic' : 'linear',
-                    title: { display: true, text: 'Count' + (yLog ? ' (log)' : '') },
+                    title: { display: true, text: _axisYTitle('Count' + (yLog ? ' (log)' : '')) },
                     beginAtZero: !yLog
                 }, getAxisScale('y-min', 'y-max', 'y-step'))
             }
@@ -3190,10 +3328,10 @@ function drawCumProba() {
                 x: Object.assign({
                     type: xLog ? 'logarithmic' : 'linear',
                     title: { display: true,
-                             text: xCol + (xRx ? ' [' + xRx + ']' : '') + (xLog ? ' (log)' : '') }
+                             text: _axisXTitle(xCol + (xRx ? ' [' + xRx + ']' : '') + (xLog ? ' (log)' : '')) }
                 }, getAxisScale('x-min', 'x-max', 'x-step')),
                 y: {
-                    title: { display: true, text: 'Cumulative Probability' },
+                    title: { display: true, text: _axisYTitle('Cumulative Probability') },
                     min: 0, max: 1,
                     ticks: { callback: function(v){ return (v*100).toFixed(0)+'%'; } }
                 }
@@ -3320,7 +3458,7 @@ function drawBoxPlot() {
             scales: {
                 x: {
                     type: 'category',
-                    title: { display: true, text: xCol + (xRx ? ' [' + xRx + ']' : '') },
+                    title: { display: true, text: _axisXTitle(xCol + (xRx ? ' [' + xRx + ']' : '')) },
                     ticks: {
                         maxRotation: 45,
                         minRotation: 0,
@@ -3329,7 +3467,7 @@ function drawBoxPlot() {
                     offset: true
                 },
                 y: Object.assign({
-                    title: { display: true, text: yCol + (yRx ? ' [' + yRx + ']' : '') }
+                    title: { display: true, text: _axisYTitle(yCol + (yRx ? ' [' + yRx + ']' : '')) }
                 }, getAxisScale('y-min', 'y-max', 'y-step'))
             }
         }
