@@ -2031,6 +2031,20 @@ function _sessionRebuildSel() {
 
 /* Shared inner logic: apply a loaded session entry to the current state */
 function _sessionApplyEntry(entry, name) {
+    /* Lightweight store-dir session: no rows embedded — re-parse from path */
+    if (entry._noRows) {
+        document.getElementById('session-name').value = name;
+        if (entry.snap) {
+            /* Apply recipe: restores path-input, regex, filter mode, etc.
+               Column selectors are deferred via _pendingRecipeSnap until after parse. */
+            _recipeApply(entry.snap);
+        }
+        setTableInfo((entry.fname || name) + ' \u2014 re-parsing\u2026');
+        _sessionStatus('\u23f3 Settings restored for \u201c' + name + '\u201d \u2014 re-parsing file\u2026', 'ok');
+        /* Trigger a parse now that path-input is populated */
+        setTimeout(function() { parseFile(); }, 80);
+        return;
+    }
     if (!entry.headers || !entry.rows) {
         _sessionStatus('Incomplete session data.', 'error'); return;
     }
@@ -2083,9 +2097,23 @@ function _sessionSave() {
             snap:    _recipeSnapshot()
         };
         if (_storeDir) {
+            /* For store-dir sessions: omit rows/headers — they will be re-parsed
+               from the stored path on load, avoiding the JSON string-length limit
+               that hits with large datasets. */
+            var liteEntry = {
+                _noRows: true,
+                fname:   entry.fname,
+                snap:    entry.snap
+            };
+            var storeBody;
+            try { storeBody = JSON.stringify({ dir: _storeDir, name: name, type: 'session', data: liteEntry }); }
+            catch(e) {
+                _sessionStatus('\u26a0 Session too large to serialise (' + e.message + '). ', 'error');
+                return;
+            }
             fetch('/store/save', { method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ dir: _storeDir, name: name, type: 'session', data: entry })
+                body: storeBody
             }).then(function(r){ return r.json(); }).then(function(d) {
                 if (d.success) {
                     _sessionRebuildSel();
@@ -2353,13 +2381,19 @@ function _splitChartKeys(row, colIdx, rxStr) {
 function _extractGroupKey(raw, rxStr) {
     if (!rxStr) return raw || '(blank)';
     try {
-        var m = new RegExp(rxStr).exec(raw);
-        if (!m) return '(no match)';
-        var groups = [];
-        for (var g = 1; g < m.length; g++) {
-            if (m[g] !== undefined) groups.push(m[g]);
+        var rx = new RegExp(rxStr, 'g');
+        var allMatches = [];
+        var m;
+        while ((m = rx.exec(raw)) !== null) {
+            /* Collect capture groups if present, else the whole match */
+            var groups = [];
+            for (var g = 1; g < m.length; g++) {
+                if (m[g] !== undefined) groups.push(m[g]);
+            }
+            allMatches.push(groups.length > 0 ? groups.join(', ') : m[0]);
+            if (!rx.global) break;   /* non-global — only first match */
         }
-        return groups.length > 0 ? groups.join(', ') : m[0];
+        return allMatches.length > 0 ? allMatches.join(' | ') : raw || '(blank)';
     } catch(e) { return raw || '(blank)'; }
 }
 
@@ -2388,11 +2422,14 @@ function _destroySplitCharts() {
 function _buildTileChart(canvas, ct, tileData, xCol, yCol, xRx, yRx, colCol, colorRx,
                           xLog, yLog, innerSplitCol, innerSplitRx) {
     var ctx = canvas.getContext('2d');
+    var colIdx = colCol ? currentHeaders.indexOf(colCol) : -1;
 
     function colorKey(pt) {
         if (!colCol) return '(all)';
-        var raw = pt.group != null ? String(pt.group) : '(blank)';
-        return _extractGroupKey(raw, colorRx);
+        var raw = (colIdx >= 0 && pt._ri != null && allRows[pt._ri] != null)
+            ? (allRows[pt._ri][colIdx] != null ? String(allRows[pt._ri][colIdx]) : '')
+            : (pt.group != null ? String(pt.group) : '');
+        return _extractGroupKey(raw || '(blank)', colorRx);
     }
 
     function innerSplitKey(pt) {
@@ -2878,10 +2915,13 @@ function drawScatterLine() {
         sampled = true;
     }
 
+    var scatterColIdx = colCol ? currentHeaders.indexOf(colCol) : -1;
     function colorKey(pt) {
         if (!colCol) return '(all)';
-        var raw = pt.group != null ? String(pt.group) : '(blank)';
-        return _extractGroupKey(raw, colorRx);
+        var raw = (scatterColIdx >= 0 && pt._ri != null && allRows[pt._ri] != null)
+            ? (allRows[pt._ri][scatterColIdx] != null ? String(allRows[pt._ri][scatterColIdx]) : '')
+            : (pt.group != null ? String(pt.group) : '');
+        return _extractGroupKey(raw || '(blank)', colorRx);
     }
 
     var groups = {};
@@ -3075,10 +3115,13 @@ function drawCumProba() {
 
     if (!points.length) { status.textContent = 'No numeric values in column ' + xCol; _spinStop(); return; }
 
+    var splitColIdx = splitCol ? currentHeaders.indexOf(splitCol) : -1;
     function groupKey(pt) {
         if (!splitCol) return '(all)';
-        var raw = pt.group != null ? String(pt.group) : '(blank)';
-        return _extractGroupKey(raw, splitRx);
+        var raw = (splitColIdx >= 0 && pt._ri != null && allRows[pt._ri] != null)
+            ? (allRows[pt._ri][splitColIdx] != null ? String(allRows[pt._ri][splitColIdx]) : '')
+            : (pt.group != null ? String(pt.group) : '');
+        return _extractGroupKey(raw || '(blank)', splitRx);
     }
 
     var groups = {};
@@ -3181,6 +3224,7 @@ function drawBoxPlot() {
        Y col = numeric values whose distribution is shown per group */
     var xCol    = document.getElementById('x-col').value;
     var yCol    = document.getElementById('y-col').value;
+    var xRx     = document.getElementById('x-regex').value.trim();
     var yRx     = document.getElementById('y-regex').value.trim();
     var status  = document.getElementById('plot-status');
 
@@ -3212,8 +3256,8 @@ function drawBoxPlot() {
         if (!isNaN(yLo) && yv < yLo) { skipped++; continue; }
         if (!isNaN(yHi) && yv > yHi) { skipped++; continue; }
         total++;
-        /* Group label */
-        var g = (xCol === yCol) ? yCol : xRaw;
+        /* Group label — apply X regex to extract/transform the category key */
+        var g = (xCol === yCol) ? yCol : _extractGroupKey(xRaw, xRx);
         if (!seen[g]) {
             if (Object.keys(seen).length >= MAX_GROUPS) { capped = true; continue; }
             seen[g] = true;
@@ -3276,7 +3320,7 @@ function drawBoxPlot() {
             scales: {
                 x: {
                     type: 'category',
-                    title: { display: true, text: xCol },
+                    title: { display: true, text: xCol + (xRx ? ' [' + xRx + ']' : '') },
                     ticks: {
                         maxRotation: 45,
                         minRotation: 0,
