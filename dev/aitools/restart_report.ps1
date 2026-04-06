@@ -81,12 +81,12 @@ $chartErr = Join-Path $logDir "fdv_chart_server.err.log"
 
 if ($python -and (Test-Path $python)) {
   Write-Output "Starting fdv_chart.py via venv: $python $chartScript"
-  Start-Process -FilePath $python -ArgumentList $chartScript -WorkingDirectory $chartWorkDir -RedirectStandardOutput $chartLog -RedirectStandardError $chartErr -WindowStyle Hidden
+  Start-Process -FilePath $python -ArgumentList $chartScript, "5058", "D:\FDV\recipes" -WorkingDirectory $chartWorkDir -RedirectStandardOutput $chartLog -RedirectStandardError $chartErr -WindowStyle Hidden
 }
 else {
   Write-Output "Starting fdv_chart.py via py -3.12"
   $pyExe = (Get-Command py -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source)
   if (-not $pyExe) { $pyExe = "py" }
-  Start-Process -FilePath $pyExe -ArgumentList "-3.12", $chartScript -WorkingDirectory $chartWorkDir -RedirectStandardOutput $chartLog -RedirectStandardError $chartErr -WindowStyle Hidden
+  Start-Process -FilePath $pyExe -ArgumentList "-3.12", $chartScript, "5058", "D:\FDV\recipes" -WorkingDirectory $chartWorkDir -RedirectStandardOutput $chartLog -RedirectStandardError $chartErr -WindowStyle Hidden
 }
 Write-Output "fdv_chart.py server (re)started on port 5058"

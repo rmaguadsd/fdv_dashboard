@@ -2031,24 +2031,41 @@ function _storeListFiles() {
         });
 }
 
-/* Restore the saved store directory on page load */
+/* Restore the saved store directory on page load;
+   if no local preference, ask server for its default and auto-activate it */
 function _storeDirInit() {
     var saved;
     try { saved = localStorage.getItem(_STORE_DIR_KEY) || ''; } catch(e) { saved = ''; }
-    if (!saved) return;
-    document.getElementById('store-dir-input').value = saved;
-    /* Silently validate — if it still exists, activate it */
-    fetch('/store/check?dir=' + encodeURIComponent(saved))
+    if (saved) {
+        document.getElementById('store-dir-input').value = saved;
+        fetch('/store/check?dir=' + encodeURIComponent(saved))
+            .then(function(r){ return r.json(); })
+            .then(function(d) {
+                if (d.success) {
+                    _storeDir = saved;
+                    _storeDirStatusOk('\u2713 ' + saved);
+                    _recipeRebuildSel();
+                    _sessionRebuildSel();
+                } else {
+                    _storeDirStatus('\u26a0 Saved dir not found: ' + saved, '#e67e22');
+                }
+            })
+            .catch(function(){});
+        return;
+    }
+    /* No local preference — ask server for its configured default */
+    fetch('/store/default_dir')
         .then(function(r){ return r.json(); })
         .then(function(d) {
-            if (d.success) {
-                _storeDir = saved;
-                _storeDirStatusOk('\u2713 ' + saved);
+            if (d.success && d.dir) {
+                document.getElementById('store-dir-input').value = d.dir;
+                _storeDir = d.dir;
+                try { localStorage.setItem(_STORE_DIR_KEY, d.dir); } catch(e) {}
+                _storeDirStatusOk('\u2713 ' + d.dir + ' (server default)');
                 _recipeRebuildSel();
                 _sessionRebuildSel();
-            } else {
-                _storeDirStatus('\u26a0 Saved dir not found: ' + saved, '#e67e22');
             }
+            /* If server has no default or dir missing — stay in localStorage mode silently */
         })
         .catch(function(){});
 }

@@ -69,6 +69,10 @@ _LLM_SYSTEM_PROMPT = (
 
 _OLLAMA_BASE = 'http://localhost:11434'
 
+# ── Server config (can be overridden by command-line args) ───────────────────
+_SERVER_PORT      = 5058
+_SERVER_STORE_DIR = r'D:\FDV\recipes'   # auto-pushed to new clients via /store/default_dir
+
 def _call_llm(messages, model=None):
     """POST a messages list to local Ollama and return the assistant reply string."""
     payload = json.dumps({
@@ -641,6 +645,18 @@ class RequestHandler(BaseHTTPRequestHandler):
                     _send_json(self, 200, {'success': False, 'error': 'Directory not found: ' + d})
             except Exception as e:
                 _send_json(self, 200, {'success': False, 'error': str(e)})
+
+        elif self.path.startswith('/store/default_dir'):
+            # Return the server's configured default store directory
+            d = _SERVER_STORE_DIR.strip()
+            if d and os.path.isdir(d):
+                _send_json(self, 200, {'success': True,  'dir': d})
+            elif d:
+                _send_json(self, 200, {'success': False, 'dir': d,
+                                       'error': 'Default store dir not found on server: ' + d})
+            else:
+                _send_json(self, 200, {'success': False, 'dir': '',
+                                       'error': 'No default store dir configured'})
 
         elif self.path.startswith('/store/list'):
             # List recipe/session files in directory: /store/list?dir=<path>
@@ -1292,20 +1308,40 @@ class RequestHandler(BaseHTTPRequestHandler):
 
 
 def main():
-    """Start the web server"""
+    """Start the web server.
+    Usage: fdv_chart.py [PORT] [STORE_DIR]
+      PORT       — TCP port to listen on (default 5058)
+      STORE_DIR  — default store directory pushed to clients via /store/default_dir
+    Examples:
+      fdv_chart.py                       → port 5058, store D:\\FDV\\recipes
+      fdv_chart.py 5059                  → port 5059 (dev), same store
+      fdv_chart.py 5059 D:\\FDV\\dev_store → port 5059, different store
+    """
+    global _SERVER_PORT, _SERVER_STORE_DIR
+
+    # Parse optional positional args: [port] [store_dir]
+    args = sys.argv[1:]
+    for a in args:
+        try:
+            _SERVER_PORT = int(a)
+        except ValueError:
+            _SERVER_STORE_DIR = a.strip()
+
     log_file = r'd:\FDV\git\fdv_dashboard\dev\aitools\fdv_chart\server.log'
     with open(log_file, 'w') as f:
         f.write("Starting FDV Chart Parser...\n")
         f.flush()
-    
+
     print("Starting FDV Chart Parser...", file=sys.stderr, flush=True)
+    print("Port      : " + str(_SERVER_PORT), file=sys.stderr, flush=True)
+    print("Store dir : " + (_SERVER_STORE_DIR or '(none)'), file=sys.stderr, flush=True)
     try:
-        server = ThreadedHTTPServer(('127.0.0.1', 5058), RequestHandler)
+        server = ThreadedHTTPServer(('0.0.0.0', _SERVER_PORT), RequestHandler)
         server.socket.settimeout(None)   # no accept() timeout; threads handle per-request I/O
         with open(log_file, 'a') as f:
-            f.write("FDV Chart Parser is running at http://localhost:5058\n")
+            f.write("FDV Chart Parser is running at http://0.0.0.0:{} (all interfaces)\n".format(_SERVER_PORT))
             f.flush()
-        print("FDV Chart Parser is running at http://localhost:5058", file=sys.stderr, flush=True)
+        print("FDV Chart Parser is running at http://0.0.0.0:{} (all interfaces)".format(_SERVER_PORT), file=sys.stderr, flush=True)
         print("Press Ctrl+C to stop", file=sys.stderr, flush=True)
         try:
             server.serve_forever()

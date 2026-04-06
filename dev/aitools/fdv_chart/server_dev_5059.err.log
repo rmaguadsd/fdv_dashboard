@@ -1,0 +1,142 @@
+STDERR_START
+Starting FDV Chart Parser...
+Port      : 5059
+Store dir : D:\FDV\recipes
+FDV Chart Parser is running at http://0.0.0.0:5059 (all interfaces)
+Press Ctrl+C to stop
+----------------------------------------
+Exception occurred during processing of request from ('10.248.198.13', 52599)
+----------------------------------------
+Exception occurred during processing of request from ('10.248.198.13', 60926)
+Traceback (most recent call last):
+Traceback (most recent call last):
+  File "D:\FDV\git\fdv_dashboard\dev\aitools\fdv_chart\fdv_chart.py", line 716, in do_GET
+    self.wfile.write(chunk)
+  File "D:\FDV\git\fdv_dashboard\dev\aitools\fdv_chart\fdv_chart.py", line 716, in do_GET
+    self.wfile.write(chunk)
+  File "C:\Python312\Lib\socketserver.py", line 840, in write
+    self._sock.sendall(b)
+  File "C:\Python312\Lib\socketserver.py", line 840, in write
+    self._sock.sendall(b)
+ConnectionResetError: [WinError 10054] An existing connection was forcibly closed by the remote host
+ConnectionResetError: [WinError 10054] An existing connection was forcibly closed by the remote host
+
+During handling of the above exception, another exception occurred:
+
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+Traceback (most recent call last):
+  File "C:\Python312\Lib\socketserver.py", line 692, in process_request_thread
+    self.finish_request(request, client_address)
+  File "C:\Python312\Lib\socketserver.py", line 692, in process_request_thread
+    self.finish_request(request, client_address)
+  File "C:\Python312\Lib\socketserver.py", line 362, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+  File "C:\Python312\Lib\socketserver.py", line 362, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+  File "C:\Python312\Lib\socketserver.py", line 761, in __init__
+    self.handle()
+  File "C:\Python312\Lib\socketserver.py", line 761, in __init__
+    self.handle()
+  File "C:\Python312\Lib\http\server.py", line 436, in handle
+    self.handle_one_request()
+  File "C:\Python312\Lib\http\server.py", line 436, in handle
+    self.handle_one_request()
+  File "C:\Python312\Lib\http\server.py", line 424, in handle_one_request
+    method()
+  File "C:\Python312\Lib\http\server.py", line 424, in handle_one_request
+    method()
+  File "D:\FDV\git\fdv_dashboard\dev\aitools\fdv_chart\fdv_chart.py", line 723, in do_GET
+    _send_json(self, 200, {'success': False, 'error': str(e)})
+  File "D:\FDV\git\fdv_dashboard\dev\aitools\fdv_chart\fdv_chart.py", line 723, in do_GET
+    _send_json(self, 200, {'success': False, 'error': str(e)})
+  File "D:\FDV\git\fdv_dashboard\dev\aitools\fdv_chart\fdv_chart.py", line 450, in _send_json
+    handler.end_headers()
+  File "D:\FDV\git\fdv_dashboard\dev\aitools\fdv_chart\fdv_chart.py", line 450, in _send_json
+    handler.end_headers()
+  File "C:\Python312\Lib\http\server.py", line 538, in end_headers
+    self.flush_headers()
+  File "C:\Python312\Lib\http\server.py", line 538, in end_headers
+    self.flush_headers()
+  File "C:\Python312\Lib\http\server.py", line 542, in flush_headers
+    self.wfile.write(b"".join(self._headers_buffer))
+  File "C:\Python312\Lib\http\server.py", line 542, in flush_headers
+    self.wfile.write(b"".join(self._headers_buffer))
+  File "C:\Python312\Lib\socketserver.py", line 840, in write
+    self._sock.sendall(b)
+  File "C:\Python312\Lib\socketserver.py", line 840, in write
+    self._sock.sendall(b)
+ConnectionAbortedError: [WinError 10053] An established connection was aborted by the software in your host machine
+ConnectionAbortedError: [WinError 10053] An established connection was aborted by the software in your host machine
+----------------------------------------
+----------------------------------------
+----------------------------------------
+Exception occurred during processing of request from ('10.248.198.13', 58189)
+----------------------------------------
+Exception occurred during processing of request from ('10.248.198.13', 51891)
+Traceback (most recent call last):
+  File "D:\FDV\git\fdv_dashboard\dev\aitools\fdv_chart\fdv_chart.py", line 716, in do_GET
+    self.wfile.write(chunk)
+  File "C:\Python312\Lib\socketserver.py", line 840, in write
+    self._sock.sendall(b)
+ConnectionResetError: [WinError 10054] An existing connection was forcibly closed by the remote host
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Python312\Lib\socketserver.py", line 692, in process_request_thread
+    self.finish_request(request, client_address)
+  File "C:\Python312\Lib\socketserver.py", line 362, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+  File "C:\Python312\Lib\socketserver.py", line 761, in __init__
+    self.handle()
+  File "C:\Python312\Lib\http\server.py", line 436, in handle
+    self.handle_one_request()
+  File "C:\Python312\Lib\http\server.py", line 424, in handle_one_request
+    method()
+  File "D:\FDV\git\fdv_dashboard\dev\aitools\fdv_chart\fdv_chart.py", line 723, in do_GET
+    _send_json(self, 200, {'success': False, 'error': str(e)})
+  File "D:\FDV\git\fdv_dashboard\dev\aitools\fdv_chart\fdv_chart.py", line 450, in _send_json
+    handler.end_headers()
+  File "C:\Python312\Lib\http\server.py", line 538, in end_headers
+    self.flush_headers()
+  File "C:\Python312\Lib\http\server.py", line 542, in flush_headers
+    self.wfile.write(b"".join(self._headers_buffer))
+  File "C:\Python312\Lib\socketserver.py", line 840, in write
+    self._sock.sendall(b)
+Traceback (most recent call last):
+ConnectionAbortedError: [WinError 10053] An established connection was aborted by the software in your host machine
+  File "D:\FDV\git\fdv_dashboard\dev\aitools\fdv_chart\fdv_chart.py", line 716, in do_GET
+    self.wfile.write(chunk)
+  File "C:\Python312\Lib\socketserver.py", line 840, in write
+    self._sock.sendall(b)
+----------------------------------------
+ConnectionResetError: [WinError 10054] An existing connection was forcibly closed by the remote host
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Python312\Lib\socketserver.py", line 692, in process_request_thread
+    self.finish_request(request, client_address)
+  File "C:\Python312\Lib\socketserver.py", line 362, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+  File "C:\Python312\Lib\socketserver.py", line 761, in __init__
+    self.handle()
+  File "C:\Python312\Lib\http\server.py", line 436, in handle
+    self.handle_one_request()
+  File "C:\Python312\Lib\http\server.py", line 424, in handle_one_request
+    method()
+  File "D:\FDV\git\fdv_dashboard\dev\aitools\fdv_chart\fdv_chart.py", line 723, in do_GET
+    _send_json(self, 200, {'success': False, 'error': str(e)})
+  File "D:\FDV\git\fdv_dashboard\dev\aitools\fdv_chart\fdv_chart.py", line 450, in _send_json
+    handler.end_headers()
+  File "C:\Python312\Lib\http\server.py", line 538, in end_headers
+    self.flush_headers()
+  File "C:\Python312\Lib\http\server.py", line 542, in flush_headers
+    self.wfile.write(b"".join(self._headers_buffer))
+  File "C:\Python312\Lib\socketserver.py", line 840, in write
+    self._sock.sendall(b)
+ConnectionAbortedError: [WinError 10053] An established connection was aborted by the software in your host machine
+----------------------------------------
