@@ -704,6 +704,20 @@
                 title="Open a multi-turn chat with the selected Ollama model">
             &#128172; Chat
         </button>
+        <label style="font-size:0.8em;color:#17a2b8;margin-left:2px"
+               title="Number of raw data rows included in each chat context message">
+            Rows:
+            <select id="chat-sample-size" style="font-size:0.82em;padding:2px 3px;border-radius:3px;
+                    border:1px solid #17a2b8;color:#17a2b8;cursor:pointer"
+                    onchange="_chatDataSampleSize=parseInt(this.value)">
+                <option value="0">none</option>
+                <option value="20">20</option>
+                <option value="50" selected>50</option>
+                <option value="100">100</option>
+                <option value="200">200</option>
+                <option value="500">500</option>
+            </select>
+        </label>
         <!-- Marker lines row -->
         <div id="marker-row" style="width:100%;display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:3px">
             <span style="font-size:0.82em;color:#e83e8c;font-weight:bold">&#x2015;&nbsp;Markers:</span>
@@ -999,6 +1013,8 @@ document.addEventListener('DOMContentLoaded', function() {
     _sessionRebuildSel();
     /* Restore saved store directory (may re-populate both dropdowns from disk) */
     _storeDirInit();
+    /* Populate Ollama model dropdown from live /models endpoint */
+    _loadModelList();
     /* Restore session after browser refresh */
     _tryRestoreSession();
 });
@@ -4350,6 +4366,7 @@ var _chatOpen         = false;
 var _chatBusy         = false;
 var _chatPending      = '';   /* legacy — superseded by _chatContextDirty */
 var _chatContextDirty = true; /* true = build+send fresh context on next _chatSend() */
+var _chatDataSampleSize = 50; /* raw data rows included in chat context (0 = none) */
 
 function _toggleChat() {
     var drawer = document.getElementById('chat-drawer');
@@ -4578,6 +4595,30 @@ function _buildChatContext() {
         });
     }
 
+    /* ── Raw data sample (evenly spaced across filtered rows) ── */
+    var sampleN = _chatDataSampleSize;
+    if (sampleN > 0 && filteredIndices.length > 0) {
+        var sampleCount = Math.min(sampleN, filteredIndices.length);
+        var sampleStep  = Math.max(1, Math.floor(filteredIndices.length / sampleCount));
+        lines.push('\nColumn headers: ' + currentHeaders.join(' | '));
+        lines.push('Raw data sample (' + sampleCount + ' of ' + filteredIndices.length + ' filtered rows, evenly spaced):');
+        var drawn = 0;
+        for (var si = 0; si < filteredIndices.length && drawn < sampleCount; si += sampleStep) {
+            var srow = allRows[filteredIndices[si]];
+            lines.push('  ' + srow.map(function(c){ return c != null ? String(c) : ''; }).join(' | '));
+            drawn++;
+        }
+    }
+
+    /* ── QUERY tool instructions ── */
+    lines.push('\nYou may request computed aggregations by embedding one or more QUERY tokens in your reply:');
+    lines.push('[QUERY: col=COLUMN_NAME, filter=EXPRESSION, group=COLUMN_NAME, agg=mean|count|min|max|std|all]');
+    lines.push('  col    — column to aggregate (required)');
+    lines.push('  filter — optional row filter, same syntax as table filter (e.g. >0.001  or  ==PASS)');
+    lines.push('  group  — optional column to group by');
+    lines.push('  agg    — aggregation: mean (default), count, min, max, std, all (full stats)');
+    lines.push('Example: [QUERY: col=RBER, filter=>0.001, group=DUT, agg=mean]');
+    lines.push('Results will be injected as context before your next reply.');
     return lines.join('\n');
 }
 
@@ -4638,9 +4679,17 @@ function _chatSend() {
 
         function _finishStream() {
             if (!fullText) { _chatSetBusy(false); return; }
+            /* Execute marker commands */
             var result = _chatExecMarkerCmds(fullText);
             if (assistantEl) assistantEl.textContent = result.text;
             result.actions.forEach(function(a) { _chatAddNote('\uD83D\uDCCC ' + a); });
+            /* Execute data query commands — inject results as follow-up context */
+            var queryResults = _chatExecQueryCmds(fullText);
+            if (queryResults.length) {
+                queryResults.forEach(function(qr) { _chatAddNote('\uD83D\uDD0D ' + qr); });
+                _chatPending      = 'Query results computed from the dataset:\n\n' + queryResults.join('\n\n');
+                _chatContextDirty = false;
+            }
             _chatSetBusy(false);
         }
 
@@ -4713,6 +4762,77 @@ function _chatSend() {
    executes them against the live _markers[] array, redraws the chart,
    strips the tokens from the returned text, and returns
    { text: <cleaned reply>, actions: [<description>, ...] }          */
+/* ── Chat data query executor ─────────────────────────────────────────
+   Parses [QUERY: col=X, filter=EXPR, group=Y, agg=mean] tokens from
+   the LLM reply, runs them against allRows[], returns result strings.
+─────────────────────────────────────────────────────────────────────── */
+function _chatExecQueryCmds(raw) {
+    var queryRx  = /\[QUERY:\s*([^\]]+)\]/gi;
+    var results  = [];
+    var m;
+    while ((m = queryRx.exec(raw)) !== null) {
+        var params = {};
+        m[1].split(',').forEach(function(part) {
+            var kv = part.trim().match(/^(\w+)\s*=\s*(.+)$/);
+            if (kv) params[kv[1].trim().toLowerCase()] = kv[2].trim();
+        });
+        var colName = params['col']  || '';
+        var filter  = params['filter'] || '';
+        var group   = params['group']  || '';
+        var agg     = (params['agg']   || 'mean').toLowerCase();
+
+        var colIdx   = currentHeaders.indexOf(colName);
+        var groupIdx = group ? currentHeaders.indexOf(group) : -1;
+        if (colIdx < 0) {
+            results.push('QUERY result: column "' + colName + '" not found.\n'
+                       + 'Available columns: ' + currentHeaders.join(', '));
+            continue;
+        }
+
+        var filterFn = filter ? parseFilterExpr(filter) : null;
+        var groups = {}, gOrder = [];
+        for (var ri = 0; ri < filteredIndices.length; ri++) {
+            var row  = allRows[filteredIndices[ri]];
+            var cell = row[colIdx] != null ? String(row[colIdx]) : '';
+            if (filterFn && !filterFn.fn(cell)) continue;
+            var v = parseFloat(cell);
+            if (isNaN(v)) continue;
+            var gkey = (groupIdx >= 0 && row[groupIdx] != null) ? String(row[groupIdx]) : '__all__';
+            if (!groups[gkey]) { groups[gkey] = []; gOrder.push(gkey); }
+            groups[gkey].push(v);
+        }
+
+        var label  = 'QUERY: col=' + colName
+                   + (filter ? ', filter=' + filter : '')
+                   + (group  ? ', group=' + group   : '')
+                   + ', agg=' + agg;
+        var lines3 = [label];
+        var seen3  = {};
+        var keys3  = gOrder.filter(function(k){ if (seen3[k]) return false; seen3[k]=true; return true; })
+                           .sort(function(a,b){ return a.localeCompare(b,undefined,{numeric:true}); });
+        if (!keys3.length) {
+            lines3.push('  (no rows matched)');
+        } else {
+            keys3.forEach(function(k) {
+                var vals = groups[k];
+                var res3;
+                switch (agg) {
+                    case 'count': res3 = vals.length; break;
+                    case 'min':   res3 = Math.min.apply(null, vals).toPrecision(5); break;
+                    case 'max':   res3 = Math.max.apply(null, vals).toPrecision(5); break;
+                    case 'std':   { var st = _descStats(vals); res3 = st ? Number(st.std).toPrecision(5) : 'n/a'; break; }
+                    case 'all':   { var st2 = _descStats(vals); res3 = st2 ? _fmtStats(st2) : 'n/a'; break; }
+                    default:      { var sum3 = vals.reduce(function(a,b){return a+b;},0); res3 = (sum3/vals.length).toPrecision(5); }
+                }
+                var glabel = (k === '__all__') ? '(all)' : k;
+                lines3.push('  ' + glabel + ': ' + res3 + (agg !== 'count' ? '  (n=' + vals.length + ')' : ''));
+            });
+        }
+        results.push(lines3.join('\n'));
+    }
+    return results;
+}
+
 function _chatExecMarkerCmds(raw) {
     var actions = [];
     var cleared = false;
