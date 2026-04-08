@@ -696,25 +696,35 @@ class RequestHandler(BaseHTTPRequestHandler):
                     if not os.path.isfile(fpath):
                         _send_json(self, 200, {'success': False, 'error': 'File not found: ' + fname})
                     elif fname.endswith('.fdv_session'):
-                        # Stream session files directly — they can be very large (many rows).
-                        # Wrap the raw file bytes in {"success":true,"data": ... }
-                        # by writing the envelope prefix/suffix around the file content.
+                        # Validate the file is readable JSON before streaming.
                         file_size = os.path.getsize(fpath)
-                        prefix    = b'{"success":true,"data":'
-                        suffix    = b'}'
-                        total_len = len(prefix) + file_size + len(suffix)
-                        self.send_response(200)
-                        self.send_header('Content-Type', 'application/json; charset=utf-8')
-                        self.send_header('Content-Length', total_len)
-                        self.end_headers()
-                        self.wfile.write(prefix)
-                        with open(fpath, 'rb') as f:
-                            while True:
-                                chunk = f.read(256 * 1024)
-                                if not chunk:
-                                    break
-                                self.wfile.write(chunk)
-                        self.wfile.write(suffix)
+                        if file_size == 0:
+                            _send_json(self, 200, {'success': False, 'error': 'Session file is empty: ' + fname})
+                        else:
+                            # Quick validity check — try parsing header bytes
+                            with open(fpath, 'rb') as _fv:
+                                head = _fv.read(1).strip()
+                            if head not in (b'{', b'['):
+                                _send_json(self, 200, {'success': False, 'error': 'Session file appears corrupt (bad header): ' + fname})
+                            else:
+                                # Stream session files directly — they can be very large (many rows).
+                                # Wrap the raw file bytes in {"success":true,"data": ... }
+                                # by writing the envelope prefix/suffix around the file content.
+                                prefix    = b'{"success":true,"data":'
+                                suffix    = b'}'
+                                total_len = len(prefix) + file_size + len(suffix)
+                                self.send_response(200)
+                                self.send_header('Content-Type', 'application/json; charset=utf-8')
+                                self.send_header('Content-Length', total_len)
+                                self.end_headers()
+                                self.wfile.write(prefix)
+                                with open(fpath, 'rb') as f:
+                                    while True:
+                                        chunk = f.read(256 * 1024)
+                                        if not chunk:
+                                            break
+                                        self.wfile.write(chunk)
+                                self.wfile.write(suffix)
                     else:
                         with open(fpath, 'r', encoding='utf-8') as f:
                             data = json.load(f)

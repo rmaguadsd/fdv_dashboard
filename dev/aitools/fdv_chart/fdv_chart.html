@@ -2259,7 +2259,13 @@ function _sessionLoad() {
     _sessionStatus('Loading\u2026', 'ok');
     if (_storeDir) {
         fetch('/store/load?dir=' + encodeURIComponent(_storeDir) + '&file=' + encodeURIComponent(name + '.fdv_session'))
-            .then(function(r){ return r.json(); }).then(function(d) {
+            .then(function(r) {
+                if (!r.ok) throw new Error('HTTP ' + r.status);
+                return r.text();
+            }).then(function(txt) {
+                var d;
+                try { d = JSON.parse(txt); }
+                catch(e) { _sessionStatus('\u26a0 Corrupt session file (JSON parse error). Try re-saving it.', 'error'); return; }
                 if (!d.success) { _sessionStatus('\u26a0 ' + d.error, 'error'); return; }
                 setTimeout(function(){ _sessionApplyEntry(d.data, name); }, 20);
             }).catch(function(e){ _sessionStatus('\u26a0 ' + e.message, 'error'); });
@@ -2491,19 +2497,19 @@ function _splitChartKeys(row, colIdx, rxStr) {
 function _extractGroupKey(raw, rxStr) {
     if (!rxStr) return raw || '(blank)';
     try {
-        var rx = new RegExp(rxStr, 'g');
-        var allMatches = [];
-        var m;
-        while ((m = rx.exec(raw)) !== null) {
-            /* Collect capture groups if present, else the whole match */
-            var groups = [];
-            for (var g = 1; g < m.length; g++) {
-                if (m[g] !== undefined) groups.push(m[g]);
-            }
-            allMatches.push(groups.length > 0 ? groups.join(', ') : m[0]);
-            if (!rx.global) break;   /* non-global — only first match */
+        /* No 'g' flag — first match only, one stable key per cell value.
+           Key strategy:
+             • No capture groups  → full match (m[0])        e.g. "DUT\d+"   on "DUT3" → "DUT3"
+             • Capture group(s)   → joined capture groups    e.g. "DUT(\d+)" on "DUT3" → "3"
+           Fall back to raw value when nothing matches so rows are never silently lost. */
+        var rx = new RegExp(rxStr);
+        var m  = rx.exec(raw);
+        if (!m) return '(no match)';
+        var groups = [];
+        for (var g = 1; g < m.length; g++) {
+            if (m[g] !== undefined) groups.push(m[g]);
         }
-        return allMatches.length > 0 ? allMatches.join(' | ') : raw || '(blank)';
+        return groups.length > 0 ? groups.join(', ') : m[0];
     } catch(e) { return raw || '(blank)'; }
 }
 
