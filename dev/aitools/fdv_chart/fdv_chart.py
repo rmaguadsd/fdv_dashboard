@@ -26,8 +26,10 @@ import json
 import uuid
 import io
 import sys
+import ssl
 import tempfile
 import threading
+import http.client
 import urllib.request
 from pathlib import Path
 from http.server import HTTPServer, BaseHTTPRequestHandler
@@ -68,6 +70,91 @@ _LLM_SYSTEM_PROMPT = (
 )
 
 _OLLAMA_BASE = 'http://localhost:11434'
+
+# ── ConnectMaiGPT MCP config ─────────────────────────────────────────────────
+_MAIGPT_HOST   = 'fmgnpsgautoplt01.elements.local'
+_MAIGPT_PATH   = '/mcp'
+_MAIGPT_TOKEN  = 'd4f8e2a1-3c9b-4e7a-9b2f-1a2b3c4d5e6f'
+_MAIGPT_USER   = 'russel.maguad@solidigm.com'
+
+# Per-csv_id MaiGPT MCP sessions  { csv_id: {'session_id': str, 'chat_id': str} }
+_maigpt_sessions      = {}
+_maigpt_sessions_lock = threading.Lock()
+
+def _maigpt_ssl_ctx():
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode    = ssl.CERT_NONE
+    return ctx
+
+def _maigpt_post(session_id, payload_dict, timeout=30):
+    """Send one MCP JSON-RPC call; return parsed list of SSE data objects."""
+    import re as _re
+    body = json.dumps(payload_dict).encode('utf-8')
+    hdrs = {
+        'Content-Type':   'application/json',
+        'Accept':         'application/json, text/event-stream',
+        'Authorization':  'Token ' + _MAIGPT_TOKEN,
+        'X-User-ID':      _MAIGPT_USER,
+        'mcp-session-id': session_id,
+    }
+    conn = http.client.HTTPSConnection(_MAIGPT_HOST, context=_maigpt_ssl_ctx(), timeout=timeout)
+    conn.request('POST', _MAIGPT_PATH, body=body, headers=hdrs)
+    r    = conn.getresponse()
+    raw  = r.read(65536).decode('utf-8', 'replace')
+    conn.close()
+    results = []
+    for line in raw.splitlines():
+        line = line.strip()
+        if line.startswith('data:'):
+            try:
+                results.append(json.loads(line[5:].strip()))
+            except Exception:
+                pass
+    return results
+
+def _maigpt_ensure_session(csv_id):
+    """Return (session_id, chat_id), creating a new MCP session if needed."""
+    with _maigpt_sessions_lock:
+        existing = _maigpt_sessions.get(csv_id)
+    if existing:
+        return existing['session_id'], existing['chat_id']
+
+    # 1. MCP initialize
+    conn = http.client.HTTPSConnection(_MAIGPT_HOST, context=_maigpt_ssl_ctx(), timeout=15)
+    init_body = json.dumps({'jsonrpc': '2.0', 'id': 1, 'method': 'initialize',
+        'params': {'protocolVersion': '2024-11-05', 'capabilities': {},
+                   'clientInfo': {'name': 'fdv_chart', 'version': '1.0'}}}).encode()
+    conn.request('POST', _MAIGPT_PATH, body=init_body, headers={
+        'Content-Type': 'application/json',
+        'Accept':       'application/json, text/event-stream',
+        'Authorization': 'Token ' + _MAIGPT_TOKEN,
+        'X-User-ID':    _MAIGPT_USER,
+    })
+    resp       = conn.getresponse()
+    session_id = resp.getheader('mcp-session-id', '')
+    resp.read()
+    conn.close()
+    if not session_id:
+        raise RuntimeError('MaiGPT: no mcp-session-id in initialize response')
+
+    # 2. connectmaigpt tool — establishes userid/apikey for this session
+    results = _maigpt_post(session_id, {
+        'jsonrpc': '2.0', 'id': 2, 'method': 'tools/call',
+        'params': {'name': 'connectmaigpt',
+                   'arguments': {'userid': _MAIGPT_USER, 'apikey': _MAIGPT_TOKEN}}
+    }, timeout=20)
+    chat_id = ''
+    for obj in results:
+        sc = obj.get('result', {}).get('structuredContent', {})
+        if sc.get('success'):
+            chat_id = sc.get('chatid', '')
+            break
+
+    with _maigpt_sessions_lock:
+        _maigpt_sessions[csv_id] = {'session_id': session_id, 'chat_id': chat_id}
+
+    return session_id, chat_id
 
 # ── Server config (can be overridden by command-line args) ───────────────────
 _SERVER_PORT      = 5058
@@ -1191,6 +1278,79 @@ class RequestHandler(BaseHTTPRequestHandler):
             except Exception as e:
                 _send_json(self, 200, {'success': False, 'error': str(e)})
 
+        elif self.path == '/maigpt_chat':
+            # Proxy a chat message through ConnectMaiGPT MCP server.
+            # Body: { csv_id, message, context }
+            # Returns SSE stream: data: {"token": "..."}\n\n  ...  data: {"done":true}\n\n
+            try:
+                length  = int(self.headers.get('Content-Length', 0))
+                body    = json.loads(self.rfile.read(length).decode('utf-8'))
+                csv_id  = body.get('csv_id', 'default') or 'default'
+                message = body.get('message', '').strip()
+                context = body.get('context', '').strip()
+                if not message:
+                    raise ValueError('Empty message')
+
+                # Build query — prepend context if fresh
+                query = message
+                if context:
+                    query = context + '\n\n---\nUser question: ' + message
+
+                # Ensure MCP session (creates one if needed)
+                session_id, chat_id = _maigpt_ensure_session(csv_id)
+
+                # Send SSE headers to browser
+                self.send_response(200)
+                self.send_header('Content-Type', 'text/event-stream; charset=utf-8')
+                self.send_header('Cache-Control', 'no-cache')
+                self.send_header('X-Accel-Buffering', 'no')
+                self.end_headers()
+
+                # Call askmaigpt (blocking, no server-side streaming from MCP)
+                results = _maigpt_post(session_id, {
+                    'jsonrpc': '2.0', 'id': 10, 'method': 'tools/call',
+                    'params': {'name': 'askmaigpt',
+                               'arguments': {'query': query,
+                                             'username': _MAIGPT_USER,
+                                             'chattitle': 'FDV Chart',
+                                             'includeprogress': False}}
+                }, timeout=120)
+
+                reply = ''
+                for obj in results:
+                    sc = obj.get('result', {}).get('structuredContent', {})
+                    resp_block = sc.get('response', {})
+                    if isinstance(resp_block, dict):
+                        reply = resp_block.get('response', '')
+                    if obj.get('result', {}).get('isError'):
+                        # surface error text
+                        for c in obj['result'].get('content', []):
+                            if c.get('type') == 'text':
+                                reply = c.get('text', '')
+                        break
+                    if reply:
+                        break
+
+                if not reply:
+                    reply = '(ConnectMaiGPT returned an empty response)'
+
+                # Stream the reply as a single token burst (MCP is not streaming)
+                chunk_size = 80
+                for i in range(0, len(reply), chunk_size):
+                    token = reply[i:i + chunk_size]
+                    self.wfile.write(('data: ' + json.dumps({'token': token}) + '\n\n').encode('utf-8'))
+                    self.wfile.flush()
+
+                self.wfile.write(b'data: {"done":true}\n\n')
+                self.wfile.flush()
+
+            except Exception as e:
+                try:
+                    self.wfile.write(('data: ' + json.dumps({'error': str(e)}) + '\n\n').encode('utf-8'))
+                    self.wfile.flush()
+                except Exception:
+                    pass
+
         elif self.path == '/chat_reset':
             # Delete the session history for a csv_id
             try:
@@ -1199,6 +1359,9 @@ class RequestHandler(BaseHTTPRequestHandler):
                 csv_id = body.get('csv_id', 'default') or 'default'
                 with _chat_sessions_lock:
                     _chat_sessions.pop(csv_id, None)
+                # Also clear any MaiGPT session for this csv_id
+                with _maigpt_sessions_lock:
+                    _maigpt_sessions.pop(csv_id, None)
                 _send_json(self, 200, {'success': True})
             except Exception as e:
                 _send_json(self, 200, {'success': False, 'error': str(e)})
@@ -1285,7 +1448,9 @@ class RequestHandler(BaseHTTPRequestHandler):
                 csv_id = 'csv_' + uuid.uuid4().hex[:8]
                 parsed_cache[csv_id] = {'headers': headers, 'rows': rows}
                 _send_json(self, 200, {'success': True, 'csv_id': csv_id,
-                                       'total_rows': len(rows), 'headers': headers})
+                                       'total_rows': len(rows), 'headers': headers,
+                                       'snap': entry.get('snap'),
+                                       'fname': entry.get('fname', '')})
             except Exception as e:
                 _send_json(self, 200, {'success': False, 'error': str(e)})
 

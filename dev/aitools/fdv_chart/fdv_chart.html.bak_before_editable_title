@@ -119,25 +119,6 @@
             padding: 2px 6px; background: #e9ecef;
             border-bottom: 1px solid #dee2e6; white-space: nowrap;
             overflow: hidden; text-overflow: ellipsis;
-            cursor: text; outline: none;
-        }
-        .split-tile-title:hover  { background: #d0d8e8; }
-        .split-tile-title:focus  { background: #fff; outline: 2px solid #17a2b8;
-                                    white-space: normal; text-overflow: clip; }
-        /* Main chart editable title bar */
-        #chart-title-bar {
-            width: 100%; text-align: center; font-size: 0.95em; font-weight: bold;
-            color: #333; padding: 3px 8px 2px; min-height: 22px; cursor: text;
-            border-radius: 3px; transition: background 0.15s; outline: none;
-            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-            display: block; box-sizing: border-box;
-        }
-        #chart-title-bar:hover { background: #f0f4ff; }
-        #chart-title-bar:focus { background: #fff; outline: 2px solid #17a2b8;
-                                  white-space: normal; text-overflow: clip; }
-        #chart-title-bar:empty:before {
-            content: "Click to add chart title…";
-            color: #bbb; font-weight: normal; font-style: italic;
         }
         .split-tile-canvas { position: relative; flex: 1 1 0; min-height: 0; }
         .split-tile-canvas canvas { position: absolute; top:0; left:0; width:100%; height:100%; }
@@ -643,6 +624,10 @@
         <label id="bp-maxgroups-label" style="margin-left:4px;display:none"
                title="Maximum number of X groups to render (more groups = slower)">Max&nbsp;groups:
             <input type="number" id="bp-maxgroups" min="1" max="2000" value="200" autocomplete="off" style="width:60px"></label>
+        <label id="legend-col-label" style="margin-left:8px" title="Annotate each data point with a label extracted from this column (does not affect color grouping)">Label&nbsp;by:
+            <select id="legend-col"><option value="">-- none --</option></select></label>
+        <label id="legend-rx-label" style="margin-left:4px" title="Optional regex — first capture group is used as the label text">Label&nbsp;regex:
+            <input type="text" id="legend-regex" placeholder="e.g. DUT(\d+)" autocomplete="off" style="width:110px"></label>
         <span id="split-label" style="margin-left:8px;display:none;align-items:flex-start;gap:4px">
             <span style="font-size:0.82em;color:#495057;white-space:nowrap;padding-top:3px">Split&nbsp;by:</span>
             <span id="split-dims-wrap" class="gdim-wrap"><!-- rows injected by _gdimInit --></span>
@@ -681,19 +666,9 @@
         </button>
         <span id="llm-pull-status"></span>
         <button id="chat-toggle-btn" type="button" onclick="_toggleChat()"
-                title="Open a multi-turn chat with the selected model">
+                title="Open a multi-turn chat with the selected Ollama model">
             &#128172; Chat
         </button>
-        <label style="font-size:0.8em;color:#17a2b8;margin-left:4px"
-               title="Select chat provider">
-            <select id="chat-provider-sel"
-                    style="font-size:0.82em;padding:2px 3px;border-radius:3px;
-                           border:1px solid #17a2b8;color:#17a2b8;cursor:pointer"
-                    onchange="_onChatProviderChange()">
-                <option value="ollama" selected>Ollama</option>
-                <option value="connectmaigpt">ConnectMaiGPT</option>
-            </select>
-        </label>
         <label style="font-size:0.8em;color:#17a2b8;margin-left:2px"
                title="Number of raw data rows included in each chat context message">
             Rows:
@@ -807,11 +782,6 @@
                        style="width:60px;border-color:#17a2b8" onchange="_applySplitLayout()" title="Max height of the grid container (px)"></label>
         </div>
     </div>
-    <div id="chart-title-bar"
-         contenteditable="true"
-         onkeydown="_titleKeyDown(event,'main')"
-         onblur="_titleBlur('main')"
-         title="Click to add / edit chart title"></div>
     <div id="plot-area">
         <div id="plot-cover-banner" style="display:none;position:absolute;top:0;left:0;right:0;
              z-index:10;background:rgba(255,193,7,0.92);color:#333;font-size:0.82em;
@@ -1673,6 +1643,8 @@ function onChartTypeChange() {
     show('color-rx-label',  !isBox);
     show('bins-label',      isHist);
     show('bp-maxgroups-label', isBox);
+    show('legend-col-label', !isBox);  /* label-by: scatter/line/cumproba */
+    show('legend-rx-label',  !isBox);
     show('split-label',     false);               /* cumproba now uses color-col for grouping */
     show('split-rx-label',  false);
     show('y-min-label',    !isXOnly);
@@ -1684,9 +1656,9 @@ function onChartTypeChange() {
 
 function populatePlotSelectors(headers) {
     currentHeaders = headers;
-    ['x-col','y-col','color-col','split-col','split-chart-col'].forEach(function(id) {
+    ['x-col','y-col','color-col','split-col','split-chart-col','legend-col'].forEach(function(id) {
         var sel = document.getElementById(id), prev = sel.value;
-        sel.innerHTML = (id==='color-col'||id==='split-col'||id==='split-chart-col')
+        sel.innerHTML = (id==='color-col'||id==='split-col'||id==='split-chart-col'||id==='legend-col')
             ? '<option value="">-- none --</option>' : '';
         headers.forEach(function(h) {
             var o = document.createElement('option');
@@ -1711,7 +1683,7 @@ function populatePlotSelectors(headers) {
         var pending = _pendingRecipeSnap;
         _pendingRecipeSnap = null;
         /* Restore column selectors */
-        ['x-col','y-col','color-col','split-col','split-chart-col'].forEach(function(id) {
+        ['x-col','y-col','color-col','legend-col','split-col','split-chart-col'].forEach(function(id) {
             if (!(id in pending)) return;
             var el = document.getElementById(id);
             if (el && pending[id]) el.value = pending[id];
@@ -1776,7 +1748,7 @@ function _recipeIds() {
         'path-input','dir-recursive',                           /* source */
         'regex-input',                                          /* parse regex */
         'chart-type','x-col','y-col','x-regex','y-regex',
-        'color-col','color-regex',
+        'color-col','color-regex','legend-col','legend-regex',
         'split-col','split-regex',
         'split-chart-col','split-chart-rx','split-chart-cols','split-chart-h','split-grid-h',
         'hist-bins','bp-maxgroups',
@@ -1827,7 +1799,7 @@ function _recipeApply(snap) {
         var el = document.getElementById(id);
         if (!el) return;
         /* Column selectors — defer if not yet populated (no data loaded) */
-        if ((id==='x-col'||id==='y-col'||id==='color-col'||
+        if ((id==='x-col'||id==='y-col'||id==='color-col'||id==='legend-col'||
              id==='split-col'||id==='split-chart-col') && el.options.length <= 1) return;
         if (el.type === 'checkbox') el.checked = !!snap[id];
         else el.value = snap[id];
@@ -1855,7 +1827,7 @@ function _recipeApply(snap) {
     /* Restore column filter values — immediate if headers already loaded, deferred otherwise */
     _recipeApplyColFilters(snap);
     /* If column selectors are not yet populated, queue deferred restore */
-    var needsDefer = ['x-col','y-col','color-col','split-col','split-chart-col']
+    var needsDefer = ['x-col','y-col','color-col','legend-col','split-col','split-chart-col']
         .some(function(id){ var el=document.getElementById(id); return el && el.options.length<=1; });
     if (needsDefer) _pendingRecipeSnap = snap;
     onChartTypeChange();
@@ -2607,67 +2579,6 @@ function _splitChartKeys(row, colIdx, rxStr) {
 }
 
 /* ================================================================
-   EDITABLE CHART TITLE
-   • #chart-title-bar above the main canvas is a contenteditable div.
-   • .split-tile-title on each tile is also contenteditable.
-   • _syncMainTitle(text) sets the bar only when the user has NOT typed
-     a custom title (resets on every new drawPlot() call).
-================================================================ */
-var _mainChartTitle = '';   /* '' = use auto-title from drawXxx() */
-
-function _syncMainTitle(autoTitle) {
-    if (_mainChartTitle) return;            /* keep custom title */
-    var bar = document.getElementById('chart-title-bar');
-    if (bar) bar.textContent = autoTitle || '';
-}
-
-function _titleKeyDown(e, ctx) {
-    if (e.key === 'Enter')  { e.preventDefault(); e.target.blur(); }
-    if (e.key === 'Escape') {
-        if (ctx === 'main') {
-            var bar = document.getElementById('chart-title-bar');
-            if (bar) bar.textContent = _mainChartTitle;
-        }
-        e.target.blur();
-    }
-}
-
-function _titleBlur(ctx, tileIdx) {
-    if (ctx === 'main') {
-        var bar = document.getElementById('chart-title-bar');
-        _mainChartTitle = bar ? bar.textContent.trim() : '';
-    } else {
-        /* tile — tileIdx is the position in _splitInsts[] */
-        var titleEls = document.querySelectorAll('.split-tile-title');
-        var el = (tileIdx != null && titleEls[tileIdx]) ? titleEls[tileIdx] : null;
-        if (!el) return;
-        var newTitle = el.textContent.trim();
-        var inst = _splitInsts[tileIdx];
-        if (!inst) return;
-        inst.options.plugins.title.text    = newTitle;
-        inst.options.plugins.title.display = !!newTitle;
-        try { inst.update('none'); } catch(e2) {}
-    }
-}
-
-/* Reset title bar on every new plot so auto-title takes over */
-function _resetTitleBar() {
-    _mainChartTitle = '';
-    var bar = document.getElementById('chart-title-bar');
-    if (bar) bar.textContent = '';
-}
-
-/* Wire tile title contenteditable after split-chart renders */
-function _wireTileTitles() {
-    document.querySelectorAll('.split-tile-title').forEach(function(el, i) {
-        el.contentEditable = 'true';
-        el.title = 'Click to edit tile title';
-        el.setAttribute('onkeydown', "_titleKeyDown(event,'tile')");
-        el.setAttribute('onblur', "_titleBlur('tile'," + i + ")");
-    });
-}
-
-/* ================================================================
    MULTI-DIMENSION GROUP BUILDER
    _colorDims  → used by colorKey()  in scatter / line
    _splitDims  → used by groupKey()  in cumproba / histogram
@@ -3170,8 +3081,7 @@ function _drawSplitCharts() {
         if (inst) _splitInsts.push(inst);
     });
 
-    _wireTileTitles();
-    var filtNote  = hasActiveFilters() ? ' — filtered' : '';
+    var filtNote  = hasActiveFilters() ? ' \u2014 filtered' : '';
     var totalBucketed = keys.reduce(function(s, k){ return s + (buckets[k]||[]).length; }, 0);
     status.textContent = keys.length + ' tiles \u00b7 ' + totalBucketed.toLocaleString() +
         ' pts \u00b7 split by ' + scCol + (scRx ? ' ['+scRx+']' : '') +
@@ -3417,15 +3327,14 @@ function drawPlot() {
 
 /* ── Scatter / Line ──────────────────────────────────────────────────── */
 function drawScatterLine() {
-    _resetTitleBar();
     var xCol     = document.getElementById('x-col').value;
     var yCol     = document.getElementById('y-col').value;
     var xRx      = document.getElementById('x-regex').value.trim();
     var yRx      = document.getElementById('y-regex').value.trim();
     var colCol   = document.getElementById('color-col').value;
     var colorRx  = document.getElementById('color-regex').value.trim();
-    var legendCol = '';
-    var legendRx  = '';
+    var legendCol = document.getElementById('legend-col').value;
+    var legendRx  = document.getElementById('legend-regex').value.trim();
     var ct      = document.getElementById('chart-type').value;
     var xLog    = document.getElementById('x-log').checked;
     var yLog    = document.getElementById('y-log').checked;
@@ -3540,8 +3449,7 @@ function drawScatterLine() {
         ? datasets.map(function(ds){ return ds.data.map(function(dp){ return dp._lbl || ''; }); })
         : null);
 
-    _syncMainTitle(xCol + ' vs ' + yCol + (colCol ? '  │  ' + colCol : ''));
-    var filtNote = hasActiveFilters() ? ' — filtered' : '';
+    var filtNote = hasActiveFilters() ? ' \u2014 filtered' : '';
     var sampNote = sampled
         ? ' (sampled ' + plotPts.length.toLocaleString() + '/' + points.length.toLocaleString() + ')' : '';
     var lblNote  = useLegend ? ' \u00b7 labelled by ' + legendCol : '';
@@ -3572,7 +3480,6 @@ function buildHistBins(values, nBins) {
 }
 
 function drawHistogram() {
-    _resetTitleBar();
     var xCol   = document.getElementById('x-col').value;
     var xRx    = document.getElementById('x-regex').value.trim();
     var yLog   = document.getElementById('y-log').checked;
@@ -3643,8 +3550,7 @@ function drawHistogram() {
         return;
     }
 
-    _syncMainTitle('Histogram │ ' + xCol);
-    var filtNote = hasActiveFilters() ? ' — filtered' : '';
+    var filtNote = hasActiveFilters() ? ' \u2014 filtered' : '';
     status.textContent = vals.length.toLocaleString() + ' values, ' + nBins + ' bins' + autoLbl +
         (skipped > 0 ? ', ' + skipped + ' skipped' : '') + filtNote + _intervalNote();
     _spinStop();
@@ -3652,13 +3558,12 @@ function drawHistogram() {
 
 /* ── Cumulative Probability ──────────────────────────────────────────── */
 function drawCumProba() {
-    _resetTitleBar();
     var xCol     = document.getElementById('x-col').value;
     var xRx      = document.getElementById('x-regex').value.trim();
     var splitCol = document.getElementById('color-col').value;
     var splitRx  = document.getElementById('color-regex').value.trim();
-    var legendCol = '';
-    var legendRx  = '';
+    var legendCol = document.getElementById('legend-col').value;
+    var legendRx  = document.getElementById('legend-regex').value.trim();
     var xLog     = document.getElementById('x-log').checked;
     var status   = document.getElementById('plot-status');
 
@@ -3770,8 +3675,7 @@ function drawCumProba() {
         ? datasets.map(function(ds){ return ds.data.map(function(dp){ return cumLegendKey(dp._ri) || ''; }); })
         : null);
 
-    _syncMainTitle('Cum Proba │ ' + xCol + (splitCol ? '  │  ' + splitCol : ''));
-    var filtNote  = hasActiveFilters() ? ' — filtered' : '';
+    var filtNote  = hasActiveFilters() ? ' \u2014 filtered' : '';
     var nGroups   = Object.keys(groups).length;
     var splitDesc = splitCol
         ? (' grouped by ' + splitCol + (splitRx ? ' [' + splitRx + ']' : '')) : '';
@@ -3784,7 +3688,6 @@ function drawCumProba() {
 
 /* ── Box & Whisker ───────────────────────────────────────────────────── */
 function drawBoxPlot() {
-    _resetTitleBar();
     /* X col = category (string groups on X axis)
        Y col = numeric values whose distribution is shown per group */
     var xCol    = document.getElementById('x-col').value;
@@ -3901,8 +3804,7 @@ function drawBoxPlot() {
     });
     } catch(e) { status.textContent = 'Chart error: ' + e.message; _spinStop(); return; }
 
-    _syncMainTitle('Box & Whisker │ ' + xCol + ' vs ' + yCol);
-    var filtNote = hasActiveFilters() ? ' — filtered' : '';
+    var filtNote = hasActiveFilters() ? ' \u2014 filtered' : '';
     var capNote  = capped ? ' \u26a0 capped at ' + MAX_GROUPS + ' groups \u2014 use X regex to reduce' : '';
     status.textContent = total.toLocaleString() + ' values, '
         + keys.length + ' group' + (keys.length !== 1 ? 's' : '')
@@ -4617,38 +4519,16 @@ resetAll = function() {
 
 /* ── Model selector ─────────────────────────────────────────────────── */
 function _selectedModel() {
-    var prov = _chatProvider();
-    if (prov === 'connectmaigpt') {
-        return 'ConnectMaiGPT';
-    }
     var sel = document.getElementById('llm-model-sel');
     return (sel && sel.value) ? sel.value : 'llama3';
 }
 
-function _chatProvider() {
-    var sel = document.getElementById('chat-provider-sel');
-    return (sel && sel.value) ? sel.value : 'ollama';
-}
-
-function _onChatProviderChange() {
-    var prov    = _chatProvider();
-    var isOllama = prov === 'ollama';
-    /* Show/hide Ollama-specific controls */
-    ['llm-model-sel','llm-pull-btn','llm-pull-status'].forEach(function(id) {
-        var el = document.getElementById(id);
-        if (el) el.style.display = isOllama ? '' : 'none';
-    });
-    _updateChatBanner();
-}
-
 function _updateChatBanner() {
     var model   = _selectedModel();
-    var prov    = _chatProvider();
-    var label   = prov === 'connectmaigpt' ? 'ConnectMaiGPT' : model + ' (Ollama)';
     var chat    = document.getElementById('chat-drawer-title');
     var analyse = document.getElementById('analysis-panel-title');
-    if (chat)    chat.textContent    = '\uD83D\uDCAC Chat with ' + label + ' \u2014 ask about your data';
-    if (analyse) analyse.textContent = '\uD83E\uDDE0 AI Summary \u2014 ' + label;
+    if (chat)    chat.textContent    = '\uD83D\uDCAC Chat with ' + model + ' \u2014 ask about your data';
+    if (analyse) analyse.textContent = '\uD83E\uDDE0 AI Summary \u2014 ' + model + ' (Ollama)';
 }
 
 /* Populate dropdown from /models (GET — Ollama's pulled model list) */
@@ -5012,91 +4892,6 @@ function _chatReset() {
     _chatAddNote('Session cleared \u2014 your first message will automatically include current chart statistics.');
 }
 
-/* ── ConnectMaiGPT sender — proxied through Python backend ──────────────
-   The MCP server uses JSON-RPC over SSE (not OpenAI-compatible), so we
-   route via /maigpt_chat on the local Python server which handles the
-   MCP session lifecycle and streams the reply back as SSE tokens.
-──────────────────────────────────────────────────────────────────────── */
-async function _chatSendMaiGpt(userMsg, context, thinkingEl) {
-    var assistantEl = null;
-    var fullText    = '';
-
-    try {
-        var resp = await fetch('/maigpt_chat', {
-            method:  'POST',
-            headers: {'Content-Type': 'application/json'},
-            body:    JSON.stringify({
-                csv_id:  currentCsvId || '__default__',
-                message: userMsg,
-                context: context
-            })
-        });
-
-        if (thinkingEl && thinkingEl.parentNode) thinkingEl.parentNode.removeChild(thinkingEl);
-
-        if (!resp.ok) {
-            var errTxt = await resp.text();
-            _chatAddMsg('note', '\u26a0 ConnectMaiGPT error ' + resp.status + ': ' + errTxt);
-            _chatSetBusy(false);
-            return;
-        }
-
-        var reader  = resp.body.getReader();
-        var decoder = new TextDecoder();
-        var buf     = '';
-
-        while (true) {
-            var chunk = await reader.read();
-            if (chunk.done) break;
-            buf += decoder.decode(chunk.value, { stream: true });
-            var parts = buf.split('\n\n');
-            buf = parts.pop();
-            for (var i = 0; i < parts.length; i++) {
-                var line = parts[i].trim();
-                if (!line.startsWith('data:')) continue;
-                try {
-                    var d = JSON.parse(line.slice(5).trim());
-                    if (d.error) {
-                        _chatAddMsg('note', '\u26a0 ' + d.error);
-                        _chatSetBusy(false);
-                        return;
-                    }
-                    if (d.done) break;
-                    if (d.token) {
-                        fullText += d.token;
-                        if (!assistantEl) {
-                            assistantEl = _chatAddMsg('assistant', fullText);
-                        } else {
-                            assistantEl.textContent = fullText;
-                            _chatScrollBottom();
-                        }
-                    }
-                } catch(e) {}
-            }
-        }
-
-        if (!fullText) fullText = '(empty response)';
-        if (!assistantEl) _chatAddMsg('assistant', fullText);
-
-        /* Run marker + query commands, same as Ollama path */
-        var result = _chatExecMarkerCmds(fullText);
-        if (assistantEl) assistantEl.textContent = result.text;
-        result.actions.forEach(function(a) { _chatAddNote('\uD83D\uDCCC ' + a); });
-        var queryResults = _chatExecQueryCmds(fullText);
-        if (queryResults.length) {
-            queryResults.forEach(function(qr) { _chatAddNote('\uD83D\uDD0D ' + qr); });
-            _chatPending      = 'Query results computed from the dataset:\n\n' + queryResults.join('\n\n');
-            _chatContextDirty = false;
-        }
-
-    } catch(e) {
-        if (thinkingEl && thinkingEl.parentNode) thinkingEl.parentNode.removeChild(thinkingEl);
-        _chatAddMsg('note', '\u26a0 Network error: ' + String(e));
-    }
-
-    _chatSetBusy(false);
-}
-
 function _chatSend() {
     if (_chatBusy) return;
     var ta  = document.getElementById('chat-input');
@@ -5119,12 +4914,6 @@ function _chatSend() {
     } else if (_chatPending) {
         context      = _chatPending;
         _chatPending = '';
-    }
-
-    /* Route to ConnectMaiGPT if selected */
-    if (_chatProvider() === 'connectmaigpt') {
-        _chatSendMaiGpt(msg, context, thinking);
-        return;
     }
 
     (function() {
