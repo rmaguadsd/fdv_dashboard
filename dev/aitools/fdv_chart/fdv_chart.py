@@ -63,7 +63,10 @@ _LLM_SYSTEM_PROMPT = (
     '  [MARKER: x=<value>:<label>]   — add a vertical line at X=value\n'
     '  [MARKER: y=<value>:<label>]   — add a horizontal line at Y=value\n'
     '  [CLEAR_MARKERS]               — remove all existing markers\n'
-    'Examples: [MARKER: x=1000:spec_limit]  [MARKER: y=0.05:target]  [CLEAR_MARKERS]\n'
+    '  [SUMMARY]                     — re-run the statistical summary table and refresh context\n'
+    '  [ANALYZE]                     — re-run the AI analysis panel\n'
+    'Examples: [MARKER: x=1000:spec_limit]  [MARKER: y=0.05:target]  [CLEAR_MARKERS]  [SUMMARY]\n'
+    'Use [SUMMARY] whenever you want to view or refresh the statistics before answering. '
     'Use markers when the user asks to mark, highlight, or draw a line at a specific value, '
     'or when you identify a threshold worth highlighting. You may emit multiple MARKER '
     'commands in one reply. Always explain in a bullet what you marked and why.'
@@ -79,6 +82,7 @@ _MAIGPT_USER   = 'russel.maguad@solidigm.com'
 
 # Per-csv_id MaiGPT MCP sessions  { csv_id: {'session_id': str, 'chat_id': str} }
 _maigpt_sessions      = {}
+_maigpt_history       = {}   # { csv_id: [ {'role': str, 'content': str}, ... ] }
 _maigpt_sessions_lock = threading.Lock()
 
 def _maigpt_ssl_ctx():
@@ -1280,21 +1284,193 @@ class RequestHandler(BaseHTTPRequestHandler):
 
         elif self.path == '/maigpt_chat':
             # Proxy a chat message through ConnectMaiGPT MCP server.
-            # Body: { csv_id, message, context }
+            # Body: { csv_id, message, context, modelname, inject_system }
             # Returns SSE stream: data: {"token": "..."}\n\n  ...  data: {"done":true}\n\n
+            #
+            # Prefix rules (applied before history / context embedding):
+            #   @general:system          → send "@general:system <chart_data>" only
+            #                              (no prior history, no user query)
+            #   @general: <query>        → send "@general: <query>" only
+            #                              (no chart data, no history)
+            #   (inject_system flag)     → same as @general:system (from Inject Context btn)
+            #   (normal message)         → full transcript: system prompt + chart data
+            #                              + conversation history + current question
             try:
-                length  = int(self.headers.get('Content-Length', 0))
-                body    = json.loads(self.rfile.read(length).decode('utf-8'))
-                csv_id  = body.get('csv_id', 'default') or 'default'
-                message = body.get('message', '').strip()
-                context = body.get('context', '').strip()
-                if not message:
+                length    = int(self.headers.get('Content-Length', 0))
+                body      = json.loads(self.rfile.read(length).decode('utf-8'))
+                csv_id    = body.get('csv_id', 'default') or 'default'
+                message   = body.get('message', '').strip()
+                context   = body.get('context', '').strip()
+                modelname = body.get('modelname', 'gpt4').strip() or 'gpt4'
+                inject_system = body.get('inject_system', False)  # from Inject Context btn
+
+                # Always ensure @general: prefix so ConnectMaiGPT routes correctly.
+                # @general:system and @general: variants are left as-is.
+                if message and not message.lower().startswith('@general'):
+                    message = '@general: ' + message
+
+                if not message and not inject_system:
                     raise ValueError('Empty message')
 
-                # Build query — prepend context if fresh
-                query = message
-                if context:
-                    query = context + '\n\n---\nUser question: ' + message
+                # ── Detect @general: prefixes ─────────────────────────────
+                is_general_system = (
+                    inject_system or
+                    message.lower().startswith('@general:system')
+                )
+                is_general_query = (
+                    not is_general_system and
+                    message.lower().startswith('@general:')
+                )
+
+                # ── Build query string ────────────────────────────────────
+                if is_general_system:
+                    # Send @general:system + chart data as the full query.
+                    # Resets MaiGPT's understanding of the data context.
+                    chart_block = context or '[no chart data loaded]'
+                    query = '@general:system\n\n' + chart_block
+                    # Also reset our local history so next normal turn is fresh
+                    with _maigpt_sessions_lock:
+                        _maigpt_history.pop(csv_id, None)
+
+                elif is_general_query:
+                    # Strip the @general: prefix; send bare query only.
+                    # No chart data, no history — pure general question.
+                    bare = message[len('@general:'):].strip()
+                    query = '@general: ' + bare
+
+                else:
+                    # Normal message — maintain conversation history and embed
+                    # full transcript (system prompt + chart data + history).
+                    with _maigpt_sessions_lock:
+                        if csv_id not in _maigpt_history:
+                            hist = [{'role': 'system', 'content': _LLM_SYSTEM_PROMPT}]
+                            if context:
+                                hist.append({'role': 'system',
+                                             'content': 'Current chart context:\n' + context})
+                            _maigpt_history[csv_id] = hist
+                        elif context:
+                            hist     = _maigpt_history[csv_id]
+                            replaced = False
+                            for i, m in enumerate(hist):
+                                if m['role'] == 'system' and (
+                                        m['content'].startswith('Current chart context:') or
+                                        m['content'].startswith('Updated chart context:')):
+                                    hist[i] = {'role': 'system',
+                                               'content': 'Updated chart context:\n' + context}
+                                    replaced = True
+                                    break
+                            if not replaced:
+                                hist.append({'role': 'system',
+                                             'content': 'Updated chart context:\n' + context})
+
+                        _maigpt_history[csv_id].append({'role': 'user', 'content': message})
+
+                        # Trim: keep all system msgs + last N conversation turns
+                        hist      = _maigpt_history[csv_id]
+                        sys_msgs  = [m for m in hist if m['role'] == 'system']
+                        conv_msgs = [m for m in hist if m['role'] != 'system']
+                        max_conv  = _CHAT_MAX_TURNS * 2
+                        if len(conv_msgs) > max_conv:
+                            conv_msgs = conv_msgs[-max_conv:]
+                        _maigpt_history[csv_id] = sys_msgs + conv_msgs
+                        history_snap = list(_maigpt_history[csv_id])
+
+                    # Build transcript
+                    instructions    = []
+                    chart_ctx_lines = []
+                    conv_turns      = []
+
+                    for m in history_snap:
+                        role = m['role']
+                        text = m['content']
+                        if role == 'system':
+                            if text.startswith('Current chart context:') or \
+                               text.startswith('Updated chart context:'):
+                                chart_ctx_lines.append(text.split(':\n', 1)[-1])
+                            else:
+                                instructions.append(text)
+                        elif role == 'user':
+                            conv_turns.append(('User', text))
+                        elif role == 'assistant':
+                            conv_turns.append(('Assistant', text))
+
+                    parts = []
+                    if instructions:
+                        parts.append('[INSTRUCTIONS]\n' + '\n\n'.join(instructions))
+                    if chart_ctx_lines:
+                        parts.append('[CHART DATA — use this as your primary data source]\n'
+                                     + '\n\n'.join(chart_ctx_lines))
+                    prior_turns = conv_turns[:-1] if conv_turns else []
+                    if prior_turns:
+                        history_text = '\n'.join(
+                            role + ': ' + text for role, text in prior_turns)
+                        parts.append('[CONVERSATION HISTORY]\n' + history_text)
+                    current_q = conv_turns[-1][1] if conv_turns else message
+                    parts.append('[CURRENT QUESTION]\n' + current_q)
+                    query = '\n\n'.join(parts)
+
+                # ── Ensure MCP session ────────────────────────────────────
+                session_id, chat_id = _maigpt_ensure_session(csv_id)
+
+                # ── Send SSE headers to browser ───────────────────────────
+                self.send_response(200)
+                self.send_header('Content-Type', 'text/event-stream; charset=utf-8')
+                self.send_header('Cache-Control', 'no-cache')
+                self.send_header('X-Accel-Buffering', 'no')
+                self.end_headers()
+
+                # ── Call askmaigpt ────────────────────────────────────────
+                results = _maigpt_post(session_id, {
+                    'jsonrpc': '2.0', 'id': 10, 'method': 'tools/call',
+                    'params': {'name': 'askmaigpt',
+                               'arguments': {'query':           query,
+                                             'username':        _MAIGPT_USER,
+                                             'modelname':       modelname,
+                                             'chattitle':       'FDV Chart – Data Analysis',
+                                             'includeprogress': False}}
+                }, timeout=120)
+
+                reply = ''
+                for obj in results:
+                    sc         = obj.get('result', {}).get('structuredContent', {})
+                    resp_block = sc.get('response', {})
+                    if isinstance(resp_block, dict):
+                        reply = resp_block.get('response', '')
+                    if obj.get('result', {}).get('isError'):
+                        for c in obj['result'].get('content', []):
+                            if c.get('type') == 'text':
+                                reply = c.get('text', '')
+                        break
+                    if reply:
+                        break
+
+                if not reply:
+                    reply = '(ConnectMaiGPT returned an empty response)'
+
+                # ── Save assistant reply to history ───────────────────────
+                with _maigpt_sessions_lock:
+                    if csv_id in _maigpt_history:
+                        _maigpt_history[csv_id].append(
+                            {'role': 'assistant', 'content': reply})
+
+                # ── Stream reply to browser as SSE token chunks ───────────
+                chunk_size = 80
+                for i in range(0, len(reply), chunk_size):
+                    token = reply[i:i + chunk_size]
+                    self.wfile.write(
+                        ('data: ' + json.dumps({'token': token}) + '\n\n').encode('utf-8'))
+                    self.wfile.flush()
+
+                self.wfile.write(b'data: {"done":true}\n\n')
+                self.wfile.flush()
+
+            except Exception as e:
+                try:
+                    self.wfile.write(
+                        ('data: ' + json.dumps({'error': str(e)}) + '\n\n').encode('utf-8'))
+                    self.wfile.flush()
+                except Exception:
+                    pass
 
                 # Ensure MCP session (creates one if needed)
                 session_id, chat_id = _maigpt_ensure_session(csv_id)
@@ -1359,9 +1535,10 @@ class RequestHandler(BaseHTTPRequestHandler):
                 csv_id = body.get('csv_id', 'default') or 'default'
                 with _chat_sessions_lock:
                     _chat_sessions.pop(csv_id, None)
-                # Also clear any MaiGPT session for this csv_id
+                # Also clear any MaiGPT session and history for this csv_id
                 with _maigpt_sessions_lock:
                     _maigpt_sessions.pop(csv_id, None)
+                    _maigpt_history.pop(csv_id, None)
                 _send_json(self, 200, {'success': True})
             except Exception as e:
                 _send_json(self, 200, {'success': False, 'error': str(e)})

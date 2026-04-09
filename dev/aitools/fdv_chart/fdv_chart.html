@@ -694,6 +694,15 @@
                 <option value="connectmaigpt">ConnectMaiGPT</option>
             </select>
         </label>
+        <label id="maigpt-model-wrap" style="font-size:0.8em;color:#17a2b8;margin-left:4px;display:none"
+               title="ConnectMaiGPT model — claude-3-5-sonnet answers from injected data; gpt4 uses datasheet RAG">
+            <select id="maigpt-model-sel"
+                    style="font-size:0.82em;padding:2px 3px;border-radius:3px;
+                           border:1px solid #17a2b8;color:#17a2b8;cursor:pointer">
+                <option value="gpt4" selected>gpt4 (recommended)</option>
+                <option value="claude-3-5-sonnet">claude-3-5-sonnet</option>
+            </select>
+        </label>
         <label style="font-size:0.8em;color:#17a2b8;margin-left:2px"
                title="Number of raw data rows included in each chat context message">
             Rows:
@@ -4146,6 +4155,7 @@ function _renderAnalysisTiles(results) {
 /* ── Summary table ──────────────────────────────────────────────────── */
 var _summaryRows = null, _summaryIsXOnly = false;
 var _summaryXLabel = '', _summaryYLabel = '', _summaryGroupDim = '';
+var _lastSummaryText = '';   /* plain-text snapshot — included in chat context */
 
 function _showSummary() {
     var panel  = document.getElementById('analysis-panel');
@@ -4288,6 +4298,10 @@ function _showSummary() {
           + '</div>';
 
     textEl.innerHTML = html;
+    /* capture plain-text version for chat context */
+    var _tmp = document.createElement('div');
+    _tmp.innerHTML = html;
+    _lastSummaryText = (_tmp.textContent || _tmp.innerText || '').trim();
     _summaryRows = rows; _summaryIsXOnly = isXOnly;
     _summaryXLabel = xLabel; _summaryYLabel = yLabel; _summaryGroupDim = groupDim;
 }
@@ -4631,13 +4645,16 @@ function _chatProvider() {
 }
 
 function _onChatProviderChange() {
-    var prov    = _chatProvider();
+    var prov     = _chatProvider();
     var isOllama = prov === 'ollama';
     /* Show/hide Ollama-specific controls */
     ['llm-model-sel','llm-pull-btn','llm-pull-status'].forEach(function(id) {
         var el = document.getElementById(id);
         if (el) el.style.display = isOllama ? '' : 'none';
     });
+    /* Show/hide MaiGPT model selector */
+    var mg = document.getElementById('maigpt-model-wrap');
+    if (mg) mg.style.display = isOllama ? 'none' : '';
     _updateChatBanner();
 }
 
@@ -4984,11 +5001,18 @@ function _buildChatContext() {
     lines.push('  agg    — aggregation: mean (default), count, min, max, std, all (full stats)');
     lines.push('Example: [QUERY: col=RBER, filter=>0.001, group=DUT, agg=mean]');
     lines.push('Results will be injected as context before your next reply.');
+
+    /* ── Append last Summary output if available ── */
+    if (typeof _lastSummaryText === 'string' && _lastSummaryText.trim()) {
+        lines.push('');
+        lines.push('--- Statistical Summary (from Summary panel) ---');
+        lines.push(_lastSummaryText.trim());
+    }
+
     return lines.join('\n');
 }
 
 function _chatInjectContext() {
-    /* Reset server session — fresh context will be built at send time */
     _chatPending      = '';
     _chatContextDirty = true;
     fetch('/chat_reset', {
@@ -4996,6 +5020,35 @@ function _chatInjectContext() {
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({csv_id: currentCsvId || '__default__'})
     }).catch(function(){});
+
+    /* For ConnectMaiGPT — immediately fire @general:system + chart data */
+    if (_chatProvider() === 'connectmaigpt') {
+        var ctx = _buildChatContext();
+        _chatAddNote('\u21bb Sending @general:system + chart data to ConnectMaiGPT\u2026');
+        _chatSetBusy(true);
+        fetch('/maigpt_chat', {
+            method:  'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                csv_id:        currentCsvId || '__default__',
+                message:       '@general:system',
+                context:       ctx,
+                modelname:     (document.getElementById('maigpt-model-sel') || {}).value || 'gpt4',
+                inject_system: true
+            })
+        })
+        .then(function(r) { return r.body.getReader().read(); })
+        .then(function() {
+            _chatSetBusy(false);
+            _chatAddNote('\u2705 Chart data context sent to ConnectMaiGPT.');
+        })
+        .catch(function(e) {
+            _chatSetBusy(false);
+            _chatAddMsg('note', '\u26a0 Inject failed: ' + String(e));
+        });
+        return;
+    }
+
     _chatAddNote('\u21bb Context armed \u2014 current chart statistics will be sent with your next message.');
 }
 
@@ -5021,14 +5074,24 @@ async function _chatSendMaiGpt(userMsg, context, thinkingEl) {
     var assistantEl = null;
     var fullText    = '';
 
+    /* Detect @general: prefixes and annotate the chat for the user */
+    var isGenSystem = userMsg.toLowerCase().startsWith('@general:system');
+    var isGenQuery  = !isGenSystem && userMsg.toLowerCase().startsWith('@general:');
+    if (isGenSystem) {
+        _chatAddNote('\uD83D\uDD27 Mode: @general:system — sending chart data as system context');
+    } else if (isGenQuery) {
+        _chatAddNote('\uD83D\uDD27 Mode: @general — sending bare query, no chart data');
+    }
+
     try {
         var resp = await fetch('/maigpt_chat', {
             method:  'POST',
             headers: {'Content-Type': 'application/json'},
             body:    JSON.stringify({
-                csv_id:  currentCsvId || '__default__',
-                message: userMsg,
-                context: context
+                csv_id:    currentCsvId || '__default__',
+                message:   userMsg,
+                context:   context,
+                modelname: (document.getElementById('maigpt-model-sel') || {}).value || 'gpt4'
             })
         });
 
@@ -5088,6 +5151,9 @@ async function _chatSendMaiGpt(userMsg, context, thinkingEl) {
             _chatPending      = 'Query results computed from the dataset:\n\n' + queryResults.join('\n\n');
             _chatContextDirty = false;
         }
+        /* Run [SUMMARY] / [ANALYZE] commands */
+        var sumResult = _chatExecSummaryCmds(result.text);
+        if (assistantEl) assistantEl.textContent = sumResult.text;
 
     } catch(e) {
         if (thinkingEl && thinkingEl.parentNode) thinkingEl.parentNode.removeChild(thinkingEl);
@@ -5109,17 +5175,12 @@ function _chatSend() {
     _chatSetBusy(true);
     var thinking = _chatAddMsg('thinking', '\u2026 thinking');
 
-    /* Build context fresh at send time if dirty, so it always reflects the
-       current chart state — not whatever was captured at inject time */
-    var context = '';
-    if (_chatContextDirty) {
-        context           = _buildChatContext();
-        _chatContextDirty = false;
-        _chatPending      = '';
-    } else if (_chatPending) {
-        context      = _chatPending;
-        _chatPending = '';
-    }
+    /* Always build fresh context on every send — ensures the model
+       is aware of current chart data on every turn, not just the first.
+       _chatContextDirty / _chatPending are kept for legacy compatibility. */
+    var context = _buildChatContext();
+    _chatContextDirty = false;
+    _chatPending      = '';
 
     /* Route to ConnectMaiGPT if selected */
     if (_chatProvider() === 'connectmaigpt') {
@@ -5146,6 +5207,9 @@ function _chatSend() {
                 _chatPending      = 'Query results computed from the dataset:\n\n' + queryResults.join('\n\n');
                 _chatContextDirty = false;
             }
+            /* Execute [SUMMARY] / [ANALYZE] commands */
+            var sumResult = _chatExecSummaryCmds(result.text);
+            if (assistantEl) assistantEl.textContent = sumResult.text;
             _chatSetBusy(false);
         }
 
@@ -5287,6 +5351,35 @@ function _chatExecQueryCmds(raw) {
         results.push(lines3.join('\n'));
     }
     return results;
+}
+
+/* ── Chat [SUMMARY] / [ANALYZE] command executor ────────────────────── */
+function _chatExecSummaryCmds(raw) {
+    var actions = [];
+
+    if (/\[SUMMARY\]/i.test(raw)) {
+        raw = raw.replace(/\[SUMMARY\]/gi, '').replace(/\n{3,}/g, '\n\n').trim();
+        actions.push('summary');
+        /* Run summary immediately, then re-arm context so next message gets fresh stats */
+        setTimeout(function() {
+            _showSummary();
+            setTimeout(function() {
+                _chatContextDirty = true;
+                _chatAddNote('\uD83D\uDCCA Summary updated \u2014 fresh stats will be included in your next message.');
+            }, 600);   /* short wait for _showSummary to populate _lastSummaryText */
+        }, 80);
+    }
+
+    if (/\[ANALYZE\]/i.test(raw)) {
+        raw = raw.replace(/\[ANALYZE\]/gi, '').replace(/\n{3,}/g, '\n\n').trim();
+        actions.push('analyze');
+        setTimeout(function() {
+            var btn = document.getElementById('analyze-btn');
+            if (btn && !btn.disabled) btn.click();
+        }, 80);
+    }
+
+    return { text: raw, actions: actions };
 }
 
 function _chatExecMarkerCmds(raw) {
