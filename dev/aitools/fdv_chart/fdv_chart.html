@@ -479,12 +479,60 @@
             background: rgba(0,0,0,0.18);
         }
         .panel-grip:hover::after { background: rgba(0,0,0,0.38); }
-        /* Analysis panel grip inherits purple theme */
-        #analysis-panel .panel-grip { background: rgba(102,16,242,0.07); }
-        #analysis-panel .panel-grip:hover { background: rgba(102,16,242,0.15); }
-        /* Chat drawer grip inherits teal theme */
-        #chat-drawer .panel-grip { background: rgba(23,162,184,0.08); }
-        #chat-drawer .panel-grip:hover { background: rgba(23,162,184,0.18); }
+        /* Analysis panel grip — taller, more prominent, drag-up-to-grow */
+        #analysis-grip {
+            flex: 0 0 10px; cursor: n-resize;
+            background: rgba(102,16,242,0.08);
+            transition: background 0.15s;
+            user-select: none;
+        }
+        #analysis-grip::after {
+            content: ''; display: block;
+            width: 44px; height: 4px; border-radius: 3px;
+            background: rgba(102,16,242,0.40);
+            transition: background 0.15s, width 0.15s;
+        }
+        #analysis-grip:hover {
+            background: rgba(102,16,242,0.18);
+        }
+        #analysis-grip:hover::after {
+            background: rgba(102,16,242,0.85);
+            width: 60px;
+        }
+        #analysis-grip.dragging {
+            background: rgba(102,16,242,0.28);
+        }
+        #analysis-grip.dragging::after {
+            background: #6610f2;
+            width: 60px;
+        }
+        /* Chat drawer grip — taller, more prominent, drag-up-to-grow */
+        #chat-grip {
+            flex: 0 0 10px; cursor: n-resize;
+            background: rgba(23,162,184,0.10);
+            transition: background 0.15s;
+            user-select: none;
+        }
+        #chat-grip::after {
+            content: ''; display: block;
+            width: 44px; height: 4px; border-radius: 3px;
+            background: rgba(23,162,184,0.45);
+            transition: background 0.15s, width 0.15s;
+        }
+        #chat-grip:hover {
+            background: rgba(23,162,184,0.22);
+        }
+        #chat-grip:hover::after {
+            background: rgba(23,162,184,0.9);
+            width: 60px;
+        }
+        #chat-grip.dragging {
+            background: rgba(23,162,184,0.30);
+        }
+        #chat-grip.dragging::after {
+            background: #17a2b8;
+            width: 60px;
+        }
     </style>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@sgratzl/chartjs-chart-boxplot@4.4.5/build/index.umd.min.js"></script>
@@ -625,6 +673,29 @@
             <span id="color-dims-wrap" class="gdim-wrap"><!-- rows injected by _gdimInit --></span>
             <button class="gdim-add" onclick="_gdimAdd('color')" title="Add another color-by dimension">+</button>
         </span>
+        <!-- Split chart controls — inline on same row as Color by -->
+        <span style="margin-left:8px;display:inline-flex;align-items:center;gap:5px;border-left:1px dashed #ced4da;padding-left:8px">
+            <span style="font-size:0.82em;color:#17a2b8;font-weight:bold;white-space:nowrap">&#9707;&nbsp;Split:</span>
+            <label style="font-size:0.82em;color:#17a2b8">By:
+                <select id="split-chart-col" onchange="_onSplitColChange()" style="border-color:#17a2b8">
+                    <option value="">-- none --</option>
+                </select></label>
+            <label style="font-size:0.82em;color:#17a2b8">Regex:
+                <input type="text" id="split-chart-rx" placeholder="e.g. DUT(\d+)" autocomplete="off"
+                       style="width:100px;border-color:#17a2b8" onchange="_onSplitColChange()"
+                       title="Optional regex applied to each cell&#10;• One capture group → use that group as tile key  e.g. DUT(\d+)&#10;• No capture group → use full match as tile key&#10;• No regex → split cell on commas  e.g. A,B → two tiles&#10;• Regex matching multiple times in one cell → row goes into ALL matched tiles"></label>
+            <span id="sc-dims-wrap" class="gdim-wrap" style="display:inline-flex;flex-direction:row;flex-wrap:wrap;gap:3px;align-items:center"></span>
+            <button class="gdim-add" onclick="_gdimAdd('sc')" title="Add an extra split-chart dimension (combined with the By column above)">+</button>
+            <label style="font-size:0.82em;color:#17a2b8">Cols:
+                <input type="number" id="split-chart-cols" value="3" min="1" max="10" autocomplete="off"
+                       style="width:42px;border-color:#17a2b8" onchange="_applySplitLayout()" title="Charts per row"></label>
+            <label style="font-size:0.82em;color:#17a2b8">Tile&nbsp;H:
+                <input type="number" id="split-chart-h" value="200" min="80" max="800" step="20" autocomplete="off"
+                       style="width:52px;border-color:#17a2b8" onchange="_applySplitLayout()" title="Height of each tile in px"></label>
+            <label style="font-size:0.82em;color:#17a2b8">Grid&nbsp;H:
+                <input type="number" id="split-grid-h" value="340" min="100" max="2000" step="20" autocomplete="off"
+                       style="width:56px;border-color:#17a2b8" onchange="_applySplitLayout()" title="Max height of the grid container (px)"></label>
+        </span>
         <!-- legacy ids kept for recipe snap compat -->
         <select id="color-col" style="display:none"></select>
         <input  id="color-regex" style="display:none">
@@ -652,74 +723,77 @@
         <input  id="split-regex" style="display:none">
         <span   id="split-rx-label" style="display:none"></span>
         <button id="plot-btn" class="btn" style="padding:4px 12px" onclick="drawPlot()">&#9654; Plot</button>
-        <button id="save-png-btn" class="btn sec" style="padding:4px 10px" onclick="_savePlotPng()"
-                title="Save the current chart as a PNG image">&#128247; Save PNG</button>
-        <button id="analyze-btn" type="button" onclick="_analyzeChart()"
-                title="Ask the selected Ollama model to summarise the current chart">
-            &#129504; Analyze
-        </button>
-        <button id="summary-btn" type="button" onclick="_showSummary()"
-                title="Show instant statistical summary table for each group in the current chart">
-            &#128202; Summary
-        </button>
-        <select id="summary-font-size" title="Summary table font size"
-                style="font-size:0.8em;padding:2px 4px;border-radius:3px;border:1px solid #20c997;
-                       color:#0a6b52;cursor:pointer;margin-left:0">
-            <option value="0.72em">XS</option>
-            <option value="0.82em">S</option>
-            <option value="0.92em" selected>M</option>
-            <option value="1.05em">L</option>
-            <option value="1.2em">XL</option>
-        </select>
-        <select id="llm-model-sel" title="Select Ollama model — click &#8615; to pull a new one"
-                onchange="_updateChatBanner()">
-            <option value="llama3">llama3</option>
-        </select>
-        <button id="llm-pull-btn" type="button" onclick="_pullSelectedModel()"
-                title="Pull / download the selected model from Ollama registry">
-            &#8615;
-        </button>
-        <span id="llm-pull-status"></span>
-        <button id="chat-toggle-btn" type="button" onclick="_toggleChat()"
-                title="Open a multi-turn chat with the selected model">
-            &#128172; Chat
-        </button>
-        <label style="font-size:0.8em;color:#17a2b8;margin-left:4px"
-               title="Select chat provider">
-            <select id="chat-provider-sel"
-                    style="font-size:0.82em;padding:2px 3px;border-radius:3px;
-                           border:1px solid #17a2b8;color:#17a2b8;cursor:pointer"
-                    onchange="_onChatProviderChange()">
-                <option value="ollama" selected>Ollama</option>
-                <option value="connectmaigpt">ConnectMaiGPT</option>
-            </select>
-        </label>
-        <label id="maigpt-model-wrap" style="font-size:0.8em;color:#17a2b8;margin-left:4px;display:none"
-               title="ConnectMaiGPT model — claude-3-5-sonnet answers from injected data; gpt4 uses datasheet RAG">
-            <select id="maigpt-model-sel"
-                    style="font-size:0.82em;padding:2px 3px;border-radius:3px;
-                           border:1px solid #17a2b8;color:#17a2b8;cursor:pointer">
-                <option value="gpt4" selected>gpt4 (recommended)</option>
-                <option value="claude-3-5-sonnet">claude-3-5-sonnet</option>
-            </select>
-        </label>
-        <label style="font-size:0.8em;color:#17a2b8;margin-left:2px"
-               title="Number of raw data rows included in each chat context message">
-            Rows:
-            <select id="chat-sample-size" style="font-size:0.82em;padding:2px 3px;border-radius:3px;
-                    border:1px solid #17a2b8;color:#17a2b8;cursor:pointer"
-                    onchange="_chatDataSampleSize=parseInt(this.value)">
-                <option value="0">none</option>
-                <option value="20">20</option>
-                <option value="50" selected>50</option>
-                <option value="100">100</option>
-                <option value="200">200</option>
-                <option value="500">500</option>
-            </select>
-        </label>
         <!-- Axis labels / XY-scale / Data-interval — combined row -->
         <div style="width:100%;display:flex;align-items:center;gap:6px;flex-wrap:wrap;
                     border-top:1px dashed #ced4da;padding-top:4px;margin-top:2px">
+            <!-- Save / AI buttons -->
+            <button id="save-png-btn" class="btn sec" style="padding:4px 10px" onclick="_savePlotPng()"
+                    title="Save the current chart as a PNG image">&#128247; Save PNG</button>
+            <button id="analyze-btn" type="button" onclick="_analyzeChart()"
+                    title="Ask the selected Ollama model to summarise the current chart">
+                &#129504; Analyze
+            </button>
+            <button id="summary-btn" type="button" onclick="_showSummary()"
+                    title="Show instant statistical summary table for each group in the current chart">
+                &#128202; Summary
+            </button>
+            <select id="summary-font-size" title="Summary table font size"
+                    style="font-size:0.8em;padding:2px 4px;border-radius:3px;border:1px solid #20c997;
+                           color:#0a6b52;cursor:pointer;margin-left:0">
+                <option value="0.72em">XS</option>
+                <option value="0.82em">S</option>
+                <option value="0.92em" selected>M</option>
+                <option value="1.05em">L</option>
+                <option value="1.2em">XL</option>
+            </select>
+            <select id="llm-model-sel" title="Select Ollama model — click &#8615; to pull a new one"
+                    onchange="_updateChatBanner()">
+                <option value="llama3">llama3</option>
+            </select>
+            <button id="llm-pull-btn" type="button" onclick="_pullSelectedModel()"
+                    title="Pull / download the selected model from Ollama registry">
+                &#8615;
+            </button>
+            <span id="llm-pull-status"></span>
+            <button id="chat-toggle-btn" type="button" onclick="_toggleChat()"
+                    title="Open a multi-turn chat with the selected model">
+                &#128172; Chat
+            </button>
+            <label style="font-size:0.8em;color:#17a2b8;margin-left:4px"
+                   title="Select chat provider">
+                <select id="chat-provider-sel"
+                        style="font-size:0.82em;padding:2px 3px;border-radius:3px;
+                               border:1px solid #17a2b8;color:#17a2b8;cursor:pointer"
+                        onchange="_onChatProviderChange()">
+                    <option value="ollama" selected>Ollama</option>
+                    <option value="connectmaigpt">ConnectMaiGPT</option>
+                </select>
+            </label>
+            <label id="maigpt-model-wrap" style="font-size:0.8em;color:#17a2b8;margin-left:4px;display:none"
+                   title="ConnectMaiGPT model — claude-3-5-sonnet answers from injected data; gpt4 uses datasheet RAG">
+                <select id="maigpt-model-sel"
+                        style="font-size:0.82em;padding:2px 3px;border-radius:3px;
+                               border:1px solid #17a2b8;color:#17a2b8;cursor:pointer">
+                    <option value="gpt4" selected>gpt4 (recommended)</option>
+                    <option value="claude-3-5-sonnet">claude-3-5-sonnet</option>
+                </select>
+            </label>
+            <label style="font-size:0.8em;color:#17a2b8;margin-left:2px"
+                   title="Number of raw data rows included in each chat context message">
+                Rows:
+                <select id="chat-sample-size" style="font-size:0.82em;padding:2px 3px;border-radius:3px;
+                        border:1px solid #17a2b8;color:#17a2b8;cursor:pointer"
+                        onchange="_chatDataSampleSize=parseInt(this.value)">
+                    <option value="0">none</option>
+                    <option value="20">20</option>
+                    <option value="50" selected>50</option>
+                    <option value="100">100</option>
+                    <option value="200">200</option>
+                    <option value="500">500</option>
+                </select>
+            </label>
+            <!-- Divider -->
+            <span style="color:#ced4da;font-size:1.1em;margin:0 2px">|</span>
             <!-- Axis labels -->
             <span style="font-size:0.82em;color:#495057;font-weight:bold">&#128218;&nbsp;Axis&nbsp;labels:</span>
             <label style="font-size:0.82em;color:#495057">X:
@@ -789,32 +863,6 @@
             <button class="btn sec" style="padding:2px 8px;font-size:0.78em" onclick="_clearMarkers()"
                     title="Remove all marker lines">&#10006;&nbsp;Clear&nbsp;markers</button>
         </div>
-        <!-- Split charts row -->
-        <div id="split-chart-row" style="width:100%;display:flex;align-items:center;gap:6px;flex-wrap:wrap;
-             border-top:1px dashed #ced4da;padding-top:4px;margin-top:2px">
-            <span style="font-size:0.82em;color:#17a2b8;font-weight:bold">&#9707;&nbsp;Split&nbsp;charts:</span>
-            <label style="font-size:0.82em;color:#17a2b8">By:
-                <select id="split-chart-col" onchange="_onSplitColChange()" style="border-color:#17a2b8">
-                    <option value="">-- none (single chart) --</option>
-                </select></label>
-            <label style="font-size:0.82em;color:#17a2b8">Regex:
-                <input type="text" id="split-chart-rx" placeholder="e.g. DUT(\d+)" autocomplete="off"
-                       style="width:110px;border-color:#17a2b8" onchange="_onSplitColChange()"
-                       title="Optional regex applied to each cell&#10;• One capture group → use that group as tile key  e.g. DUT(\d+)&#10;• No capture group → use full match as tile key&#10;• No regex → split cell on commas  e.g. A,B → two tiles&#10;• Regex matching multiple times in one cell → row goes into ALL matched tiles"></label>
-            <!-- Extra split-chart dims -->
-            <span id="sc-dims-wrap" class="gdim-wrap" style="display:inline-flex;flex-direction:row;flex-wrap:wrap;gap:3px;align-items:center">
-            </span>
-            <button class="gdim-add" onclick="_gdimAdd('sc')" title="Add an extra split-chart dimension (combined with the By column above)">+</button>
-            <label style="font-size:0.82em;color:#17a2b8">Cols:
-                <input type="number" id="split-chart-cols" value="3" min="1" max="10" autocomplete="off"
-                       style="width:46px;border-color:#17a2b8" onchange="_applySplitLayout()" title="Charts per row"></label>
-            <label style="font-size:0.82em;color:#17a2b8">Tile&nbsp;H:
-                <input type="number" id="split-chart-h" value="200" min="80" max="800" step="20" autocomplete="off"
-                       style="width:56px;border-color:#17a2b8" onchange="_applySplitLayout()" title="Height of each tile in px"></label>
-            <label style="font-size:0.82em;color:#17a2b8">Grid&nbsp;H:
-                <input type="number" id="split-grid-h" value="340" min="100" max="2000" step="20" autocomplete="off"
-                       style="width:60px;border-color:#17a2b8" onchange="_applySplitLayout()" title="Max height of the grid container (px)"></label>
-        </div>
     </div>
     <div id="chart-title-bar"
          contenteditable="true"
@@ -832,7 +880,7 @@
     </div>
     <div id="plot-grid"></div>
     <div id="analysis-panel">
-        <div class="panel-grip" id="analysis-grip" title="Drag to resize"></div>
+        <div id="analysis-grip" title="Drag up/down to resize &#x2022; Double-click to snap height"></div>
         <div id="analysis-panel-body">
         <div class="an-header">
             <strong id="analysis-panel-title">&#129504; AI Summary &mdash; llama3 (Ollama)</strong>
@@ -845,7 +893,7 @@
     </div>
     <!-- CHAT DRAWER -->
     <div id="chat-drawer">
-        <div class="panel-grip" id="chat-grip" title="Drag to resize"></div>
+        <div id="chat-grip" title="Drag up/down to resize &#x2022; Double-click to snap height"></div>
         <div id="chat-drawer-hdr">
             <span id="chat-drawer-title">&#128172; Chat with llama3 &mdash; ask about your data</span>
             <div class="ch-btns">
@@ -5461,24 +5509,40 @@ function _chatKeydown(e) {
 
 /* ── Panel resize grips (analysis + chat) ────────────────────────────── */
 (function() {
-    function makeResizable(gripId, panelId, minH, maxH) {
-        var grip    = document.getElementById(gripId);
-        var panel   = document.getElementById(panelId);
+
+    /* ── Analysis panel resize — drag UP to grow, with snap + persistence ── */
+    (function() {
+        var grip  = document.getElementById('analysis-grip');
+        var panel = document.getElementById('analysis-panel');
         if (!grip || !panel) return;
+
+        var STORAGE_KEY = 'fdv_analysis_panel_h';
+        var SNAP_STEPS  = [0.18, 0.32, 0.52]; /* fractions of viewport height */
+        var MIN_H = 60, MAX_H = 600;
+
+        /* Restore persisted height */
+        var savedH = parseInt(localStorage.getItem(STORAGE_KEY));
+        if (savedH && savedH >= MIN_H && savedH <= MAX_H) {
+            panel.style.height    = savedH + 'px';
+            panel.style.minHeight = savedH + 'px';
+        }
+
         var dragging = false, startY = 0, startH = 0;
 
         grip.addEventListener('mousedown', function(e) {
             dragging = true;
             startY   = e.clientY;
             startH   = panel.offsetHeight;
-            document.body.style.cursor = 'ns-resize';
+            grip.classList.add('dragging');
+            document.body.style.cursor = 'n-resize';
             e.preventDefault();
         });
 
         document.addEventListener('mousemove', function(e) {
             if (!dragging) return;
-            /* Grip is at the top — dragging down grows the panel */
-            var newH = Math.max(minH, Math.min(maxH, startH + (e.clientY - startY)));
+            /* Drag UP grows the panel */
+            var delta = startY - e.clientY;
+            var newH  = Math.max(MIN_H, Math.min(MAX_H, startH + delta));
             panel.style.height    = newH + 'px';
             panel.style.minHeight = newH + 'px';
         });
@@ -5486,12 +5550,84 @@ function _chatKeydown(e) {
         document.addEventListener('mouseup', function() {
             if (!dragging) return;
             dragging = false;
+            grip.classList.remove('dragging');
             document.body.style.cursor = '';
+            localStorage.setItem(STORAGE_KEY, panel.offsetHeight);
         });
-    }
 
-    makeResizable('analysis-grip', 'analysis-panel', 60,  600);
-    makeResizable('chat-grip',     'chat-drawer',     100, 700);
+        /* Double-click: cycle through snap heights */
+        var _snapIdx = 0;
+        grip.addEventListener('dblclick', function(e) {
+            e.preventDefault();
+            var vh   = window.innerHeight;
+            var snapH = Math.round(SNAP_STEPS[_snapIdx % SNAP_STEPS.length] * vh);
+            snapH = Math.max(MIN_H, Math.min(MAX_H, snapH));
+            panel.style.height    = snapH + 'px';
+            panel.style.minHeight = snapH + 'px';
+            localStorage.setItem(STORAGE_KEY, snapH);
+            _snapIdx++;
+        });
+    })();
+
+    /* ── Chat drawer resize — drag UP to grow, with snap + persistence ── */
+    (function() {
+        var grip   = document.getElementById('chat-grip');
+        var drawer = document.getElementById('chat-drawer');
+        if (!grip || !drawer) return;
+
+        var STORAGE_KEY = 'fdv_chat_drawer_h';
+        var SNAP_STEPS  = [0.30, 0.50, 0.72]; /* fractions of viewport height */
+        var MIN_H = 120, MAX_H = Math.round(window.innerHeight * 0.85);
+
+        /* Restore persisted height */
+        var savedH = parseInt(localStorage.getItem(STORAGE_KEY));
+        if (savedH && savedH >= MIN_H && savedH <= MAX_H) {
+            drawer.style.height    = savedH + 'px';
+            drawer.style.minHeight = savedH + 'px';
+        }
+
+        var dragging = false, startY = 0, startH = 0;
+
+        grip.addEventListener('mousedown', function(e) {
+            dragging = true;
+            startY   = e.clientY;
+            startH   = drawer.offsetHeight;
+            grip.classList.add('dragging');
+            document.body.style.cursor = 'n-resize';
+            e.preventDefault();
+        });
+
+        document.addEventListener('mousemove', function(e) {
+            if (!dragging) return;
+            /* Grip is at top of drawer — drag UP (negative delta) grows panel */
+            var delta = startY - e.clientY;   /* positive when mouse moves up */
+            var newH  = Math.max(MIN_H, Math.min(MAX_H, startH + delta));
+            drawer.style.height    = newH + 'px';
+            drawer.style.minHeight = newH + 'px';
+        });
+
+        document.addEventListener('mouseup', function() {
+            if (!dragging) return;
+            dragging = false;
+            grip.classList.remove('dragging');
+            document.body.style.cursor = '';
+            /* Persist */
+            localStorage.setItem(STORAGE_KEY, drawer.offsetHeight);
+        });
+
+        /* Double-click: cycle through snap heights */
+        var _snapIdx = 0;
+        grip.addEventListener('dblclick', function(e) {
+            e.preventDefault();
+            var vh   = window.innerHeight;
+            var snapH = Math.round(SNAP_STEPS[_snapIdx % SNAP_STEPS.length] * vh);
+            snapH = Math.max(MIN_H, Math.min(MAX_H, snapH));
+            drawer.style.height    = snapH + 'px';
+            drawer.style.minHeight = snapH + 'px';
+            localStorage.setItem(STORAGE_KEY, snapH);
+            _snapIdx++;
+        });
+    })();
 })();
 
 /* ── Drag-to-resize plot ─────────────────────────────────────────────── */
