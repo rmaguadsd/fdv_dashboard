@@ -876,6 +876,12 @@
              border-bottom:1px solid #e0a800;">
             &#9203; PARTIAL DATA &mdash; <span id="plot-cover-pct"></span>
         </div>
+        <div id="split-chart-banner" style="display:none;position:absolute;top:0;left:0;right:0;
+             z-index:10;background:rgba(0,150,200,0.85);color:#fff;font-size:0.82em;
+             font-weight:bold;padding:6px 10px;text-align:center;pointer-events:none;
+             border-bottom:1px solid #0088cc;">
+            &#128202; SPLIT-CHART MODE ACTIVE &mdash; Grouping by <span id="split-chart-banner-col"></span>
+        </div>
         <canvas id="plot-canvas"></canvas>
     </div>
     <div id="plot-grid"></div>
@@ -2712,6 +2718,9 @@ function _resetTitleBar() {
     _mainChartTitle = '';
     var bar = document.getElementById('chart-title-bar');
     if (bar) bar.textContent = '';
+    /* Hide split-chart banner when drawing a single chart */
+    var banner = document.getElementById('split-chart-banner');
+    if (banner) banner.style.display = 'none';
 }
 
 /* Wire tile title contenteditable after split-chart renders */
@@ -2774,8 +2783,9 @@ function _gdimAdd(type) {
     });
     var row = document.createElement('div');
     row.className = 'gdim-row';
-    row.innerHTML = '<select onchange="_gdimChanged(\'' + type + '\')">' + opts + '</select>'
-        + '<input type="text" class="gdim-rx" placeholder="regex\u2026"'
+    var rowId = 'gdim-' + type + '-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
+    row.innerHTML = '<select id="' + rowId + '-col" onchange="_gdimChanged(\'' + type + '\')">' + opts + '</select>'
+        + '<input type="text" id="' + rowId + '-rx" class="gdim-rx" placeholder="regex\u2026"'
         + ' title="Optional regex \u2014 capture group = extracted key, no group = full match"'
         + ' oninput="_gdimChanged(\'' + type + '\')">'
         + '<button class="gdim-del" onclick="_gdimDel(this,\'' + type + '\')"'
@@ -2912,8 +2922,17 @@ function _buildTileChart(canvas, ct, tileData, xCol, yCol, xRx, yRx, colCol, col
                           xLog, yLog, innerSplitCol, innerSplitRx) {
     var ctx = canvas.getContext('2d');
     var colIdx = colCol ? currentHeaders.indexOf(colCol) : -1;
+    
+    /* Read multi-dimensional color-by selections at draw time */
+    var colorDims = _gdimRead('color');
+    var hasColorDims = colorDims.length > 0 && colorDims.some(function(d){ return d.colIdx >= 0; });
 
     function colorKey(pt) {
+        /* Multi-dim: use all selected color dims if available */
+        if (hasColorDims && pt._ri != null && allRows[pt._ri] != null) {
+            return _compoundKey(allRows[pt._ri], colorDims) || '(all)';
+        }
+        /* Fallback to single colCol */
         if (!colCol) return '(all)';
         var raw = (colIdx >= 0 && pt._ri != null && allRows[pt._ri] != null)
             ? (allRows[pt._ri][colIdx] != null ? String(allRows[pt._ri][colIdx]) : '')
@@ -3152,6 +3171,7 @@ function _drawSplitCharts() {
     var yHi_bp = (ct === 'boxplot' && iv.yHi !== '') ? parseFloat(iv.yHi) : NaN;
     for (var r = 0; r < filteredIndices.length; r++) {
         var row = allRows[filteredIndices[r]];
+        var rowIdx = filteredIndices[r];  /* Store the actual row index */
         var keys_r = _splitChartKeys(row, scIdx, scRx).map(function(k){ return k || '(blank)'; });
         keys_r.forEach(function(key) {
             if (!buckets[key]) { buckets[key] = []; bucketOrder.push(key); }
@@ -3165,7 +3185,7 @@ function _drawSplitCharts() {
                 if (!isNaN(yLo_bp) && bpYv < yLo_bp) return;
                 if (!isNaN(yHi_bp) && bpYv > yHi_bp) return;
                 var bpXraw = xi_bp >= 0 && row[xi_bp] != null ? String(row[xi_bp]).trim() : xCol;
-                var bpPt = { x: 0, y: bpYv, group: bpXraw };
+                var bpPt = { x: 0, y: bpYv, group: bpXraw, _ri: rowIdx };
                 buckets[key].push(bpPt);
                 return;
             }
@@ -3187,7 +3207,7 @@ function _drawSplitCharts() {
             if (!isNaN(yHi2) && yv2 > yHi2) return;
             var gi2  = colCol   ? currentHeaders.indexOf(colCol)   : -1;
             var si2  = splitCol ? currentHeaders.indexOf(splitCol) : -1;
-            var pt2  = { x: xv2, y: isXOnly ? xv2 : yv2 };
+            var pt2  = { x: xv2, y: isXOnly ? xv2 : yv2, _ri: rowIdx };
             if (gi2 >= 0 && row[gi2] != null)  pt2.group      = String(row[gi2]);
             if (si2 >= 0 && row[si2] != null)  pt2.splitGroup = String(row[si2]);
             buckets[key].push(pt2);
@@ -3293,14 +3313,19 @@ function _onSplitColChange() {
        and prompt the user to press Plot — do NOT auto-render (can be slow). */
     var scCol  = document.getElementById('split-chart-col').value;
     var status = document.getElementById('plot-status');
+    var banner = document.getElementById('split-chart-banner');
+    var bannerCol = document.getElementById('split-chart-banner-col');
     _destroySplitCharts();
     if (chartInst) { chartInst.destroy(); chartInst = null; }
     if (scCol) {
         status.textContent = '\u23f3 Split-chart ready \u2014 press \u25b6 Plot to render';
         status.style.color = '#17a2b8';
+        banner.style.display = 'block';
+        bannerCol.textContent = scCol;
     } else {
         status.textContent = '';
         status.style.color = '#555';
+        banner.style.display = 'none';
     }
 }
 
@@ -3712,8 +3737,6 @@ function drawCumProba() {
     _resetTitleBar();
     var xCol     = document.getElementById('x-col').value;
     var xRx      = document.getElementById('x-regex').value.trim();
-    var splitCol = document.getElementById('color-col').value;
-    var splitRx  = document.getElementById('color-regex').value.trim();
     var legendCol = '';
     var legendRx  = '';
     var xLog     = document.getElementById('x-log').checked;
@@ -3722,26 +3745,25 @@ function drawCumProba() {
     if (!currentCsvId) { status.textContent = 'Session expired \u2014 re-parse file.'; _spinStop(); return; }
     status.textContent = 'Computing\u2026';
 
+    /* Re-read color dims from UI at draw time (don't rely on global sync) */
+    var colorDims = _gdimRead('color');
+    var hasColorDims = colorDims.length > 0 && colorDims.some(function(d){ return d.colIdx >= 0; });
+
     var iv      = _getIntervals();
-    var res     = readFilteredFromMemory(xCol, null, splitCol || null, xRx, null, iv.xLo, iv.xHi, '', '');
+    /* DO NOT pass a groupCol to readFilteredFromMemory — cumproba handles grouping via colorDims */
+    var res     = readFilteredFromMemory(xCol, null, null, xRx, null, iv.xLo, iv.xHi, '', '');
     var points  = res.points;
     var skipped = res.skipped;
 
     if (!points.length) { status.textContent = 'No numeric values in column ' + xCol; _spinStop(); return; }
 
-    var splitColIdx = splitCol ? currentHeaders.indexOf(splitCol) : -1;
     function groupKey(pt) {
-        /* Multi-dim: use _splitDims when at least one dim has a column selected */
-        var hasSplitDims = _splitDims.length > 0 && _splitDims.some(function(d){ return d.colIdx >= 0; });
-        if (hasSplitDims && pt._ri != null && allRows[pt._ri] != null) {
-            return _compoundKey(allRows[pt._ri], _splitDims) || '(all)';
+        /* Multi-dim: use all selected color dims to create compound key */
+        if (hasColorDims && pt._ri != null && allRows[pt._ri] != null) {
+            var key = _compoundKey(allRows[pt._ri], colorDims) || '(all)';
+            return key;
         }
-        /* Legacy fallback */
-        if (!splitCol) return '(all)';
-        var raw = (splitColIdx >= 0 && pt._ri != null && allRows[pt._ri] != null)
-            ? (allRows[pt._ri][splitColIdx] != null ? String(allRows[pt._ri][splitColIdx]) : '')
-            : (pt.group != null ? String(pt.group) : '');
-        return _extractGroupKey(raw || '(blank)', splitRx);
+        return '(all)';
     }
 
     var groups = {};
@@ -3827,11 +3849,11 @@ function drawCumProba() {
         ? datasets.map(function(ds){ return ds.data.map(function(dp){ return cumLegendKey(dp._ri) || ''; }); })
         : null);
 
-    _syncMainTitle('Cum Proba │ ' + xCol + (splitCol ? '  │  ' + splitCol : ''));
+    _syncMainTitle('Cum Proba │ ' + xCol + (hasColorDims ? '  │  ' + colorDims.map(function(d){ return d.col; }).join(', ') : ''));
     var filtNote  = hasActiveFilters() ? ' — filtered' : '';
     var nGroups   = Object.keys(groups).length;
-    var splitDesc = splitCol
-        ? (' grouped by ' + splitCol + (splitRx ? ' [' + splitRx + ']' : '')) : '';
+    var splitDesc = hasColorDims
+        ? (' grouped by ' + colorDims.map(function(d){ return d.col + (d.rx ? ' [' + d.rx + ']' : ''); }).join(', ')) : '';
     var lblNote   = useLegend ? ' \u00b7 labelled by ' + legendCol : '';
     status.textContent = points.length.toLocaleString() + ' values' + splitDesc +
         (nGroups > 1 ? ', ' + nGroups + ' groups' : '') +
