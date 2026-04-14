@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FDV Chart</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: Arial, sans-serif;
+            background: #f5f5f5;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        h1 {
+            color: #333;
+            margin-bottom: 20px;
+        }
+        
+        .tabs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            border-bottom: 2px solid #ddd;
+        }
+        
+        .tab-btn {
+            padding: 10px 20px;
+            background: none;
+            border: none;
+            cursor: pointer;
+            font-size: 14px;
+            border-bottom: 3px solid transparent;
+            color: #666;
+        }
+        
+        .tab-btn.active {
+            border-bottom-color: #0066cc;
+            color: #0066cc;
+        }
+        
+        .tab-content {
+            display: none;
+            background: white;
+            padding: 20px;
+            border-radius: 5px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        
+        .tab-content.active {
+            display: block;
+        }
+        
+        .form-group {
+            margin-bottom: 15px;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #333;
+        }
+        
+        input[type="file"],
+        input[type="text"],
+        select {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 3px;
+            font-size: 14px;
+        }
+        
+        button {
+            padding: 10px 20px;
+            background: #0066cc;
+            color: white;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        
+        button:hover {
+            background: #0052a3;
+        }
+        
+        button.secondary {
+            background: #999;
+        }
+        
+        button.secondary:hover {
+            background: #777;
+        }
+        
+        .message {
+            padding: 10px 15px;
+            margin-bottom: 15px;
+            border-radius: 3px;
+            display: none;
+        }
+        
+        .message.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+            display: block;
+        }
+        
+        .message.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+            display: block;
+        }
+        
+        .message.info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+            display: block;
+        }
+        
+        .data-container {
+            border: 1px solid #ddd;
+            background: #fafafa;
+            overflow: auto;
+            height: 500px;
+            margin-bottom: 15px;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            background: white;
+        }
+        
+        th, td {
+            padding: 10px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+        
+        th {
+            background: #f0f0f0;
+            font-weight: bold;
+            position: sticky;
+            top: 0;
+        }
+        
+        tr:hover {
+            background: #f9f9f9;
+        }
+        
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        
+        .stat-box {
+            background: #f0f0f0;
+            padding: 15px;
+            border-radius: 3px;
+        }
+        
+        .stat-box strong {
+            display: block;
+            color: #333;
+        }
+        
+        .stat-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #0066cc;
+            margin-top: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📊 FDV Chart - Simple Viewer</h1>
+        
+        <div class="tabs">
+            <button class="tab-btn active" onclick="switchTab('upload')">Upload</button>
+            <button class="tab-btn" onclick="switchTab('view')">View Data</button>
+        </div>
+        
+        <!-- UPLOAD TAB -->
+        <div id="upload" class="tab-content active">
+            <div class="form-group">
+                <label>Select FDV Log File</label>
+                <input type="file" id="fileInput" accept=".txt,.log,.csv">
+            </div>
+            
+            <div class="form-group">
+                <button onclick="uploadFile()">Parse & Upload</button>
+                <button class="secondary" onclick="resetUpload()">Reset</button>
+            </div>
+            
+            <div id="uploadMessage" class="message"></div>
+            
+            <div id="uploadResult" style="display: none;">
+                <div class="stats">
+                    <div class="stat-box">
+                        <strong>Total Rows</strong>
+                        <div class="stat-value" id="rowCount">0</div>
+                    </div>
+                    <div class="stat-box">
+                        <strong>Total Columns</strong>
+                        <div class="stat-value" id="colCount">0</div>
+                    </div>
+                </div>
+                <button onclick="downloadCSV()">⬇️ Download CSV</button>
+            </div>
+        </div>
+        
+        <!-- VIEW DATA TAB -->
+        <div id="view" class="tab-content">
+            <div id="viewMessage" class="message"></div>
+            <div id="dataContainer" class="data-container">
+                <p style="padding: 20px; color: #999;">Load a file to view data</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentCsvId = null;
+        
+        function switchTab(tab) {
+            // Hide all tabs
+            document.querySelectorAll('.tab-content').forEach(el => {
+                el.classList.remove('active');
+            });
+            document.querySelectorAll('.tab-btn').forEach(el => {
+                el.classList.remove('active');
+            });
+            
+            // Show selected tab
+            document.getElementById(tab).classList.add('active');
+            event.target.classList.add('active');
+            
+            // Load data if switching to view tab
+            if (tab === 'view' && currentCsvId) {
+                loadData();
+            }
+        }
+        
+        function showMessage(tabId, message, type) {
+            const el = document.getElementById(tabId + 'Message');
+            el.textContent = message;
+            el.className = `message ${type}`;
+        }
+        
+        async function uploadFile() {
+            const file = document.getElementById('fileInput').files[0];
+            if (!file) {
+                showMessage('upload', 'Please select a file', 'error');
+                return;
+            }
+            
+            const formData = new FormData();
+            formData.append('file', file);
+            
+            try {
+                const response = await fetch('/api/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const data = await response.json();
+                
+                if (!data.success) {
+                    showMessage('upload', data.error, 'error');
+                    return;
+                }
+                
+                currentCsvId = data.csv_id;
+                document.getElementById('rowCount').textContent = data.row_count;
+                document.getElementById('colCount').textContent = data.column_count;
+                document.getElementById('uploadResult').style.display = 'block';
+                showMessage('upload', `Successfully parsed ${data.row_count} rows`, 'success');
+                
+            } catch (error) {
+                showMessage('upload', `Error: ${error.message}`, 'error');
+            }
+        }
+        
+        function resetUpload() {
+            document.getElementById('fileInput').value = '';
+            document.getElementById('uploadResult').style.display = 'none';
+            showMessage('upload', '', 'info');
+        }
+        
+        async function downloadCSV() {
+            if (!currentCsvId) return;
+            window.location.href = `/api/csv/${currentCsvId}/download`;
+        }
+        
+        async function loadData() {
+            if (!currentCsvId) return;
+            
+            try {
+                const response = await fetch(`/api/csv/${currentCsvId}/data`);
+                const data = await response.json();
+                
+                if (!data.success) {
+                    showMessage('view', data.error, 'error');
+                    return;
+                }
+                
+                displayTable(data.columns, data.data);
+                showMessage('view', `Loaded ${data.total_rows} rows`, 'success');
+                
+            } catch (error) {
+                showMessage('view', `Error: ${error.message}`, 'error');
+            }
+        }
+        
+        function displayTable(columns, rows) {
+            let html = '<table><thead><tr>';
+            
+            // Header
+            columns.forEach(col => {
+                html += `<th>${col}</th>`;
+            });
+            html += '</tr></thead><tbody>';
+            
+            // Rows
+            rows.forEach(row => {
+                html += '<tr>';
+                columns.forEach(col => {
+                    const val = row[col] || '';
+                    html += `<td>${val}</td>`;
+                });
+                html += '</tr>';
+            });
+            
+            html += '</tbody></table>';
+            document.getElementById('dataContainer').innerHTML = html;
+        }
+    </script>
+</body>
+</html>
