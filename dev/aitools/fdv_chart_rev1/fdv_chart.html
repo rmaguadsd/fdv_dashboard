@@ -103,7 +103,7 @@
         #plot-area canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
         /* Split-chart grid */
         #plot-grid {
-            flex: 1 1 0; display: none;
+            flex: 1 1 0; display: none; flex-direction: row;
             overflow-y: auto; overflow-x: hidden;
             padding: 6px; gap: 6px;
             flex-wrap: wrap; align-content: flex-start;
@@ -673,19 +673,14 @@
             <span id="color-dims-wrap" class="gdim-wrap"><!-- rows injected by _gdimInit --></span>
             <button class="gdim-add" onclick="_gdimAdd('color')" title="Add another color-by dimension">+</button>
         </span>
-        <!-- Split chart controls — inline on same row as Color by -->
-        <span style="margin-left:8px;display:inline-flex;align-items:center;gap:5px;border-left:1px dashed #ced4da;padding-left:8px">
-            <span style="font-size:0.82em;color:#17a2b8;font-weight:bold;white-space:nowrap">&#9707;&nbsp;Split:</span>
-            <label style="font-size:0.82em;color:#17a2b8">By:
-                <select id="split-chart-col" onchange="_onSplitColChange()" style="border-color:#17a2b8">
-                    <option value="">-- none --</option>
-                </select></label>
-            <label style="font-size:0.82em;color:#17a2b8">Regex:
-                <input type="text" id="split-chart-rx" placeholder="e.g. DUT(\d+)" autocomplete="off"
-                       style="width:100px;border-color:#17a2b8" onchange="_onSplitColChange()"
-                       title="Optional regex applied to each cell&#10;• One capture group → use that group as tile key  e.g. DUT(\d+)&#10;• No capture group → use full match as tile key&#10;• No regex → split cell on commas  e.g. A,B → two tiles&#10;• Regex matching multiple times in one cell → row goes into ALL matched tiles"></label>
-            <span id="sc-dims-wrap" class="gdim-wrap" style="display:inline-flex;flex-direction:row;flex-wrap:wrap;gap:3px;align-items:center"></span>
-            <button class="gdim-add" onclick="_gdimAdd('sc')" title="Add an extra split-chart dimension (combined with the By column above)">+</button>
+        <!-- Split-chart controls — same mechanism as Color-by -->
+        <span id="split-col-label" style="margin-left:8px;display:inline-flex;align-items:flex-start;gap:4px;border-left:1px dashed #ced4da;padding-left:8px">
+            <span style="font-size:0.82em;color:#17a2b8;font-weight:bold;white-space:nowrap;padding-top:3px">&#9707;&nbsp;Split-chart:</span>
+            <span id="sc-dims-wrap" class="gdim-wrap"><!-- rows injected by _gdimInit --></span>
+            <button class="gdim-add" onclick="_gdimAdd('sc')" title="Add another split-chart dimension">+</button>
+        </span>
+        <!-- Split-chart layout controls — below dimensions -->
+        <span style="margin-left:8px;display:flex;align-items:center;gap:8px;padding-top:4px;border-top:1px dashed #ced4da;margin-top:2px">
             <label style="font-size:0.82em;color:#17a2b8">Cols:
                 <input type="number" id="split-chart-cols" value="3" min="1" max="10" autocomplete="off"
                        style="width:42px;border-color:#17a2b8" onchange="_applySplitLayout()" title="Charts per row"></label>
@@ -714,14 +709,6 @@
         <label id="bp-maxgroups-label" style="margin-left:4px;display:none"
                title="Maximum number of X groups to render (more groups = slower)">Max&nbsp;groups:
             <input type="number" id="bp-maxgroups" min="1" max="2000" value="200" autocomplete="off" style="width:60px"></label>
-        <span id="split-label" style="margin-left:8px;display:none;align-items:flex-start;gap:4px">
-            <span style="font-size:0.82em;color:#495057;white-space:nowrap;padding-top:3px">Split&nbsp;by:</span>
-            <span id="split-dims-wrap" class="gdim-wrap"><!-- rows injected by _gdimInit --></span>
-            <button class="gdim-add" onclick="_gdimAdd('split')" title="Add another split-by dimension">+</button>
-        </span>
-        <select id="split-col"  style="display:none"></select>
-        <input  id="split-regex" style="display:none">
-        <span   id="split-rx-label" style="display:none"></span>
         <button id="plot-btn" class="btn" style="padding:4px 12px" onclick="drawPlot()">&#9654; Plot</button>
         <!-- Axis labels / XY-scale / Data-interval — combined row -->
         <div style="width:100%;display:flex;align-items:center;gap:6px;flex-wrap:wrap;
@@ -746,6 +733,15 @@
                 <option value="1.05em">L</option>
                 <option value="1.2em">XL</option>
             </select>
+            <select id="llm-model-sel" title="Select Ollama model — click &#8615; to pull a new one"
+                    onchange="_updateChatBanner()">
+                <option value="llama3">llama3</option>
+            </select>
+            <button id="llm-pull-btn" type="button" onclick="_pullSelectedModel()"
+                    title="Pull / download the selected model from Ollama registry">
+                &#8615;
+            </button>
+            <span id="llm-pull-status"></span>
             <button id="chat-toggle-btn" type="button" onclick="_toggleChat()"
                     title="Open a multi-turn chat with the selected model">
                 &#128172; Chat
@@ -756,25 +752,11 @@
                         style="font-size:0.82em;padding:2px 3px;border-radius:3px;
                                border:1px solid #17a2b8;color:#17a2b8;cursor:pointer"
                         onchange="_onChatProviderChange()">
-                    <option value="ollama">Ollama</option>
-                    <option value="connectmaigpt" selected>ConnectMaiGPT</option>
+                    <option value="ollama" selected>Ollama</option>
+                    <option value="connectmaigpt">ConnectMaiGPT</option>
                 </select>
             </label>
-            <label id="ollama-model-wrap" style="font-size:0.8em;color:#17a2b8;margin-left:4px;display:none"
-                   title="Select Ollama model — click &#8615; to pull a new one">
-                <select id="llm-model-sel" onchange="_updateChatBanner()"
-                        style="font-size:0.82em;padding:2px 3px;border-radius:3px;
-                               border:1px solid #17a2b8;color:#17a2b8;cursor:pointer">
-                    <option value="llama3">llama3</option>
-                </select>
-            </label>
-            <button id="llm-pull-btn" type="button" onclick="_pullSelectedModel()"
-                    title="Pull / download the selected model from Ollama registry"
-                    style="display:none !important;font-size:0.9em;padding:6px 12px">
-                &#8615;
-            </button>
-            <span id="llm-pull-status" style="display:none"></span>
-            <label id="maigpt-model-wrap" style="font-size:0.8em;color:#17a2b8;margin-left:4px;display:block"
+            <label id="maigpt-model-wrap" style="font-size:0.8em;color:#17a2b8;margin-left:4px;display:none"
                    title="ConnectMaiGPT model — claude-3-5-sonnet answers from injected data; gpt4 uses datasheet RAG">
                 <select id="maigpt-model-sel"
                         style="font-size:0.82em;padding:2px 3px;border-radius:3px;
@@ -1658,8 +1640,6 @@ function resetAll() {
     _rebuildMarkerTags();
     document.getElementById('marker-input').value = '';
     _destroySplitCharts();
-    document.getElementById('split-chart-col').value = '';
-    document.getElementById('split-chart-rx').value  = '';
     document.getElementById('plot-area').style.display = '';
     document.getElementById('plot-grid').style.display = 'none';
     document.getElementById('table-head').innerHTML = '';
@@ -1752,9 +1732,9 @@ function onChartTypeChange() {
 
 function populatePlotSelectors(headers) {
     currentHeaders = headers;
-    ['x-col','y-col','color-col','split-col','split-chart-col'].forEach(function(id) {
+    ['x-col','y-col','color-col'].forEach(function(id) {
         var sel = document.getElementById(id), prev = sel.value;
-        sel.innerHTML = (id==='color-col'||id==='split-col'||id==='split-chart-col')
+        sel.innerHTML = (id==='color-col')
             ? '<option value="">-- none --</option>' : '';
         headers.forEach(function(h) {
             var o = document.createElement('option');
@@ -1778,12 +1758,38 @@ function populatePlotSelectors(headers) {
     if (_pendingRecipeSnap) {
         var pending = _pendingRecipeSnap;
         _pendingRecipeSnap = null;
+        console.log('[populatePlotSelectors] Applying pending recipe snapshot');
         /* Restore column selectors */
-        ['x-col','y-col','color-col','split-col','split-chart-col'].forEach(function(id) {
+        ['x-col','y-col','color-col'].forEach(function(id) {
             if (!(id in pending)) return;
             var el = document.getElementById(id);
             if (el && pending[id]) el.value = pending[id];
         });
+        /* Restore dimensions (color-by, split-by, split-chart) */
+        if (pending['__colorDims']) {
+            try {
+                console.log('[populatePlotSelectors] Restoring __colorDims from pending');
+                _gdimRestoreDirect('color', JSON.parse(pending['__colorDims']));
+            } catch(e) {
+                console.log('[populatePlotSelectors] ERROR restoring __colorDims:', e);
+            }
+        }
+        if (pending['__splitDims']) {
+            try {
+                console.log('[populatePlotSelectors] Restoring __splitDims from pending');
+                _gdimRestoreDirect('split', JSON.parse(pending['__splitDims']));
+            } catch(e) {
+                console.log('[populatePlotSelectors] ERROR restoring __splitDims:', e);
+            }
+        }
+        if (pending['__scDims']) {
+            try {
+                console.log('[populatePlotSelectors] Restoring __scDims from pending');
+                _gdimRestoreDirect('sc', JSON.parse(pending['__scDims']));
+            } catch(e) {
+                console.log('[populatePlotSelectors] ERROR restoring __scDims:', e);
+            }
+        }
         /* Restore column filter values via shared helper (now that filter-row inputs exist) */
         _recipeApplyColFilters(pending);
         onChartTypeChange();
@@ -1845,8 +1851,7 @@ function _recipeIds() {
         'regex-input',                                          /* parse regex */
         'chart-type','x-col','y-col','x-regex','y-regex',
         'color-col','color-regex',
-        'split-col','split-regex',
-        'split-chart-col','split-chart-rx','split-chart-cols','split-chart-h','split-grid-h',
+        'split-chart-cols','split-chart-h','split-grid-h',
         'hist-bins','bp-maxgroups',
         'x-log','y-log',
         'x-min','x-max','x-step','y-min','y-max','y-step',
@@ -1880,6 +1885,12 @@ function _recipeSnapshot() {
     snap['__filters_visible'] = filtersVisible;
     /* Also capture marker lines */
     snap['__markers'] = JSON.stringify(_markers || []);
+    /* Capture dimension arrays (color-by, split-by, split-chart) */
+    snap['__colorDims'] = JSON.stringify(_colorDims || []);
+    snap['__splitDims'] = JSON.stringify(_splitDims || []);
+    snap['__scDims']    = JSON.stringify(_scDims || []);
+    console.log('[_recipeSnapshot] Captured dims - color:', snap['__colorDims'], 'split:', snap['__splitDims'], 'sc:', snap['__scDims']);
+    console.log('[_recipeSnapshot] Full snapshot:', snap);
     return snap;
 }
 
@@ -1895,8 +1906,7 @@ function _recipeApply(snap) {
         var el = document.getElementById(id);
         if (!el) return;
         /* Column selectors — defer if not yet populated (no data loaded) */
-        if ((id==='x-col'||id==='y-col'||id==='color-col'||
-             id==='split-col'||id==='split-chart-col') && el.options.length <= 1) return;
+        if ((id==='x-col'||id==='y-col'||id==='color-col') && el.options.length <= 1) return;
         if (el.type === 'checkbox') el.checked = !!snap[id];
         else el.value = snap[id];
     });
@@ -1922,10 +1932,71 @@ function _recipeApply(snap) {
     }
     /* Restore column filter values — immediate if headers already loaded, deferred otherwise */
     _recipeApplyColFilters(snap);
-    /* If column selectors are not yet populated, queue deferred restore */
-    var needsDefer = ['x-col','y-col','color-col','split-col','split-chart-col']
+    /* If column selectors are not yet populated, queue deferred restore (includes dimensions) */
+    var needsDefer = ['x-col','y-col','color-col']
         .some(function(id){ var el=document.getElementById(id); return el && el.options.length<=1; });
-    if (needsDefer) _pendingRecipeSnap = snap;
+    if (needsDefer) {
+        _pendingRecipeSnap = snap;
+        console.log('[_recipeApply] Deferring dimension restoration (headers not loaded yet)');
+    } else {
+        /* Headers already loaded — restore dimensions immediately */
+        console.log('[_recipeApply] Restoring dimensions immediately (headers loaded)');
+        console.log('[_recipeApply] currentHeaders:', currentHeaders);
+        /* Check if dimension wraps exist */
+        var colorWrap = document.getElementById('color-dims-wrap');
+        var splitWrap = document.getElementById('split-dims-wrap');
+        var scWrap = document.getElementById('sc-dims-wrap');
+        console.log('[_recipeApply] Wraps exist - color:', !!colorWrap, 'split:', !!splitWrap, 'sc:', !!scWrap);
+        /* First rebuild select options so dimensions can be restored */
+        if (currentHeaders && currentHeaders.length > 0) {
+            console.log('[_recipeApply] Rebuilding dimension selects with headers');
+            _gdimRebuildSelects(currentHeaders);
+        } else {
+            console.log('[_recipeApply] WARNING: currentHeaders is empty or undefined');
+        }
+        if (snap['__colorDims']) {
+            try { 
+                console.log('[_recipeApply] Found __colorDims:', snap['__colorDims']);
+                var colorDims = JSON.parse(snap['__colorDims']);
+                if (colorDims && colorDims.length > 0) {
+                    console.log('[_recipeApply] Calling _gdimRestoreDirect for color with', colorDims.length, 'dims');
+                    _gdimRestoreDirect('color', colorDims);
+                }
+            } catch(e) {
+                console.log('[_recipeApply] ERROR parsing __colorDims:', e);
+            }
+        } else {
+            console.log('[_recipeApply] No __colorDims in snapshot');
+        }
+        if (snap['__splitDims']) {
+            try {
+                console.log('[_recipeApply] Found __splitDims:', snap['__splitDims']);
+                var splitDims = JSON.parse(snap['__splitDims']);
+                if (splitDims && splitDims.length > 0) {
+                    console.log('[_recipeApply] Calling _gdimRestoreDirect for split with', splitDims.length, 'dims');
+                    _gdimRestoreDirect('split', splitDims);
+                }
+            } catch(e) {
+                console.log('[_recipeApply] ERROR parsing __splitDims:', e);
+            }
+        } else {
+            console.log('[_recipeApply] No __splitDims in snapshot');
+        }
+        if (snap['__scDims']) {
+            try {
+                console.log('[_recipeApply] Found __scDims:', snap['__scDims']);
+                var scDims = JSON.parse(snap['__scDims']);
+                if (scDims && scDims.length > 0) {
+                    console.log('[_recipeApply] Calling _gdimRestoreDirect for sc with', scDims.length, 'dims');
+                    _gdimRestoreDirect('sc', scDims);
+                }
+            } catch(e) {
+                console.log('[_recipeApply] ERROR parsing __scDims:', e);
+            }
+        } else {
+            console.log('[_recipeApply] No __scDims in snapshot');
+        }
+    }
     onChartTypeChange();
 }
 
@@ -2291,6 +2362,8 @@ function _sessionApplyEntry(entry, name) {
     _vtRender();
     populatePlotSelectors(entry.headers);
     if (entry.snap) {
+        /* Migrate old session format to new one if needed */
+        entry.snap = _migrateSessionSnapshot(entry.snap);
         _pendingRecipeSnap = null;
         _recipeApply(entry.snap);
         /* _recipeApplyColFilters calls applyFilters() which is debounced (100 ms).
@@ -2317,6 +2390,72 @@ function _sessionApplyEntry(entry, name) {
             if (d.success) { currentCsvId = d.csv_id; }
         }).catch(function(){});
     }
+}
+
+/* Migrate old session snapshots to new format with dimension arrays.
+   Old sessions may have legacy color-col/color-regex inputs but no __colorDims array.
+   This converts them automatically. */
+function _migrateSessionSnapshot(snap) {
+    console.log('[_migrateSessionSnapshot] Checking if migration needed...');
+    
+    /* Check if this is an old session (missing dimension arrays) */
+    var needsMigration = !snap['__colorDims'] || !snap['__scDims'];
+    if (!needsMigration) {
+        console.log('[_migrateSessionSnapshot] Session is already new format');
+        return snap;
+    }
+    
+    console.log('[_migrateSessionSnapshot] Old session detected, migrating...');
+    
+    /* Create dimension arrays from legacy inputs if they exist */
+    
+    /* Color-by: check for 'color-col' and 'color-regex' */
+    if (!snap['__colorDims'] && snap['color-col']) {
+        var colorCol = snap['color-col'];
+        var colorRx = snap['color-regex'] || '';
+        if (colorCol) {
+            var colorDims = [{
+                col: colorCol,
+                colIdx: currentHeaders ? currentHeaders.indexOf(colorCol) : -1,
+                rx: colorRx
+            }];
+            snap['__colorDims'] = JSON.stringify(colorDims);
+            console.log('[_migrateSessionSnapshot] Migrated color-by:', snap['__colorDims']);
+        }
+    }
+    
+    /* Split-chart: check for 'split-chart-col' */
+    if (!snap['__scDims'] && snap['split-chart-col']) {
+        var scCol = snap['split-chart-col'];
+        var scRx = snap['split-chart-rx'] || '';
+        if (scCol) {
+            var scDims = [{
+                col: scCol,
+                colIdx: currentHeaders ? currentHeaders.indexOf(scCol) : -1,
+                rx: scRx
+            }];
+            snap['__scDims'] = JSON.stringify(scDims);
+            console.log('[_migrateSessionSnapshot] Migrated split-chart:', snap['__scDims']);
+        }
+    }
+    
+    /* Split-by (legacy cumproba): check for 'split-col' and 'split-regex' */
+    if (!snap['__splitDims'] && snap['split-col']) {
+        var splitCol = snap['split-col'];
+        var splitRx = snap['split-regex'] || '';
+        if (splitCol) {
+            var splitDims = [{
+                col: splitCol,
+                colIdx: currentHeaders ? currentHeaders.indexOf(splitCol) : -1,
+                rx: splitRx
+            }];
+            snap['__splitDims'] = JSON.stringify(splitDims);
+            console.log('[_migrateSessionSnapshot] Migrated split-by:', snap['__splitDims']);
+        }
+    }
+    
+    console.log('[_migrateSessionSnapshot] Migration complete');
+    return snap;
 }
 
 function _sessionSave() {
@@ -2429,6 +2568,8 @@ function _sessionLoad() {
 
             populatePlotSelectors(headers);
             if (snap) {
+                /* Migrate old session format to new one if needed */
+                snap = _migrateSessionSnapshot(snap);
                 _pendingRecipeSnap = snap;   /* applied after rows arrive */
                 _recipeApply(snap);
             }
@@ -2783,9 +2924,12 @@ function _gdimAdd(type) {
     var wrap = document.getElementById(type + '-dims-wrap');
     if (!wrap) return;
     var opts = '<option value="">— col —</option>';
-    currentHeaders.forEach(function(h) {
-        opts += '<option value="' + escHtml(h) + '">' + escHtml(h) + '</option>';
-    });
+    /* Use currentHeaders if available, otherwise empty */
+    if (currentHeaders && currentHeaders.length > 0) {
+        currentHeaders.forEach(function(h) {
+            opts += '<option value="' + escHtml(h) + '">' + escHtml(h) + '</option>';
+        });
+    }
     var row = document.createElement('div');
     row.className = 'gdim-row';
     var rowId = 'gdim-' + type + '-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
@@ -2808,7 +2952,10 @@ function _gdimDel(btn, type) {
 /** Sync dim arrays + legacy hidden inputs */
 function _gdimChanged(type) {
     if      (type === 'color') _colorDims = _gdimRead('color');
-    else if (type === 'sc')    _scDims    = _gdimRead('sc');
+    else if (type === 'sc') {
+        _scDims = _gdimRead('sc');
+        _onSplitColChange();  /* Trigger split-chart UI update when dimensions change */
+    }
     else                       _splitDims = _gdimRead('split');
     _gdimSyncLegacy(type);
 }
@@ -2854,27 +3001,116 @@ function _gdimRebuildSelects(headers) {
 
 /** Restore a builder from a saved dims array */
 function _gdimSetDims(type, dims) {
+    console.log('[_gdimSetDims] Restoring ' + type + ' dims:', dims);
     var wrap = document.getElementById(type + '-dims-wrap');
-    if (!wrap) return;
-    wrap.innerHTML = '';
-    dims.forEach(function(dim) {
+    if (!wrap) {
+        console.log('[_gdimSetDims] ERROR: ' + type + '-dims-wrap not found');
+        return;
+    }
+    
+    /* Get all existing rows */
+    var rows = wrap.querySelectorAll('.gdim-row');
+    var existingCount = rows.length;
+    var targetCount = dims.length;
+    console.log('[_gdimSetDims] ' + type + ': existingCount=' + existingCount + ', targetCount=' + targetCount);
+    
+    /* Remove excess rows if we have more than needed */
+    while (existingCount > targetCount) {
+        rows[existingCount - 1].parentNode.removeChild(rows[existingCount - 1]);
+        existingCount--;
+        rows = wrap.querySelectorAll('.gdim-row');
+    }
+    
+    /* Add missing rows if we need more */
+    while (existingCount < targetCount) {
         _gdimAdd(type);
-        var rows = wrap.querySelectorAll('.gdim-row');
-        var last = rows[rows.length - 1];
-        var sel  = last.querySelector('select');
-        var inp  = last.querySelector('.gdim-rx');
-        if (sel && dim.col) sel.value = dim.col;
+        existingCount++;
+        rows = wrap.querySelectorAll('.gdim-row');
+    }
+    
+    /* Now populate all rows with the saved data */
+    rows = wrap.querySelectorAll('.gdim-row');
+    rows.forEach(function(row, idx) {
+        if (idx >= dims.length) return;
+        var dim = dims[idx];
+        var sel = row.querySelector('select');
+        var inp = row.querySelector('.gdim-rx');
+        console.log('[_gdimSetDims] ' + type + '[' + idx + ']: setting col=' + (dim.col || '?') + ', rx=' + (dim.rx || '?'));
+        if (sel) {
+            console.log('[_gdimSetDims] select options available:', Array.from(sel.options).map(o => o.value));
+            sel.value = dim.col || '';
+            console.log('[_gdimSetDims] after setting, select.value=' + sel.value);
+        }
         if (inp) inp.value = dim.rx || '';
     });
+    
+    /* Update the global arrays */
     _gdimChanged(type);
+}
+
+/** Restore dimension arrays directly (new simpler approach) */
+function _gdimRestoreDirect(type, dims) {
+    console.log('[_gdimRestoreDirect] Restoring ' + type + ' with', dims.length, 'dims:', dims);
+    
+    if (!dims || dims.length === 0) {
+        console.log('[_gdimRestoreDirect] Nothing to restore for ' + type);
+        return;
+    }
+    
+    var wrap = document.getElementById(type + '-dims-wrap');
+    if (!wrap) {
+        console.log('[_gdimRestoreDirect] ERROR: ' + type + '-dims-wrap not found');
+        return;
+    }
+    
+    /* Step 1: Clear all existing dimension rows */
+    wrap.querySelectorAll('.gdim-row').forEach(function(row) { row.remove(); });
+    
+    /* Step 2: Create new rows for each dimension, properly populated */
+    dims.forEach(function(dim, idx) {
+        console.log('[_gdimRestoreDirect] Adding row ' + idx + ' for col=' + dim.col);
+        
+        var row = document.createElement('div');
+        row.className = 'gdim-row';
+        var rowId = 'gdim-' + type + '-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
+        
+        /* Build select with options from currentHeaders */
+        var opts = '<option value="">— col —</option>';
+        if (currentHeaders && currentHeaders.length > 0) {
+            currentHeaders.forEach(function(h) {
+                var selected = (h === dim.col) ? ' selected' : '';
+                opts += '<option value="' + escHtml(h) + '"' + selected + '>' + escHtml(h) + '</option>';
+            });
+        }
+        
+        row.innerHTML = '<select id="' + rowId + '-col" onchange="_gdimChanged(\'' + type + '\')">' + opts + '</select>'
+            + '<input type="text" id="' + rowId + '-rx" class="gdim-rx" placeholder="regex\u2026"'
+            + ' onchange="_gdimChanged(\'' + type + '\')" value="' + escHtml(dim.rx || '') + '">'
+            + '<button class="gdim-del" onclick="this.parentNode.parentNode.removeChild(this.parentNode); _gdimChanged(\'' + type + '\')">×</button>';
+        
+        wrap.appendChild(row);
+    });
+    
+    /* Step 3: Update global arrays */
+    if (type === 'color') _colorDims = _gdimRead('color');
+    else if (type === 'split') _splitDims = _gdimRead('split');
+    else if (type === 'sc') {
+        _scDims = _gdimRead('sc');
+        _onSplitColChange();  /* Trigger split-chart UI update */
+    }
+    
+    console.log('[_gdimRestoreDirect] Done. Global array for ' + type + ':', 
+        (type === 'color') ? _colorDims : (type === 'split') ? _splitDims : _scDims);
 }
 
 /** Create the initial single-row builders */
 function _gdimInit() {
     _gdimAdd('color');
     _gdimAdd('split');
-    /* sc-dims-wrap is additive — starts empty, user clicks + to add */
+    _gdimAdd('sc');   /* sc-dims-wrap now builds all split-chart dimensions, starts with one */
 }
+
+/** Old version kept for compatibility - now delegates to new direct restore */
 
 /* Extracts a single color/group key from a raw string value using a regex.
    Like _splitChartKeys but returns ONE compound key string (not an array).
@@ -3148,16 +3384,18 @@ function _drawSplitCharts() {
     var yRx       = document.getElementById('y-regex').value.trim();
     var colCol    = document.getElementById('color-col').value;
     var colorRx   = document.getElementById('color-regex').value.trim();
-    var splitCol  = document.getElementById('split-col').value;      /* cumproba inner-split col */
-    var splitRx   = document.getElementById('split-regex').value.trim();
+    var scDims    = _gdimRead('sc');   /* Split-chart dimensions (unified mechanism) */
+    var scCol     = scDims.length > 0 ? scDims[0].col : '';  /* Primary split column from dims */
+    var scRx      = scDims.length > 0 ? scDims[0].rx : '';   /* Primary split regex from dims */
+    var splitDims = _gdimRead('split');  /* Split-by dimensions (inner grouping within tiles) */
+    var splitCol  = splitDims.length > 0 ? splitDims[0].col : '';  /* Split column from dims */
+    var splitRx   = splitDims.length > 0 ? splitDims[0].rx : '';   /* Split regex from dims */
     var xLog      = document.getElementById('x-log').checked;
     var yLog      = document.getElementById('y-log').checked;
-    var scCol     = document.getElementById('split-chart-col').value;
-    var scRx      = document.getElementById('split-chart-rx').value.trim();
     var status    = document.getElementById('plot-status');
 
-    var scIdx = currentHeaders.indexOf(scCol);
-    if (scIdx < 0) { status.textContent = 'Split-chart column not found.'; _spinStop(); return; }
+    var scIdx = scCol ? currentHeaders.indexOf(scCol) : -1;
+    if (scIdx < 0 && scCol) { status.textContent = 'Split-chart column not found.'; _spinStop(); return; }
 
     /* Collect all points, bucket by split key */
     var isXOnly = ct === 'histogram' || ct === 'cumproba';
@@ -3316,7 +3554,8 @@ function _htmlTooltip(context) {
 function _onSplitColChange() {
     /* When split-chart column/regex changes, destroy existing split tiles
        and prompt the user to press Plot — do NOT auto-render (can be slow). */
-    var scCol  = document.getElementById('split-chart-col').value;
+    var scDims = _gdimRead('sc');
+    var scCol  = scDims.length > 0 ? scDims[0].col : '';
     var status = document.getElementById('plot-status');
     var banner = document.getElementById('split-chart-banner');
     var bannerCol = document.getElementById('split-chart-banner-col');
@@ -3465,7 +3704,8 @@ function _savePlotPng() {
 function drawPlot() {
     _updatePlotCoverBanner();
     _spinStart();
-    var scCol = document.getElementById('split-chart-col').value;
+    var scDims = _gdimRead('sc');
+    var scCol = scDims.length > 0 ? scDims[0].col : '';
 
     /* Toggle between single-chart and split-chart modes */
     var singleArea = document.getElementById('plot-area');
@@ -3476,6 +3716,7 @@ function drawPlot() {
             /* Split-chart mode */
             if (chartInst) { chartInst.destroy(); chartInst = null; }
             singleArea.style.display = 'none';
+            gridArea.style.display = 'flex';   /* Show the grid area as flex */
             _drawSplitCharts();
             return;
         }
@@ -4248,10 +4489,11 @@ function _showSummary() {
     var yRx      = document.getElementById('y-regex').value.trim();
     var colCol   = document.getElementById('color-col').value;
     var colorRx  = document.getElementById('color-regex').value.trim();
-    var scCol    = document.getElementById('split-chart-col').value;
-    var scRx     = document.getElementById('split-chart-rx').value.trim();
-    var splitCol = document.getElementById('split-col').value;
-    var splitRx  = document.getElementById('split-regex').value.trim();
+    var scDims   = _gdimRead('sc');
+    var scCol    = scDims.length > 0 ? scDims[0].col : '';
+    var scRx     = scDims.length > 0 ? scDims[0].rx : '';
+    var splitCol = (document.getElementById('split-col') || {value:''}).value;
+    var splitRx  = (document.getElementById('split-regex') || {value:''}).value.trim();
     var isXOnly  = (ct === 'histogram' || ct === 'cumproba');
     var showY    = !isXOnly;
     var iv       = _getIntervals();
@@ -4407,68 +4649,16 @@ function _summaryCopyCSV() {
     });
 }
 
-/* POST to /analyze or /maigpt_chat — returns summary string or throws */
+/* POST to /analyze — returns summary string or throws */
 async function _fetchSummary(prompt) {
-    var provider = _chatProvider();
-    
-    if (provider === 'connectmaigpt') {
-        // Use ConnectMaiGPT for analysis via /maigpt_chat endpoint
-        var resp = await fetch('/maigpt_chat', {
-            method:  'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body:    JSON.stringify({
-                csv_id:      currentCsvId || 'default',
-                message:     prompt,
-                context:     '',
-                modelname:   document.getElementById('maigpt-model-sel').value,
-                inject_system: false
-            })
-        });
-        
-        if (!resp.ok) {
-            throw new Error('ConnectMaiGPT request failed: ' + resp.status);
-        }
-        
-        var summary = '';
-        var reader = resp.body.getReader();
-        var decoder = new TextDecoder();
-        
-        while (true) {
-            var {done, value} = await reader.read();
-            if (done) break;
-            var text = decoder.decode(value, {stream: true});
-            // Parse SSE data lines
-            var lines = text.split('\n');
-            for (var i = 0; i < lines.length; i++) {
-                var line = lines[i].trim();
-                if (line.startsWith('data:')) {
-                    try {
-                        var obj = JSON.parse(line.substring(5));
-                        if (obj.token) summary += obj.token;
-                        if (obj.done) break;
-                    } catch(e) {
-                        // Skip parse errors
-                    }
-                }
-            }
-        }
-        
-        if (!summary) {
-            throw new Error('ConnectMaiGPT returned empty response');
-        }
-        return summary;
-        
-    } else {
-        // Use Ollama for analysis via /analyze endpoint
-        var resp = await fetch('/analyze', {
-            method:  'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body:    JSON.stringify({ prompt: prompt, model: _selectedModel() })
-        });
-        var d = await resp.json();
-        if (!d.success) throw new Error(d.error || 'LLM error');
-        return d.summary;
-    }
+    var resp = await fetch('/analyze', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ prompt: prompt, model: _selectedModel() })
+    });
+    var d = await resp.json();
+    if (!d.success) throw new Error(d.error || 'LLM error');
+    return d.summary;
 }
 
 /* Entry point — wired to the Analyze button.
@@ -4493,8 +4683,7 @@ function _analyzeChart() {
 
     btn.disabled     = true;
     btn.textContent  = '\u23f3 Analyzing\u2026';
-    var providerLabel = _chatProvider() === 'connectmaigpt' ? 'ConnectMaiGPT' : 'Ollama (' + _selectedModel() + ')';
-    textEl.innerHTML = '<em style="color:#888">Contacting ' + providerLabel + '\u2026</em>';
+    textEl.innerHTML = '<em style="color:#888">Contacting Ollama (' + _selectedModel() + ')\u2026</em>';
 
     var ct      = document.getElementById('chart-type').value;
     var xCol    = document.getElementById('x-col').value;
@@ -4503,10 +4692,11 @@ function _analyzeChart() {
     var yRx     = document.getElementById('y-regex').value.trim();
     var colCol  = document.getElementById('color-col').value;     /* color-by / in-chart grouping */
     var colorRx = document.getElementById('color-regex').value.trim();
-    var splitCol= document.getElementById('split-col').value;     /* cumproba inner split */
-    var splitRx = document.getElementById('split-regex').value.trim();
-    var scCol   = document.getElementById('split-chart-col').value; /* split-charts column */
-    var scRx    = document.getElementById('split-chart-rx').value.trim();
+    var splitCol= (document.getElementById('split-col') || {value:''}).value;     /* cumproba inner split */
+    var splitRx = (document.getElementById('split-regex') || {value:''}).value.trim();
+    var scDims  = _gdimRead('sc');
+    var scCol   = scDims.length > 0 ? scDims[0].col : '';      /* split-charts column */
+    var scRx    = scDims.length > 0 ? scDims[0].rx : '';
     var isXOnly = ct === 'histogram' || ct === 'cumproba';
 
     /* Helper — extract the effective group key for in-chart grouping */
@@ -4724,17 +4914,10 @@ function _analyzeChart() {
             _renderAnalysisSingle(summary, headerNote);
 
         } catch(e) {
-            var msg = '<span style="color:#dc3545">&#9888; ' + escHtml(e.message) + '</span>'
-                + '<br><small style="color:#888">';
-            if (_chatProvider() === 'connectmaigpt') {
-                msg += 'ConnectMaiGPT is configured in the chat provider. '
-                    + 'Check your network connection and credentials.';
-            } else {
-                msg += 'Check: Ollama is running on port 11434 '
-                    + 'and the selected model is pulled (use the ↓ button to pull).';
-            }
-            msg += '</small>';
-            textEl.innerHTML = msg;
+            textEl.innerHTML =
+                '<span style="color:#dc3545">&#9888; ' + escHtml(e.message) + '</span>'
+                + '<br><small style="color:#888">Check: Ollama is running on port 11434 '
+                + 'and the selected model is pulled (use the \u2193 button to pull).</small>';
         } finally {
             btn.disabled    = false;
             btn.textContent = '\uD83E\uDDE0 Analyze';
@@ -4783,12 +4966,9 @@ function _onChatProviderChange() {
     var prov     = _chatProvider();
     var isOllama = prov === 'ollama';
     /* Show/hide Ollama-specific controls */
-    var ollamaWrap = document.getElementById('ollama-model-wrap');
-    if (ollamaWrap) ollamaWrap.style.display = isOllama ? '' : 'none';
-    /* Pull button is permanently hidden since models load automatically */
-    ['llm-pull-btn','llm-pull-status'].forEach(function(id) {
+    ['llm-model-sel','llm-pull-btn','llm-pull-status'].forEach(function(id) {
         var el = document.getElementById(id);
-        if (el) el.style.display = 'none';
+        if (el) el.style.display = isOllama ? '' : 'none';
     });
     /* Show/hide MaiGPT model selector */
     var mg = document.getElementById('maigpt-model-wrap');
@@ -4959,10 +5139,11 @@ function _buildChatContext() {
     var yRx      = document.getElementById('y-regex').value.trim();
     var colCol   = document.getElementById('color-col').value;
     var colorRx  = document.getElementById('color-regex').value.trim();
-    var splitCol = document.getElementById('split-col').value;
-    var splitRx  = document.getElementById('split-regex').value.trim();
-    var scCol    = document.getElementById('split-chart-col').value;
-    var scRx     = document.getElementById('split-chart-rx').value.trim();
+    var splitCol = (document.getElementById('split-col') || {value:''}).value;
+    var splitRx  = (document.getElementById('split-regex') || {value:''}).value.trim();
+    var scDims   = _gdimRead('sc');
+    var scCol    = scDims.length > 0 ? scDims[0].col : '';
+    var scRx     = scDims.length > 0 ? scDims[0].rx : '';
     var isXOnly  = ct === 'histogram' || ct === 'cumproba';
     var iv       = _getIntervals();
 
