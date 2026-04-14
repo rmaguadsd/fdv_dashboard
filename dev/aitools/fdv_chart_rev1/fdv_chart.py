@@ -28,6 +28,7 @@ import io
 import sys
 import ssl
 import tempfile
+import time
 import threading
 import http.client
 import urllib.request
@@ -57,19 +58,25 @@ _LLM_SYSTEM_PROMPT = (
     'note which have wider spread, higher extremes, or cross reference lines. '
     'Always use engineering language and concrete numbers from the statistics provided. '
     'Never pad with generic disclaimers or repeat the input data verbatim.\n\n'
-    'MARKER COMMANDS — you may add or remove reference lines on the chart by emitting '
-    'these special tokens anywhere in your reply (they will be executed automatically '
-    'and hidden from the displayed text):\n'
-    '  [MARKER: x=<value>:<label>]   — add a vertical line at X=value\n'
-    '  [MARKER: y=<value>:<label>]   — add a horizontal line at Y=value\n'
-    '  [CLEAR_MARKERS]               — remove all existing markers\n'
+    'INTERACTIVE CHART COMMANDS — You have the ability to modify the chart interactively by '
+    'emitting these special tokens in your response. They are executed automatically and removed '
+    'from the displayed text:\n'
+    '  [MARKER: x=<value>:<label>]   — add a vertical reference line at X=value with optional label\n'
+    '  [MARKER: y=<value>:<label>]   — add a horizontal reference line at Y=value with optional label\n'
+    '  [CLEAR_MARKERS]               — remove all existing marker lines\n'
     '  [SUMMARY]                     — re-run the statistical summary table and refresh context\n'
     '  [ANALYZE]                     — re-run the AI analysis panel\n'
-    'Examples: [MARKER: x=1000:spec_limit]  [MARKER: y=0.05:target]  [CLEAR_MARKERS]  [SUMMARY]\n'
-    'Use [SUMMARY] whenever you want to view or refresh the statistics before answering. '
-    'Use markers when the user asks to mark, highlight, or draw a line at a specific value, '
-    'or when you identify a threshold worth highlighting. You may emit multiple MARKER '
-    'commands in one reply. Always explain in a bullet what you marked and why.'
+    'MARKER USAGE RULES:\n'
+    '  • When the user asks you to "mark", "highlight", "draw a line", or "add a reference line" at a specific value, '
+    'ALWAYS emit the [MARKER:...] token. Do NOT explain how to do it—just do it.\n'
+    '  • When the user specifies a value like "at 27000" or "at 0.5", emit [MARKER: x=27000:label] or [MARKER: y=0.5:label]\n'
+    '  • You may emit multiple MARKER commands in one reply\n'
+    '  • Always explain in a bullet point what you marked and why\n'
+    'Examples of correct behavior:\n'
+    '  User: "add marker at 27000 on x-axis"\n'
+    '  Your response: [MARKER: x=27000:user_specified] • Added marker at x=27000 as requested.\n'
+    '  User: "highlight the 99% confidence interval"\n'
+    '  Your response: [MARKER: y=0.99:confidence_bound] • Added horizontal marker at y=0.99 for the 99% threshold.\n'
 )
 
 _OLLAMA_BASE = 'http://localhost:11434'
@@ -200,7 +207,7 @@ class ThreadedHTTPServer(ThreadingMixIn, HTTPServer):
     daemon_threads = True
 
 
-def parse_log_file(file_path, regex_pattern=None, include_mode=True, source_name=None):
+def parse_log_file(file_path, regex_include=None, regex_exclude=None, source_name=None):
     """
     Parse log file with regex filtering.
     Supports both FDV OUTPUT (functional) and FDV POLL (char/array) lines.
@@ -209,8 +216,8 @@ def parse_log_file(file_path, regex_pattern=None, include_mode=True, source_name
 
     Args:
         file_path: Path to log file
-        regex_pattern: Optional regex to match lines
-        include_mode: True to include matches, False to exclude
+        regex_include: Optional regex to include matching lines
+        regex_exclude: Optional regex to exclude matching lines
 
     Returns:
         tuple: (headers, data_rows)
@@ -387,12 +394,18 @@ def parse_log_file(file_path, regex_pattern=None, include_mode=True, source_name
 
     # ── Main parse loop ────────────────────────────────────────────────────
     try:
-        compiled_regex = None
-        if regex_pattern:
+        compiled_include = None
+        compiled_exclude = None
+        if regex_include:
             try:
-                compiled_regex = re.compile(regex_pattern)
+                compiled_include = re.compile(regex_include)
             except re.error as e:
-                raise ValueError("Invalid regex: " + str(e))
+                raise ValueError("Invalid include regex: " + str(e))
+        if regex_exclude:
+            try:
+                compiled_exclude = re.compile(regex_exclude)
+            except re.error as e:
+                raise ValueError("Invalid exclude regex: " + str(e))
 
         with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
             for line in f:
@@ -402,12 +415,12 @@ def parse_log_file(file_path, regex_pattern=None, include_mode=True, source_name
                 if not line_stripped.strip():
                     continue
 
-                # Apply regex filter
-                if compiled_regex:
-                    matches = compiled_regex.search(line_stripped)
-                    if include_mode and not matches:
+                # Apply regex filters
+                if compiled_include:
+                    if not compiled_include.search(line_stripped):
                         continue
-                    if not include_mode and matches:
+                if compiled_exclude:
+                    if compiled_exclude.search(line_stripped):
                         continue
 
                 # Auto-detect and parse line type
@@ -436,20 +449,21 @@ def parse_log_file(file_path, regex_pattern=None, include_mode=True, source_name
 def get_html():
     """Return the HTML interface from external file"""
     html_file = Path(__file__).parent / 'fdv_chart.html'
-    return html_file.read_text(encoding='utf-8')
+    html_content = html_file.read_text(encoding='utf-8')
+    return html_content
 
 
 # File extensions considered when scanning a directory
 _DIR_EXTENSIONS = {'.txt', '.log', '.csv'}
 
 
-def _run_parse_job(job_id, file_path, regex_pattern, include_mode, temp_path=None, source_name=None):
+def _run_parse_job(job_id, file_path, regex_include, regex_exclude, temp_path=None, source_name=None):
     """Run parse_log_file in a background thread, updating parse_jobs[job_id]."""
     try:
         with parse_jobs_lock:
             parse_jobs[job_id]['state'] = 'running'
 
-        headers, rows = parse_log_file(file_path, regex_pattern, include_mode, source_name=source_name)
+        headers, rows = parse_log_file(file_path, regex_include=regex_include, regex_exclude=regex_exclude, source_name=source_name)
 
         if not rows:
             raise ValueError('No matching rows found')
@@ -479,7 +493,7 @@ def _run_parse_job(job_id, file_path, regex_pattern, include_mode, temp_path=Non
                 pass
 
 
-def _run_parse_multi_job(job_id, file_paths, regex_pattern, include_mode, temp_paths=None, orig_names=None):
+def _run_parse_multi_job(job_id, file_paths, regex_include, regex_exclude, temp_paths=None, orig_names=None):
     """Parse multiple files and concatenate results into a single dataset."""
     try:
         with parse_jobs_lock:
@@ -492,7 +506,7 @@ def _run_parse_multi_job(job_id, file_paths, regex_pattern, include_mode, temp_p
         for i, fp in enumerate(file_paths):
             src_name = orig_names[i] if orig_names and i < len(orig_names) else None
             try:
-                h, rows = parse_log_file(fp, regex_pattern, include_mode, source_name=src_name)
+                h, rows = parse_log_file(fp, regex_include=regex_include, regex_exclude=regex_exclude, source_name=src_name)
                 if headers is None:
                     headers = h
                 all_rows.extend(rows)
@@ -547,16 +561,35 @@ class RequestHandler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         """Handle GET requests"""
+        print(f"[DEBUG] GET {self.path}", flush=True)
         if self.path == '/':
             # Serve HTML interface
-            body = get_html().encode('utf-8')
-            self.send_response(200)
-            self.send_header('Content-Type', 'text/html; charset=utf-8')
-            self.send_header('Content-Length', len(body))
-            self.send_header('Cache-Control', 'no-store, no-cache, must-revalidate')
-            self.send_header('Pragma', 'no-cache')
-            self.end_headers()
-            self.wfile.write(body)
+            try:
+                print(f"[DEBUG] Serving root path", flush=True)
+                body = get_html().encode('utf-8')
+                print(f"[DEBUG] Got HTML body: {len(body)} bytes", flush=True)
+                self.send_response(200)
+                print(f"[DEBUG] Sent response code", flush=True)
+                self.send_header('Content-Type', 'text/html; charset=utf-8')
+                self.send_header('Content-Length', len(body))
+                self.send_header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
+                self.send_header('Pragma', 'no-cache')
+                self.send_header('Expires', '0')
+                self.send_header('ETag', f'"{int(time.time() * 1000)}"')
+                print(f"[DEBUG] Sending headers", flush=True)
+                self.end_headers()
+                print(f"[DEBUG] Headers done, writing body", flush=True)
+                self.wfile.write(body)
+                print(f"[DEBUG] Body written, done", flush=True)
+            except Exception as e:
+                print(f"ERROR serving /: {e}", flush=True)
+                import traceback
+                traceback.print_exc(file=sys.stderr)
+                try:
+                    self.send_error(500, str(e))
+                except:
+                    pass
+                return
 
         elif self.path.startswith('/parse_status'):
             from urllib.parse import urlparse, parse_qs
@@ -580,8 +613,6 @@ class RequestHandler(BaseHTTPRequestHandler):
             else:
                 # Still running — return pending status
                 _send_json(self, 202, {'success': False, 'state': state, 'job_id': job_id})
-
-        elif self.path.startswith('/download/'):
             # Download CSV
             csv_id = self.path.split('/')[-1]
             if csv_id not in parsed_cache:
@@ -853,9 +884,9 @@ class RequestHandler(BaseHTTPRequestHandler):
             try:
                 content_len = int(self.headers.get('Content-Length', 0))
                 body = json.loads(self.rfile.read(content_len).decode('utf-8'))
-                file_path    = body.get('path', '').strip()
-                regex_filter = body.get('regex', '').strip()
-                mode         = body.get('mode', 'include').strip()
+                file_path        = body.get('path', '').strip()
+                regex_include    = body.get('regex_include', '').strip()
+                regex_exclude    = body.get('regex_exclude', '').strip()
 
                 if not file_path:
                     raise ValueError('No file path provided')
@@ -868,7 +899,7 @@ class RequestHandler(BaseHTTPRequestHandler):
 
                 threading.Thread(
                     target=_run_parse_job,
-                    args=(job_id, file_path, regex_filter if regex_filter else None, mode == 'include'),
+                    args=(job_id, file_path, regex_include if regex_include else None, regex_exclude if regex_exclude else None),
                     daemon=True
                 ).start()
 
@@ -960,10 +991,10 @@ class RequestHandler(BaseHTTPRequestHandler):
             try:
                 content_len = int(self.headers.get('Content-Length', 0))
                 body = json.loads(self.rfile.read(content_len).decode('utf-8'))
-                dir_path     = body.get('path', '').strip()
-                regex_filter = body.get('regex', '').strip()
-                mode         = body.get('mode', 'include').strip()
-                recursive    = bool(body.get('recursive', True))
+                dir_path      = body.get('path', '').strip()
+                regex_include = body.get('regex_include', '').strip()
+                regex_exclude = body.get('regex_exclude', '').strip()
+                recursive     = bool(body.get('recursive', True))
 
                 if not dir_path:
                     raise ValueError('No directory path provided')
@@ -985,7 +1016,7 @@ class RequestHandler(BaseHTTPRequestHandler):
 
                 threading.Thread(
                     target=_run_parse_multi_job,
-                    args=(job_id, file_paths, regex_filter if regex_filter else None, mode == 'include'),
+                    args=(job_id, file_paths, regex_include if regex_include else None, regex_exclude if regex_exclude else None),
                     daemon=True
                 ).start()
 
@@ -1020,8 +1051,8 @@ class RequestHandler(BaseHTTPRequestHandler):
                 parts_list = body.split(boundary_bytes)
 
                 file_contents = []   # list of (filename, bytes)
-                regex_filter  = ''
-                mode          = 'include'
+                regex_include = ''
+                regex_exclude = ''
 
                 for part in parts_list:
                     if b'name="file"' in part and b'filename=' in part:
@@ -1037,19 +1068,19 @@ class RequestHandler(BaseHTTPRequestHandler):
                                     fname = m.group(1)
                                 file_contents.append((fname, content))
                                 break
-                    elif b'name="regex"' in part:
+                    elif b'name="regex_include"' in part:
                         lines = part.split(b'\r\n')
                         for i, line in enumerate(lines):
                             if i == 0: continue
                             if line == b'':
-                                regex_filter = b'\r\n'.join(lines[i+1:-1]).decode('utf-8', errors='ignore').strip()
+                                regex_include = b'\r\n'.join(lines[i+1:-1]).decode('utf-8', errors='ignore').strip()
                                 break
-                    elif b'name="mode"' in part:
+                    elif b'name="regex_exclude"' in part:
                         lines = part.split(b'\r\n')
                         for i, line in enumerate(lines):
                             if i == 0: continue
                             if line == b'':
-                                mode = b'\r\n'.join(lines[i+1:-1]).decode('utf-8', errors='ignore').strip()
+                                regex_exclude = b'\r\n'.join(lines[i+1:-1]).decode('utf-8', errors='ignore').strip()
                                 break
 
                 del body
@@ -1075,8 +1106,8 @@ class RequestHandler(BaseHTTPRequestHandler):
 
                 threading.Thread(
                     target=_run_parse_multi_job,
-                    args=(job_id, file_paths, regex_filter if regex_filter else None,
-                          mode == 'include', temp_paths, orig_names),
+                    args=(job_id, file_paths, regex_include if regex_include else None,
+                          regex_exclude if regex_exclude else None, temp_paths, orig_names),
                     daemon=True
                 ).start()
 
@@ -1757,11 +1788,10 @@ def main():
             f.flush()
         print("FDV Chart Parser is running at http://0.0.0.0:{} (all interfaces)".format(_SERVER_PORT), file=sys.stderr, flush=True)
         print("Press Ctrl+C to stop", file=sys.stderr, flush=True)
-        try:
-            server.serve_forever()
-        except KeyboardInterrupt:
-            print("\nShutting down...", file=sys.stderr, flush=True)
-            server.shutdown()
+        server.serve_forever()
+    except KeyboardInterrupt:
+        print("\nShutting down...", file=sys.stderr, flush=True)
+        server.shutdown()
     except Exception as e:
         print("ERROR: " + str(e), file=sys.stderr, flush=True)
         with open(log_file, 'a') as f:

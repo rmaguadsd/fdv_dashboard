@@ -2,6 +2,9 @@
 <html>
 <head>
     <meta charset="utf-8">
+    <meta http-equiv="cache-control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="pragma" content="no-cache">
+    <meta http-equiv="expires" content="0">
     <title>FDV Chart Parser</title>
     <style>
         * { box-sizing: border-box; }
@@ -593,17 +596,20 @@
         <span id="dir-file-count" style="font-size:0.8em;color:#888">No directory selected</span>
     </div>
 
-    <!-- Regex / mode / action row (always visible) -->
+    <!-- Include/Exclude regex row (always visible) -->
     <div class="ctrl-row">
-        <span class="ctrl-label">Regex:</span>
-        <input type="text" id="regex-input"
-               placeholder="optional -- e.g. ^FDV POLL or ^FDV OUTPUT"
-               style="flex:1 1 260px">
-        <span class="ctrl-label">Mode:</span>
-        <div class="radio-group">
-            <label><input type="radio" name="filter-mode" value="include" checked> Include</label>
-            <label><input type="radio" name="filter-mode" value="exclude"> Exclude</label>
-        </div>
+        <label style="flex:1 1 auto;min-width:200px">
+            <span class="ctrl-label">Include:</span>
+            <input type="text" id="regex-include-input"
+                   placeholder="optional -- e.g. ^FDV POLL"
+                   style="width:100%">
+        </label>
+        <label style="flex:1 1 auto;min-width:200px">
+            <span class="ctrl-label">Exclude:</span>
+            <input type="text" id="regex-exclude-input"
+                   placeholder="optional -- e.g. ^DEBUG"
+                   style="width:100%">
+        </label>
         <button class="btn" onclick="parseFile()">&#9654; Parse</button>
         <button class="btn sec" onclick="resetAll()">&#10006; Clear</button>
         <button class="btn grn" id="download-btn" onclick="downloadCSV()" style="display:none">&#8595; CSV</button>
@@ -1365,8 +1371,8 @@ document.addEventListener('DOMContentLoaded', function() {
    PARSE  (async job pattern)
 ================================================================ */
 async function parseFile() {
-    var regex = document.getElementById('regex-input').value.trim();
-    var mode  = document.querySelector('input[name="filter-mode"]:checked').value;
+    var regexInclude = document.getElementById('regex-include-input').value.trim();
+    var regexExclude = document.getElementById('regex-exclude-input').value.trim();
 
     var resp, jobFname;
 
@@ -1385,7 +1391,7 @@ async function parseFile() {
             resp = await fetch(looksLikeDir ? '/parse_dir' : '/parse_path', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ path: pathVal, regex: regex, mode: mode, recursive: recursive })
+                body: JSON.stringify({ path: pathVal, regex_include: regexInclude, regex_exclude: regexExclude, recursive: recursive })
             });
 
         } else if (_activeSrc === 'files') {
@@ -1399,8 +1405,8 @@ async function parseFile() {
             setTableInfo('Parsing \u2026');
             var form = new FormData();
             _selectedFiles.forEach(function(f) { form.append('file', f); });
-            form.append('regex', regex);
-            form.append('mode', mode);
+            form.append('regex_include', regexInclude);
+            form.append('regex_exclude', regexExclude);
             resp = await fetch('/parse_multi', { method: 'POST', body: form });
 
         } else {
@@ -1413,8 +1419,8 @@ async function parseFile() {
             setTableInfo('Parsing \u2026');
             var form2 = new FormData();
             Array.from(dirFiles).forEach(function(f) { form2.append('file', f); });
-            form2.append('regex', regex);
-            form2.append('mode', mode);
+            form2.append('regex_include', regexInclude);
+            form2.append('regex_exclude', regexExclude);
             resp = await fetch('/parse_multi', { method: 'POST', body: form2 });
         }
     } catch(e) { setStatus('Network error: ' + e, 'error'); setTableInfo('Error'); return; }
@@ -1650,7 +1656,8 @@ async function _tryRestoreSession() {
 function resetAll() {
     document.getElementById('file-input').value     = '';
     document.getElementById('dir-file-input').value = '';
-    document.getElementById('regex-input').value    = '';
+    document.getElementById('regex-include-input').value = '';
+    document.getElementById('regex-exclude-input').value = '';
     document.getElementById('path-input').value     = '';
     _clearPills();
     document.getElementById('dir-file-count').textContent = 'No directory selected';
@@ -1869,7 +1876,7 @@ function _recipeIds() {
     /* The IDs of all inputs to capture in a recipe (parse + plot) */
     return [
         'path-input','dir-recursive',                           /* source */
-        'regex-input',                                          /* parse regex */
+        'regex-include-input','regex-exclude-input',            /* parse regex (dual include/exclude) */
         'chart-type','x-col','y-col','x-regex','y-regex',
         'color-col','color-regex',
         'split-chart-cols','split-chart-h','split-grid-h',
@@ -1916,6 +1923,12 @@ function _recipeSnapshot() {
 }
 
 function _recipeApply(snap) {
+    /* Backwards compatibility: convert old 'regex-input' to 'regex-include-input' */
+    if ('regex-input' in snap && !('regex-include-input' in snap)) {
+        snap['regex-include-input'] = snap['regex-input'];
+        snap['regex-exclude-input'] = '';
+    }
+    
     /* Restore source tab first (so path-input row becomes visible) */
     if (snap['__src']) {
         var srcTabEl = document.querySelector('.src-tab[data-src="' + snap['__src'] + '"]');
@@ -2120,16 +2133,24 @@ function _recipeLoad() {
                 if (!d.success) { _recipeStatus('\u26a0 ' + d.error, 'error'); return; }
                 document.getElementById('recipe-name').value = name;
                 _recipeApply(d.data);
-                var rx = (d.data['regex-input'] || '');
-                _recipeStatus('\u2713 Loaded \u201c' + name + '\u201d' + (rx ? ' | regex: ' + rx : ''), 'ok');
+                var rxInclude = (d.data['regex-include-input'] || d.data['regex-input'] || '');
+                var rxExclude = (d.data['regex-exclude-input'] || '');
+                var rxDisplay = '';
+                if (rxInclude) rxDisplay += 'include: ' + rxInclude;
+                if (rxExclude) rxDisplay += (rxInclude ? ' | ' : '') + 'exclude: ' + rxExclude;
+                _recipeStatus('\u2713 Loaded \u201c' + name + '\u201d' + (rxDisplay ? ' | ' + rxDisplay : ''), 'ok');
             }).catch(function(e){ _recipeStatus('\u26a0 ' + e.message, 'error'); });
     } else {
         var store = _loadRecipeStore();
         if (!store[name]) { _recipeStatus('Recipe not found.', 'error'); return; }
         document.getElementById('recipe-name').value = name;
         _recipeApply(store[name]);
-        var rx = store[name]['regex-input'] || '';
-        _recipeStatus('\u2713 Loaded \u201c' + name + '\u201d' + (rx ? ' | regex: ' + rx : ''), 'ok');
+        var rxInclude = store[name]['regex-include-input'] || store[name]['regex-input'] || '';
+        var rxExclude = store[name]['regex-exclude-input'] || '';
+        var rxDisplay = '';
+        if (rxInclude) rxDisplay += 'include: ' + rxInclude;
+        if (rxExclude) rxDisplay += (rxInclude ? ' | ' : '') + 'exclude: ' + rxExclude;
+        _recipeStatus('\u2713 Loaded \u201c' + name + '\u201d' + (rxDisplay ? ' | ' + rxDisplay : ''), 'ok');
     }
 }
 
@@ -4460,6 +4481,11 @@ function _buildCrossPrompt(ct, xCol, yCol, xRx, yRx, scCol, colorCol, crossStats
 function _renderAnalysisSingle(text, headerNote) {
     var el = document.getElementById('analysis-text');
     el.innerHTML = '';
+    
+    // Parse and execute marker commands
+    var markerResult = _chatExecMarkerCmds(text);
+    var displayText = markerResult.text;
+    
     if (headerNote) {
         var h = document.createElement('div');
         h.style.cssText = 'font-size:0.78em;color:#6610f2;font-weight:bold;margin-bottom:4px';
@@ -4467,8 +4493,16 @@ function _renderAnalysisSingle(text, headerNote) {
         el.appendChild(h);
     }
     var body = document.createElement('div');
-    body.textContent = text;
+    body.textContent = displayText;
     el.appendChild(body);
+    
+    // Show marker actions if any
+    if (markerResult.actions && markerResult.actions.length) {
+        var actDiv = document.createElement('div');
+        actDiv.style.cssText = 'font-size:0.75em;color:#6c757d;margin-top:4px;border-top:1px solid #e9ecef;padding-top:4px';
+        actDiv.innerHTML = '<strong>Actions:</strong> ' + markerResult.actions.join(', ');
+        el.appendChild(actDiv);
+    }
 }
 
 /* Render one labelled block per tile */
@@ -6008,6 +6042,29 @@ function _chatKeydown(e) {
         targetEl  = null;
         document.body.style.cursor = '';
     });
+})();
+</script>
+
+<!-- Cache-buster: Force reload on server version change -->
+<script>
+(function() {
+    const CACHE_KEY = 'fdv_chart_version';
+    const versionCheck = setInterval(function() {
+        fetch('/', { cache: 'no-store', headers: { 'Cache-Control': 'no-cache' } })
+            .then(r => r.text())
+            .then(html => {
+                // Check if we got a different page (simple hash check)
+                const newHash = html.split('</head>')[0].slice(-50);
+                const oldHash = localStorage.getItem(CACHE_KEY);
+                if (oldHash && oldHash !== newHash) {
+                    console.log('Page updated, reloading...');
+                    location.reload(true);
+                } else if (!oldHash) {
+                    localStorage.setItem(CACHE_KEY, newHash);
+                }
+            })
+            .catch(e => console.log('Version check failed:', e));
+    }, 5000); // Check every 5 seconds
 })();
 </script>
 </body>
