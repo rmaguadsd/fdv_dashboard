@@ -717,9 +717,29 @@ class RequestHandler(BaseHTTPRequestHandler):
                 req  = urllib.request.Request(_OLLAMA_BASE + '/api/tags')
                 with urllib.request.urlopen(req, timeout=5) as r:
                     data = json.loads(r.read().decode('utf-8'))
-                names = sorted(m['name'] for m in data.get('models', []))
+                
+                # Extract model names - Ollama returns {'models': [{'name': '...', ...}, ...]}
+                models_list = data.get('models', [])
+                print(f'[DEBUG] /models: Raw Ollama response: {json.dumps(data, indent=2)}', file=sys.stderr, flush=True)
+                
+                names = []
+                for m in models_list:
+                    # Handle different response formats
+                    if isinstance(m, dict) and 'name' in m:
+                        names.append(m['name'])
+                    elif isinstance(m, str):
+                        # In case Ollama returns strings directly
+                        names.append(m)
+                    else:
+                        print(f'[DEBUG] /models: Unexpected model format: {m}', file=sys.stderr, flush=True)
+                
+                names = sorted(list(set(names)))  # Remove duplicates and sort
+                print(f'[DEBUG] /models: Extracted {len(names)} unique models: {names}', file=sys.stderr, flush=True)
                 _send_json(self, 200, {'success': True, 'models': names})
             except Exception as ex:
+                print(f'[DEBUG] /models error: {ex}', file=sys.stderr, flush=True)
+                import traceback
+                traceback.print_exc(file=sys.stderr)
                 _send_json(self, 200, {'success': False, 'models': [_LLM_MODEL], 'error': str(ex)})
 
         elif self.path.startswith('/store/check'):
@@ -1070,19 +1090,61 @@ class RequestHandler(BaseHTTPRequestHandler):
 
         elif self.path == '/analyze':
             # Single-turn AI analysis — no session history
+            # Supports both Ollama and ConnectMaiGPT providers
             try:
                 length = int(self.headers.get('Content-Length', 0))
                 body   = json.loads(self.rfile.read(length).decode('utf-8'))
                 prompt = body.get('prompt', '').strip()
                 model  = body.get('model', '').strip() or None
+                provider = body.get('provider', 'ollama').strip() or 'ollama'
+                modelname = body.get('modelname', 'gpt4').strip() or 'gpt4'  # for ConnectMaiGPT
+                
                 if not prompt:
                     raise ValueError('Empty prompt')
-                messages = [
-                    {'role': 'system', 'content': _LLM_SYSTEM_PROMPT},
-                    {'role': 'user',   'content': prompt}
-                ]
-                summary = _call_llm(messages, model=model)
-                _send_json(self, 200, {'success': True, 'summary': summary})
+                
+                if provider == 'connectmaigpt':
+                    # Use ConnectMaiGPT MCP backend
+                    session_id, chat_id = _maigpt_ensure_session('analyze_session')
+                    # Build query with system prompt context
+                    query = _LLM_SYSTEM_PROMPT + '\n\n' + prompt
+                    
+                    # Call askmaigpt
+                    results = _maigpt_post(session_id, {
+                        'jsonrpc': '2.0', 'id': 10, 'method': 'tools/call',
+                        'params': {'name': 'askmaigpt',
+                                   'arguments': {'query': query,
+                                                 'username': _MAIGPT_USER,
+                                                 'modelname': modelname,
+                                                 'chattitle': 'FDV Chart Analysis',
+                                                 'includeprogress': False}}
+                    }, timeout=120)
+                    
+                    summary = ''
+                    for obj in results:
+                        sc = obj.get('result', {}).get('structuredContent', {})
+                        resp_block = sc.get('response', {})
+                        if isinstance(resp_block, dict):
+                            summary = resp_block.get('response', '')
+                        if obj.get('result', {}).get('isError'):
+                            for c in obj['result'].get('content', []):
+                                if c.get('type') == 'text':
+                                    summary = c.get('text', '')
+                            break
+                        if summary:
+                            break
+                    
+                    if not summary:
+                        summary = 'ConnectMaiGPT returned empty response'
+                    
+                    _send_json(self, 200, {'success': True, 'summary': summary})
+                else:
+                    # Use Ollama backend (default)
+                    messages = [
+                        {'role': 'system', 'content': _LLM_SYSTEM_PROMPT},
+                        {'role': 'user',   'content': prompt}
+                    ]
+                    summary = _call_llm(messages, model=model)
+                    _send_json(self, 200, {'success': True, 'summary': summary})
             except Exception as e:
                 _send_json(self, 200, {'success': False, 'error': str(e)})
 

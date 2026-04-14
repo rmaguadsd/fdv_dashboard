@@ -347,20 +347,31 @@
         }
         @keyframes _spin { to { transform: rotate(360deg); } }
         /* Model selector */
+        #ollama-model-wrap {
+            display: none;
+        }
         #llm-model-sel {
-            padding: 3px 5px; font-size: 0.82em;
-            border: 1px solid #6610f2; border-radius: 4px;
-            color: #6610f2; background: #faf5ff;
-            max-width: 155px; margin-left: 4px; cursor: pointer;
+            padding: 2px 3px; font-size: 0.82em;
+            border-radius: 3px;
         }
         #llm-pull-btn {
             padding: 3px 7px; font-size: 0.78em;
             background: #6610f2; color: #fff;
             border: none; border-radius: 4px; cursor: pointer;
             margin-left: 2px; white-space: nowrap;
+            display: none;
         }
         #llm-pull-btn:hover    { background: #520dc2; }
         #llm-pull-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+        #llm-refresh-btn {
+            padding: 3px 7px; font-size: 0.78em;
+            background: #17a2b8; color: #fff;
+            border: none; border-radius: 4px; cursor: pointer;
+            margin-left: 2px; white-space: nowrap;
+            display: none;
+        }
+        #llm-refresh-btn:hover    { background: #138496; }
+        #llm-refresh-btn:disabled { opacity: 0.55; cursor: not-allowed; }
         #llm-pull-status {
             font-size: 0.75em; color: #6610f2; margin-left: 4px;
             white-space: nowrap; max-width: 160px; overflow: hidden;
@@ -733,15 +744,6 @@
                 <option value="1.05em">L</option>
                 <option value="1.2em">XL</option>
             </select>
-            <select id="llm-model-sel" title="Select Ollama model — click &#8615; to pull a new one"
-                    onchange="_updateChatBanner()">
-                <option value="llama3">llama3</option>
-            </select>
-            <button id="llm-pull-btn" type="button" onclick="_pullSelectedModel()"
-                    title="Pull / download the selected model from Ollama registry">
-                &#8615;
-            </button>
-            <span id="llm-pull-status"></span>
             <button id="chat-toggle-btn" type="button" onclick="_toggleChat()"
                     title="Open a multi-turn chat with the selected model">
                 &#128172; Chat
@@ -752,10 +754,27 @@
                         style="font-size:0.82em;padding:2px 3px;border-radius:3px;
                                border:1px solid #17a2b8;color:#17a2b8;cursor:pointer"
                         onchange="_onChatProviderChange()">
-                    <option value="ollama" selected>Ollama</option>
-                    <option value="connectmaigpt">ConnectMaiGPT</option>
+                    <option value="ollama">Ollama</option>
+                    <option value="connectmaigpt" selected>ConnectMaiGPT</option>
                 </select>
             </label>
+            <label id="ollama-model-wrap" style="font-size:0.8em;color:#17a2b8;margin-left:4px"
+                   title="Select Ollama model — click pull button to download new ones">
+                <select id="llm-model-sel" onchange="_updateChatBanner()"
+                        style="font-size:0.82em;padding:2px 3px;border-radius:3px;
+                               border:1px solid #17a2b8;color:#17a2b8;cursor:pointer">
+                    <option value="llama3">llama3</option>
+                </select>
+            </label>
+            <button id="llm-pull-btn" type="button" onclick="_pullSelectedModel()"
+                    title="Pull / download the selected model from Ollama registry">
+                &#8615;
+            </button>
+            <button id="llm-refresh-btn" type="button" onclick="_loadModelList()"
+                    title="Refresh model list from Ollama">
+                &#128257;
+            </button>
+            <span id="llm-pull-status"></span>
             <label id="maigpt-model-wrap" style="font-size:0.8em;color:#17a2b8;margin-left:4px;display:none"
                    title="ConnectMaiGPT model — claude-3-5-sonnet answers from injected data; gpt4 uses datasheet RAG">
                 <select id="maigpt-model-sel"
@@ -1128,6 +1147,8 @@ document.addEventListener('DOMContentLoaded', function() {
     _loadModelList();
     /* Init multi-dim group builders */
     _gdimInit();
+    /* Initialize chat provider state (shows/hides controls) */
+    _onChatProviderChange();
     /* Restore session after browser refresh */
     _tryRestoreSession();
 });
@@ -4651,11 +4672,28 @@ function _summaryCopyCSV() {
 
 /* POST to /analyze — returns summary string or throws */
 async function _fetchSummary(prompt) {
+    /* Support both Ollama and ConnectMaiGPT for analyze */
+    var selectedModel = _selectedModel();
+    var provider = _chatProvider();
+    var body = {
+        prompt: prompt,
+        provider: provider
+    };
+    
+    if (provider === 'connectmaigpt') {
+        body.modelname = selectedModel;
+    } else {
+        body.model = selectedModel;
+    }
+    
     var resp = await fetch('/analyze', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ prompt: prompt, model: _selectedModel() })
+        body:    JSON.stringify(body)
     });
+    if (!resp.ok) {
+        throw new Error('HTTP ' + resp.status + ' ' + resp.statusText + ' from /analyze endpoint');
+    }
     var d = await resp.json();
     if (!d.success) throw new Error(d.error || 'LLM error');
     return d.summary;
@@ -4959,20 +4997,22 @@ function _selectedModel() {
 
 function _chatProvider() {
     var sel = document.getElementById('chat-provider-sel');
-    return (sel && sel.value) ? sel.value : 'ollama';
+    return (sel && sel.value) ? sel.value : 'connectmaigpt';
 }
 
 function _onChatProviderChange() {
     var prov     = _chatProvider();
     var isOllama = prov === 'ollama';
-    /* Show/hide Ollama-specific controls */
-    ['llm-model-sel','llm-pull-btn','llm-pull-status'].forEach(function(id) {
+    /* Show/hide Ollama model selector and controls */
+    var om = document.getElementById('ollama-model-wrap');
+    if (om) om.style.display = isOllama ? 'inline' : 'none';
+    ['llm-refresh-btn','llm-pull-status'].forEach(function(id) {
         var el = document.getElementById(id);
-        if (el) el.style.display = isOllama ? '' : 'none';
+        if (el) el.style.display = isOllama ? 'inline-block' : 'none';
     });
     /* Show/hide MaiGPT model selector */
     var mg = document.getElementById('maigpt-model-wrap');
-    if (mg) mg.style.display = isOllama ? 'none' : '';
+    if (mg) mg.style.display = isOllama ? 'none' : 'inline';
     _updateChatBanner();
 }
 
@@ -4991,21 +5031,48 @@ async function _loadModelList() {
     try {
         var r    = await fetch('/models');
         var data = await r.json();
-        if (!data.success || !data.models || !data.models.length) return;
+        console.log('[DEBUG] _loadModelList full response:', JSON.stringify(data, null, 2));
+        if (!data.success || !data.models || !data.models.length) {
+            console.log('[DEBUG] _loadModelList: No models returned or error', data);
+            console.log('[DEBUG] Error details:', data.error);
+            return;
+        }
         var sel  = document.getElementById('llm-model-sel');
         var prev = sel.value;
         sel.innerHTML = '';
-        data.models.forEach(function(name) {
+        console.log('[DEBUG] _loadModelList: Clearing previous and adding ' + data.models.length + ' models');
+        data.models.forEach(function(name, idx) {
+            console.log('[DEBUG] Adding model option #' + (idx+1) + ':', name);
             var o = document.createElement('option');
-            o.value = name; o.textContent = name;
+            o.value = name; 
+            o.textContent = name;
             sel.appendChild(o);
         });
+        console.log('[DEBUG] _loadModelList: Total options in dropdown:', sel.options.length);
         /* Restore previous selection if it still exists, else prefer llama3 */
-        if (data.models.indexOf(prev) >= 0) sel.value = prev;
-        else if (data.models.indexOf('llama3:latest') >= 0) sel.value = 'llama3:latest';
-        else if (data.models.indexOf('llama3') >= 0) sel.value = 'llama3';
+        if (data.models.indexOf(prev) >= 0) {
+            sel.value = prev;
+            console.log('[DEBUG] Restored previous selection:', prev);
+        }
+        else if (data.models.indexOf('llama3:latest') >= 0) {
+            sel.value = 'llama3:latest';
+            console.log('[DEBUG] Selected llama3:latest');
+        }
+        else if (data.models.indexOf('llama3') >= 0) {
+            sel.value = 'llama3';
+            console.log('[DEBUG] Selected llama3');
+        }
+        else if (data.models.length > 0) {
+            sel.value = data.models[0];
+            console.log('[DEBUG] Selected first model:', data.models[0]);
+        }
+        console.log('[DEBUG] _loadModelList: Final selected value:', sel.value, 'from options:', Array.from(sel.options).map(o => o.value));
         _updateChatBanner();
-    } catch(e) { /* silently ignore — default 'llama3' stays */ }
+    } catch(e) { 
+        console.error('[DEBUG] _loadModelList error:', e);
+        console.error('[DEBUG] Error stack:', e.stack);
+        /* silently ignore — default 'llama3' stays */ 
+    }
 }
 
 /* Pull the currently selected model via /pull (POST).
