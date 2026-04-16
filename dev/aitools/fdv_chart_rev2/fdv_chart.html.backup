@@ -3247,9 +3247,7 @@ function _buildTileChart(canvas, ct, tileData, xCol, yCol, xRx, yRx, colCol, col
         var MAX_BP = (_maxGrpEl2 && parseInt(_maxGrpEl2.value) >= 1) ? parseInt(_maxGrpEl2.value) : 200;
         var bpGroups = {}, bpOrder = [], bpSeen = {}, bpCapped = false;
         tileData.forEach(function(pt) {
-            /* Apply x-axis regex to group label, just like main chart does */
-            var gRaw = pt.group != null ? String(pt.group) : xCol;
-            var g = _extractGroupKey(gRaw, xRx);
+            var g = pt.group != null ? String(pt.group) : xCol;
             if (!bpSeen[g]) {
                 if (Object.keys(bpSeen).length >= MAX_BP) { bpCapped = true; return; }
                 bpSeen[g] = true;
@@ -3281,7 +3279,7 @@ function _buildTileChart(canvas, ct, tileData, xCol, yCol, xRx, yRx, colCol, col
                     tooltip: { enabled: false, external: _htmlTooltip }
                 },
                 scales: {
-                    x: { type: 'category', title: { display: true, text: _axisXTitle(xCol + (xRx ? ' [' + xRx + ']' : '')) },
+                    x: { type: 'category', title: { display: true, text: _axisXTitle(xCol) },
                          ticks: { maxRotation: 45, autoSkip: false }, offset: true },
                     y: Object.assign({ title: { display: true, text: _axisYTitle(yCol) } }, yScale)
                 }
