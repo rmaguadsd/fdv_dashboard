@@ -276,7 +276,7 @@ def parse_log_file(file_path, regex_include=None, regex_exclude=None, source_nam
         return m.group(1) if m else ''
 
     def _pagetype(tname):
-        m = re.search(r'PGTYPE[_:]([A-Za-z]+)', tname, re.I)
+        m = re.search(r'(?:PGTYPE|PAGETYPE|PGT)[_:]([A-Z0-9]+)', tname, re.I)
         return m.group(1).upper() if m else ''
 
     def _pagemap(tname):
