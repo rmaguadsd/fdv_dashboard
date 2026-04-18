@@ -3929,7 +3929,10 @@ function drawScatterLine() {
 }
 
 /* ── Histogram ───────────────────────────────────────────────────────── */
-function autoBins(n) { return Math.min(200, Math.max(2, Math.ceil(Math.log2(n) + 1))); }
+function autoBins(n) { 
+    /* Rice Rule: 2 * n^(1/3) — gives better granularity than Sturges */
+    return Math.min(200, Math.max(10, Math.ceil(2 * Math.pow(n, 1/3)))); 
+}
 
 function buildHistBins(values, nBins) {
     if (!values.length) return { bins: [], counts: [], width: 0 };
