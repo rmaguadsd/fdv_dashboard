@@ -1,0 +1,63 @@
+# QUICK FIX GUIDE
+
+## Problem
+Chat message box is stuck and can't be used after first message attempt.
+
+## Solution 
+The fixes are already in the code - you just need to **restart the FDV Chart Server**.
+
+## How to Restart (Choose ONE)
+
+### Method 1: Command Line (Simplest)
+Open PowerShell and run:
+```
+py -3 "D:\FDV\git\fdv_dashboard\dev\aitools\fdv_chart\fdv_chart.py"
+```
+
+Wait for: `FDV Chart Parser is running at http://0.0.0.0:5058`
+
+### Method 2: Use Restart Script
+```
+powershell -NoProfile -ExecutionPolicy Bypass -File "D:\FDV\git\fdv_dashboard\restart_chart_server.ps1"
+```
+
+### Method 3: Task Manager
+- Open Task Manager
+- Find any "python" processes and End Task
+- Wait 5 seconds
+- Use Method 1 above
+
+## Test the Fix
+
+After server is running:
+
+1. Open http://localhost:5058/ in browser
+2. Load a CSV file (if needed)
+3. Draw a chart
+4. Click "Chat" button on right side
+5. Type: "Hello"
+6. Press Send
+
+**Expected result:**
+- "...thinking" appears (gray italic text)
+- Model response streams in
+- You can send more messages
+
+**If chat is STILL stuck:**
+1. Press F12 in browser
+2. Go to Console tab
+3. Look for messages starting with "Chat send called"
+4. Report any error messages to support
+
+## What Was Fixed
+
+✅ Added error handling so chat never gets stuck
+✅ Added logging to help debug issues
+✅ Fixed missing catch blocks that prevented error recovery
+
+## Files Updated
+- `fdv_chart.html` - Main fix (chat functions)
+- `debug_server.py` - Test server (new)
+- `chat_debug.html` - Debug interface (new)
+
+All changes deployed once you restart the server!

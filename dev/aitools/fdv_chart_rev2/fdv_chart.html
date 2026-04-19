@@ -1010,19 +1010,41 @@ Chart.register({
         ctx.beginPath();
         ctx.rect(ca.left, ca.top, ca.right - ca.left, ca.bottom - ca.top);
         ctx.clip();
-        ctx.font = '9px sans-serif';
-        ctx.textAlign = 'left';
+        
+        /* Render alphanumeric point markers instead of dots */
+        ctx.font = 'bold 10px sans-serif';
+        ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillStyle = 'rgba(0,0,0,0.75)';
+        
         lblData.forEach(function(lbls, di) {
             if (!lbls || !lbls.length) return;
             var meta = chart.getDatasetMeta(di);
             if (!meta || meta.hidden) return;
+            var dataset = chart.data.datasets[di];
+            var borderColor = dataset.borderColor || '#000';
+            
             lbls.forEach(function(lbl, pi) {
                 if (!lbl) return;
                 var el = meta.data[pi];
                 if (!el || isNaN(el.x) || isNaN(el.y)) return;
-                ctx.fillText(lbl, el.x + 5, el.y);
+                
+                /* Extract first alphanumeric character from label */
+                var char = (lbl || '').toString().replace(/[^a-zA-Z0-9]/g, '').charAt(0);
+                if (!char) return;
+                
+                /* Draw character as point marker */
+                var x = el.x;
+                var y = el.y;
+                var size = 12;
+                
+                /* Draw background square */
+                ctx.fillStyle = borderColor;
+                ctx.fillRect(x - size/2, y - size/2, size, size);
+                
+                /* Draw character */
+                ctx.fillStyle = '#fff';
+                ctx.font = 'bold 10px sans-serif';
+                ctx.fillText(char, x, y);
             });
         });
         ctx.restore();
@@ -2698,17 +2720,37 @@ function _markerColorCycle(idx) {
 }
 
 function _parseMarkerExpr(raw) {
-    /* Format: x=VALUE[:COLOR[:LABEL]]  or  y=VALUE[:COLOR[:LABEL]] */
+    /* Format: x=VALUE[:COLOR[:MARKER]]  or  y=VALUE[:COLOR[:MARKER]]
+       MARKER can be a color (like #fff or red) or single character (A, 1, etc.)
+       If marker is 1-2 chars, treat as char marker; otherwise as color
+    */
     raw = raw.trim();
-    var m = raw.match(/^([xy])\s*=\s*([^\s:]+)(?::([^:]+))?(?::(.+))?$/i);
+    var m = raw.match(/^([xy])\s*=\s*([^\s:]+)(?::([^:]+))?(?::([^:]+))?$/i);
     if (!m) return null;
     var v = parseFloat(m[2]);
     if (isNaN(v)) return null;
+    
+    var color = (m[3] && m[3].trim()) || null;
+    var marker = (m[4] && m[4].trim()) || '';
+    
+    /* Detect if marker is a single character (alphanumeric) or a color */
+    var markerChar = '';
+    var markerColor = color;
+    if (marker) {
+        /* If marker looks like a single char or short alphanumeric, use it as character marker */
+        if (/^[a-zA-Z0-9]{1,2}$/.test(marker)) {
+            markerChar = marker;
+        } else {
+            /* Otherwise treat it as a color override */
+            markerColor = marker;
+        }
+    }
+    
     return {
-        axis:  m[1].toLowerCase(),
-        value: v,
-        color: (m[3] && m[3].trim()) || null,   /* null → auto from palette */
-        label: (m[4] && m[4].trim()) || ''
+        axis:      m[1].toLowerCase(),
+        value:     v,
+        color:     markerColor,           /* null → auto from palette */
+        markerChar: markerChar             /* Single char like 'A', '1', etc. */
     };
 }
 
@@ -2723,7 +2765,7 @@ function _rebuildMarkerTags() {
         tag.style.background  = c + '22';
         tag.style.color       = c;
         var desc = mk.axis.toUpperCase() + '=' + mk.value;
-        if (mk.label) desc += ' ' + mk.label;
+        if (mk.markerChar) desc += ' [' + mk.markerChar + ']';
         tag.innerHTML = escHtml(desc) +
             ' <span class="mk-rm" data-idx="' + i + '" title="Remove">&times;</span>';
         list.appendChild(tag);
@@ -2770,15 +2812,17 @@ function _buildAnnotations() {
             borderColor: c,
             borderWidth: 1.5,
             borderDash: [5, 4],
-            label: mk.label ? {
+            label: mk.markerChar ? {
                 display: true,
-                content: mk.label,
+                content: mk.markerChar,
                 position: mk.axis === 'x' ? 'start' : 'end',
-                backgroundColor: c + 'cc',
+                backgroundColor: c,
                 color: '#fff',
-                font: { size: 10 },
-                padding: { x: 4, y: 2 },
-                yAdjust: mk.axis === 'x' ? -8 : 0
+                font: { size: 12, weight: 'bold' },
+                padding: { x: 6, y: 4 },
+                borderRadius: 2,
+                yAdjust: mk.axis === 'x' ? -12 : 0,
+                xAdjust: mk.axis === 'y' ? -10 : 0
             } : { display: false }
         };
     });
@@ -3883,7 +3927,7 @@ function drawScatterLine() {
             backgroundColor: PALETTE[i % PALETTE.length] + '99',
             borderColor:     PALETTE[i % PALETTE.length],
             borderWidth: ct === 'line' ? 1.5 : 0,
-            pointRadius: ct === 'line' ? 2 : 3,
+            pointRadius: 0,  /* Hide default dots; use alphanumeric markers instead */
             showLine: ct === 'line'
         };
     });

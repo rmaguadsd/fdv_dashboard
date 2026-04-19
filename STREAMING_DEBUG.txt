@@ -1,0 +1,78 @@
+# SUPER DETAILED STREAM DEBUG - Test Now!
+
+## Critical Update ⚠️
+You're showing logs up to "Chat response received: 200 OK" but NO logs after that.
+
+This means the stream reading code (`pump()` function) is either:
+1. Not being called
+2. Failing silently
+3. Still using OLD cached HTML
+
+## Added ULTRA DETAILED Logging
+
+I've added explicit logs at EVERY critical point:
+
+```javascript
+console.log('Starting stream reader...');         // After response received
+console.log('About to call pump() for first time...'); // Right before pump() call
+console.log('pump() called, chunkCount will be incremented'); // First line IN pump()
+console.log('Chunk N: done=X, size=Y');          // After each chunk read
+```
+
+## Test Now (MUST Use Incognito)
+
+1. **Ctrl+Shift+N** - New Incognito/Private window (Firefox/Chrome)
+2. **http://localhost:5058/**
+3. **F12** - Open DevTools
+4. **Console tab** - Select it
+5. **Send a chat message** - Type "test", press Enter
+6. **Copy ALL console output** - From "Chat send called" onwards
+
+## Expected Full Output:
+
+```
+Chat send called, message: test
+Adding user message to chat...
+Setting busy state...
+Adding thinking indicator...
+Thinking indicator added, building context...
+Starting chat send: test Model: llama3:latest
+Chat response received: 200 OK
+Starting stream reader...
+About to call pump() for first time...
+pump() called, chunkCount will be incremented
+Chunk 1: done=false, size=2048
+Processing 1 parts, buffer remaining: 0
+Parsing JSON: {"token": " hello"}
+Parsed object: {token: " hello"}
+Got token:  hello
+Chunk 2: done=false, size=1536
+...
+```
+
+## Where It Fails Tells Us Everything
+
+- **Stops after "Chat response received"** → Response stream reading broken
+- **Stops after "Starting stream reader"** → reader.read() failing
+- **Stops after "About to call pump()"** → pump() function error
+- **No "Chunk" messages** → pump() not being called or infinite loop
+- **Has "Chunk" but no "Got token"** → Token parsing issue
+
+## Firefox Tracking Prevention Note
+
+The "Tracking Prevention blocked..." messages are harmless - they're just browser warnings, not real errors.
+
+## Please Test NOW
+
+1. Open incognito window
+2. Go to localhost:5058
+3. Send message
+4. Copy console output
+5. Show me where the logs stop!
+
+This will immediately show where the problem is!
+
+## Server Status
+- Running: ✅ http://localhost:5058/
+- Updated HTML: ✅ With new detailed logging
+- Needs: 🔄 Your test with Incognito window
