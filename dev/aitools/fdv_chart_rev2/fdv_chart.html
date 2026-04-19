@@ -1769,7 +1769,14 @@ function populatePlotSelectors(headers) {
             var o = document.createElement('option');
             o.value = h; o.textContent = h; sel.appendChild(o);
         });
-        if (prev) sel.value = prev;
+        /* Try to restore previous value, but only if it exists in new headers */
+        if (prev) {
+            var exists = headers.indexOf(prev) >= 0;
+            if (exists) {
+                sel.value = prev;
+            }
+            /* If previous value doesn't exist in new headers, don't force it */
+        }
     });
     function tryDefault(id, candidates) {
         var sel = document.getElementById(id);
@@ -1779,9 +1786,13 @@ function populatePlotSelectors(headers) {
                     sel.value=sel.options[i].value; return;
                 }
     }
-    tryDefault('x-col',    ['WL','BLK','SB','BL','LINE#']);
-    tryDefault('y-col',    ['RBER','BYBER','RBER_LIMIT','Measurement']);
-    tryDefault('color-col',['DUT','RESULT','PAGETYPE','Type']);
+    /* Only apply defaults if no value is currently set */
+    if (!document.getElementById('x-col').value)
+        tryDefault('x-col',    ['WL','BLK','SB','BL','LINE#']);
+    if (!document.getElementById('y-col').value)
+        tryDefault('y-col',    ['RBER','BYBER','RBER_LIMIT','Measurement']);
+    if (!document.getElementById('color-col').value)
+        tryDefault('color-col',['DUT','RESULT','PAGETYPE','Type']);
     _gdimRebuildSelects(headers);
     /* Apply any pending recipe column-selector values (deferred from _recipeApply) */
     if (_pendingRecipeSnap) {
