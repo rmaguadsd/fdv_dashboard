@@ -829,6 +829,8 @@
                 <input type="checkbox" id="x-log"> X&nbsp;log</label>
             <label style="font-size:0.82em;color:#555">
                 <input type="checkbox" id="y-log"> Y&nbsp;log</label>
+            <label style="font-size:0.82em;color:#555">Point&nbsp;size:
+                <input type="number" id="point-size" value="1" min="0" max="20" step="0.5" autocomplete="off" style="width:50px;font-size:0.9em" onchange="drawPlot()" title="Radius of data point markers"></label>
             <label id="x-min-label" style="font-size:0.82em;color:#555">X&nbsp;min:
                 <input type="number" id="x-min" placeholder="auto" autocomplete="off" style="width:64px;font-size:0.9em"></label>
             <label id="x-max-label" style="font-size:0.82em;color:#555">max:
@@ -1916,7 +1918,7 @@ function _recipeIds() {
         'color-col','color-regex',
         'split-chart-cols','split-chart-h','split-grid-h',
         'hist-bins','bp-maxgroups',
-        'x-log','y-log',
+        'x-log','y-log','point-size',
         'x-min','x-max','x-step','y-min','y-max','y-step',
         'x-ivlo','x-ivhi','y-ivlo','y-ivhi',
         'x-title-override','y-title-override'
@@ -3921,6 +3923,7 @@ function drawScatterLine() {
         groups[g].push(dp);
     });
 
+    var pointSize = parseFloat(document.getElementById('point-size').value) || 1;
     var datasets = Object.keys(groups).map(function(g, i) {
         return {
             label: g,
@@ -3928,7 +3931,7 @@ function drawScatterLine() {
             backgroundColor: PALETTE[i % PALETTE.length] + '99',
             borderColor:     PALETTE[i % PALETTE.length],
             borderWidth: ct === 'line' ? 1.5 : 0,
-            pointRadius: ct === 'scatter' ? 1 : 0,  /* Scatter: min radius for point detection; line/other: 0 to use alphanumeric markers */
+            pointRadius: ct === 'scatter' ? Math.max(pointSize, 1) : pointSize,  /* Use point-size control; scatter needs min 1 for detection */
             showLine: ct === 'line'
         };
     });
