@@ -1918,9 +1918,11 @@ function getAxisScale(minId, maxId, stepId) {
     /* Apply font sizes from the global font controls */
     var axisFont = _axisFontSize || 12;
     var labelFont = _axisFontSize || 12;  /* Use axis font for both title and ticks */
-    opts.title = opts.title || {};
-    opts.title.font = opts.title.font || {};
-    opts.title.font.size = axisFont;
+    /* Only set title.font if title already exists with display property */
+    if (opts.title && opts.title.display) {
+        opts.title.font = opts.title.font || {};
+        opts.title.font.size = axisFont;
+    }
     opts.ticks = opts.ticks || {};
     opts.ticks.font = opts.ticks.font || {};
     opts.ticks.font.size = labelFont;
@@ -4120,16 +4122,16 @@ function drawScatterLine() {
                 annotation: { annotations: _buildAnnotations() }
             },
             scales: {
-                x: Object.assign({
+                x: Object.assign(getAxisScale('x-min', 'x-max', 'x-step'), {
                     type: xLog ? 'logarithmic' : 'linear',
                     title: { display: true,
                              text: _axisXTitle(xCol + (xRx ? ' [' + xRx + ']' : '') + (xLog ? ' (log)' : '')) }
-                }, getAxisScale('x-min', 'x-max', 'x-step')),
-                y: Object.assign({
+                }),
+                y: Object.assign(getAxisScale('y-min', 'y-max', 'y-step'), {
                     type: yLog ? 'logarithmic' : 'linear',
                     title: { display: true,
                              text: _axisYTitle(yCol + (yRx ? ' [' + yRx + ']' : '') + (yLog ? ' (log)' : '')) }
-                }, getAxisScale('y-min', 'y-max', 'y-step'))
+                })
             }
         }
     });
