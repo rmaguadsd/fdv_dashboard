@@ -1,0 +1,1026 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta http-equiv="cache-control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="pragma" content="no-cache">
+    <meta http-equiv="expires" content="0">
+    <title>FDV Chart Parser - Rev4</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1/dist/chartjs-plugin-annotation.min.js"></script>
+    <style>
+        * { box-sizing: border-box; }
+        html, body {
+            height: 100%;
+            margin: 0;
+            padding: 0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #f0f0f0;
+            color: #333;
+            overflow: hidden;
+        }
+
+        /* ====== MENU BAR ====== */
+        #menu-bar {
+            flex: 0 0 auto;
+            display: flex;
+            background: #f0f0f0;
+            border-bottom: 1px solid #d0d0d0;
+            height: 28px;
+            user-select: none;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .menu-item {
+            position: relative;
+            padding: 4px 12px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            font-size: 12px;
+            color: #333;
+            border-right: 1px solid #e0e0e0;
+        }
+        .menu-item:hover {
+            background: #e8e8e8;
+        }
+        .menu-dropdown {
+            display: none;
+            position: absolute;
+            top: 28px;
+            left: 0;
+            background: #f9f9f9;
+            border: 1px solid #bbb;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+            z-index: 1000;
+            min-width: 180px;
+        }
+        .menu-dropdown.show {
+            display: block;
+        }
+        .menu-item-sub {
+            padding: 6px 16px;
+            cursor: pointer;
+            border-bottom: 1px solid #f0f0f0;
+            font-size: 12px;
+            white-space: nowrap;
+        }
+        .menu-item-sub:hover {
+            background: #e3f2fd;
+        }
+        .menu-item-sub:last-child {
+            border-bottom: none;
+        }
+
+        /* ====== TOOLBAR ====== */
+        #toolbar {
+            flex: 0 0 auto;
+            display: flex;
+            gap: 4px;
+            padding: 6px 8px;
+            background: #e8e8e8;
+            border-bottom: 1px solid #d0d0d0;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        .toolbar-btn {
+            padding: 4px 10px;
+            background: #ffffff;
+            border: 1px solid #b0b0b0;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 11px;
+            white-space: nowrap;
+            transition: all 0.2s;
+        }
+        .toolbar-btn:hover {
+            background: #f0f0f0;
+            border-color: #808080;
+        }
+        .toolbar-btn:active {
+            background: #e0e0e0;
+        }
+        .toolbar-separator {
+            width: 1px;
+            height: 20px;
+            background: #c0c0c0;
+            margin: 0 4px;
+        }
+
+        /* ====== MAIN CONTAINER ====== */
+        #main-container {
+            flex: 1 1 auto;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        /* ====== WORKSPACE (plots + panels) ====== */
+        #workspace {
+            flex: 1 1 auto;
+            display: flex;
+            gap: 2px;
+            padding: 4px;
+            background: #e0e0e0;
+            overflow: hidden;
+        }
+
+        /* Plot area - main focus */
+        #plot-container {
+            flex: 1 1 70%;
+            display: flex;
+            flex-direction: column;
+            background: white;
+            border: 1px solid #bbb;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            min-width: 300px;
+        }
+        #plot-toolbar {
+            flex: 0 0 auto;
+            display: flex;
+            gap: 4px;
+            padding: 4px 6px;
+            background: #f0f0f0;
+            border-bottom: 1px solid #ddd;
+            align-items: center;
+            flex-wrap: wrap;
+            font-size: 11px;
+        }
+        #plot-toolbar label {
+            white-space: nowrap;
+            color: #555;
+            margin-right: 4px;
+        }
+        #plot-toolbar select, #plot-toolbar input[type=text], #plot-toolbar input[type=number] {
+            padding: 2px 4px;
+            font-size: 11px;
+            border: 1px solid #bbb;
+            border-radius: 2px;
+            background: white;
+        }
+        #canvas-wrapper {
+            flex: 1 1 auto;
+            overflow: auto;
+            position: relative;
+            padding: 4px;
+        }
+        #canvas-wrapper canvas {
+            max-width: 100%;
+            height: auto;
+        }
+
+        /* Right panel (data + chat) */
+        #right-panel {
+            flex: 0 0 28%;
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            min-width: 250px;
+        }
+
+        /* Data table panel */
+        #data-panel {
+            flex: 1 1 50%;
+            display: flex;
+            flex-direction: column;
+            background: white;
+            border: 1px solid #bbb;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .panel-header {
+            flex: 0 0 auto;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            padding: 4px 6px;
+            background: #e8e8e8;
+            border-bottom: 1px solid #ddd;
+            user-select: none;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: bold;
+            color: #333;
+        }
+        .panel-toggle {
+            width: 16px;
+            height: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 10px;
+            color: #666;
+        }
+        .panel-toggle.collapsed::before {
+            content: "▶";
+        }
+        .panel-toggle.expanded::before {
+            content: "▼";
+        }
+        .panel-content {
+            flex: 1 1 auto;
+            overflow: auto;
+            padding: 4px;
+        }
+        .panel-content.collapsed {
+            display: none;
+        }
+        #data-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 11px;
+        }
+        #data-table th {
+            background: #f0f0f0;
+            padding: 4px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+            font-weight: bold;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+        #data-table td {
+            padding: 3px 4px;
+            border-bottom: 1px solid #f0f0f0;
+        }
+        #data-table tr:hover {
+            background: #f9f9f9;
+        }
+
+        /* Chat panel */
+        #chat-panel {
+            flex: 1 1 50%;
+            display: flex;
+            flex-direction: column;
+            background: white;
+            border: 1px solid #bbb;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        #chat-messages {
+            flex: 1 1 auto;
+            overflow-y: auto;
+            padding: 6px;
+            font-size: 11px;
+            line-height: 1.4;
+        }
+        .chat-msg {
+            margin-bottom: 6px;
+            padding: 4px;
+            border-radius: 3px;
+            background: #f5f5f5;
+            border-left: 2px solid #007bff;
+        }
+        .chat-msg.system {
+            border-left-color: #28a745;
+            background: #f0f9ff;
+        }
+        .chat-msg.error {
+            border-left-color: #dc3545;
+            background: #fff5f5;
+        }
+        #chat-input-area {
+            flex: 0 0 auto;
+            display: flex;
+            gap: 4px;
+            padding: 4px;
+            border-top: 1px solid #ddd;
+        }
+        #chat-input {
+            flex: 1 1 auto;
+            padding: 4px 6px;
+            border: 1px solid #bbb;
+            border-radius: 3px;
+            font-size: 11px;
+            font-family: Arial, sans-serif;
+            resize: none;
+            height: 28px;
+        }
+        #chat-send {
+            flex: 0 0 auto;
+            padding: 4px 10px;
+            background: #007bff;
+            color: white;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 11px;
+            white-space: nowrap;
+        }
+        #chat-send:hover {
+            background: #0056b3;
+        }
+
+        /* ====== MODAL DIALOGS ====== */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 2000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.4);
+            overflow: auto;
+        }
+        .modal.show {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .modal-content {
+            background: #f0f0f0;
+            padding: 0;
+            border: 1px solid #999;
+            border-radius: 4px;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+            max-width: 600px;
+            width: 90%;
+            max-height: 80vh;
+            display: flex;
+            flex-direction: column;
+        }
+        .modal-header {
+            flex: 0 0 auto;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 8px 12px;
+            background: linear-gradient(to right, #0078d4, #107c10);
+            color: white;
+            font-weight: bold;
+            font-size: 13px;
+            border-bottom: 1px solid #999;
+            border-radius: 4px 4px 0 0;
+            user-select: none;
+        }
+        .modal-close {
+            cursor: pointer;
+            font-size: 18px;
+            font-weight: bold;
+            color: white;
+            width: 24px;
+            height: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .modal-close:hover {
+            background: rgba(255,255,255,0.2);
+            border-radius: 2px;
+        }
+        .modal-body {
+            flex: 1 1 auto;
+            overflow-y: auto;
+            padding: 12px;
+            background: white;
+        }
+        .modal-footer {
+            flex: 0 0 auto;
+            display: flex;
+            gap: 8px;
+            padding: 10px 12px;
+            background: #f0f0f0;
+            border-top: 1px solid #ddd;
+            border-radius: 0 0 4px 4px;
+            justify-content: flex-end;
+        }
+        .modal-btn {
+            padding: 6px 16px;
+            border: 1px solid #bbb;
+            background: #f0f0f0;
+            cursor: pointer;
+            font-size: 12px;
+            border-radius: 3px;
+            white-space: nowrap;
+            transition: all 0.2s;
+        }
+        .modal-btn:hover {
+            background: #e0e0e0;
+            border-color: #808080;
+        }
+        .modal-btn.primary {
+            background: #007bff;
+            color: white;
+            border-color: #0056b3;
+        }
+        .modal-btn.primary:hover {
+            background: #0056b3;
+        }
+
+        /* Form fields in modals */
+        .form-group {
+            margin-bottom: 12px;
+        }
+        .form-group label {
+            display: block;
+            margin-bottom: 4px;
+            font-size: 12px;
+            font-weight: bold;
+            color: #333;
+        }
+        .form-group input[type=text],
+        .form-group input[type=number],
+        .form-group select,
+        .form-group textarea {
+            width: 100%;
+            padding: 6px 8px;
+            border: 1px solid #bbb;
+            border-radius: 3px;
+            font-size: 12px;
+            font-family: Arial, sans-serif;
+            background: white;
+        }
+        .form-group textarea {
+            resize: vertical;
+            min-height: 80px;
+        }
+
+        /* Status bar */
+        #status-bar {
+            flex: 0 0 auto;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 4px 12px;
+            background: #f0f0f0;
+            border-top: 1px solid #d0d0d0;
+            font-size: 11px;
+            color: #666;
+        }
+        #status-message {
+            flex: 1 1 auto;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        #status-info {
+            flex: 0 0 auto;
+            white-space: nowrap;
+        }
+
+        /* Hidden file inputs */
+        #file-input, #dir-input { display: none; }
+
+        /* Utility classes */
+        .hidden { display: none !important; }
+    </style>
+</head>
+<body>
+    <!-- MENU BAR -->
+    <div id="menu-bar">
+        <div class="menu-item" onclick="toggleMenu(event, 'file-menu')">
+            File
+            <div class="menu-dropdown" id="file-menu">
+                <div class="menu-item-sub" onclick="openFileDialog()">Open File...</div>
+                <div class="menu-item-sub" onclick="openDirDialog()">Open Directory...</div>
+                <div style="border-bottom: 1px solid #999; margin: 3px 0;"></div>
+                <div class="menu-item-sub" onclick="exportChart()">Export Chart...</div>
+                <div style="border-bottom: 1px solid #999; margin: 3px 0;"></div>
+                <div class="menu-item-sub" onclick="window.location.reload()">Refresh</div>
+                <div class="menu-item-sub" onclick="closeApp()">Exit</div>
+            </div>
+        </div>
+        <div class="menu-item" onclick="toggleMenu(event, 'view-menu')">
+            View
+            <div class="menu-dropdown" id="view-menu">
+                <div class="menu-item-sub" onclick="togglePanel('data-panel')">Show/Hide Data Panel</div>
+                <div class="menu-item-sub" onclick="togglePanel('chat-panel')">Show/Hide Chat Panel</div>
+                <div style="border-bottom: 1px solid #999; margin: 3px 0;"></div>
+                <div class="menu-item-sub" onclick="resetLayout()">Reset Layout</div>
+            </div>
+        </div>
+        <div class="menu-item" onclick="toggleMenu(event, 'plot-menu')">
+            Plot
+            <div class="menu-dropdown" id="plot-menu">
+                <div class="menu-item-sub" onclick="showPlotDialog()">Plot Settings...</div>
+                <div class="menu-item-sub" onclick="showAxisDialog()">Axis Settings...</div>
+                <div class="menu-item-sub" onclick="showMarkerDialog()">Marker Settings...</div>
+                <div style="border-bottom: 1px solid #999; margin: 3px 0;"></div>
+                <div class="menu-item-sub" onclick="clearPlot()">Clear Plot</div>
+            </div>
+        </div>
+        <div class="menu-item" onclick="toggleMenu(event, 'tools-menu')">
+            Tools
+            <div class="menu-dropdown" id="tools-menu">
+                <div class="menu-item-sub" onclick="showFontDialog()">Font Settings...</div>
+                <div class="menu-item-sub" onclick="showFilterDialog()">Filter Settings...</div>
+                <div style="border-bottom: 1px solid #999; margin: 3px 0;"></div>
+                <div class="menu-item-sub" onclick="showPreferences()">Preferences...</div>
+            </div>
+        </div>
+        <div class="menu-item" onclick="toggleMenu(event, 'help-menu')">
+            Help
+            <div class="menu-dropdown" id="help-menu">
+                <div class="menu-item-sub" onclick="showHelp()">Help Contents</div>
+                <div class="menu-item-sub" onclick="showAbout()">About FDV Chart</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- TOOLBAR -->
+    <div id="toolbar">
+        <button class="toolbar-btn" onclick="openFileDialog()">📁 Open File</button>
+        <button class="toolbar-btn" onclick="openDirDialog()">📂 Open Directory</button>
+        <div class="toolbar-separator"></div>
+        <button class="toolbar-btn" onclick="showPlotDialog()">⚙️ Plot Settings</button>
+        <button class="toolbar-btn" onclick="showMarkerDialog()">🎯 Markers</button>
+        <button class="toolbar-btn" onclick="showFontDialog()">🔤 Fonts</button>
+        <div class="toolbar-separator"></div>
+        <button class="toolbar-btn" onclick="exportChart()">💾 Export</button>
+        <button class="toolbar-btn" onclick="clearPlot()">🗑️ Clear</button>
+    </div>
+
+    <!-- MAIN CONTAINER -->
+    <div id="main-container">
+        <!-- WORKSPACE -->
+        <div id="workspace">
+            <!-- Plot area -->
+            <div id="plot-container">
+                <div id="plot-toolbar">
+                    <label>Chart Type:</label>
+                    <select id="chart-type-select" onchange="changeChartType(this.value)">
+                        <option value="scatter">Scatter</option>
+                        <option value="line">Line</option>
+                        <option value="histogram">Histogram</option>
+                        <option value="cumulative">Cumulative</option>
+                        <option value="rcdf">RCDF</option>
+                        <option value="boxplot">Box Plot</option>
+                    </select>
+                    <label>Log Scale:</label>
+                    <input type="checkbox" id="x-log-check" onchange="updatePlot()"> X
+                    <input type="checkbox" id="y-log-check" onchange="updatePlot()"> Y
+                    <div style="flex: 1 1 auto;"></div>
+                    <label>Chart ID:</label>
+                    <input type="text" id="chart-id-input" placeholder="e.g., chart1" style="width: 80px;" onchange="updatePlot()">
+                </div>
+                <div id="canvas-wrapper">
+                    <canvas id="main-chart"></canvas>
+                </div>
+            </div>
+
+            <!-- Right panel (data + chat) -->
+            <div id="right-panel">
+                <!-- Data table panel -->
+                <div id="data-panel">
+                    <div class="panel-header" onclick="togglePanelContent(this)">
+                        <span class="panel-toggle expanded"></span>
+                        <span>📊 Data Table</span>
+                    </div>
+                    <div class="panel-content">
+                        <table id="data-table">
+                            <thead><tr><th>Column</th><th>Value</th></tr></thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Chat panel -->
+                <div id="chat-panel">
+                    <div class="panel-header" onclick="togglePanelContent(this)">
+                        <span class="panel-toggle expanded"></span>
+                        <span>💬 Chat</span>
+                    </div>
+                    <div class="panel-content">
+                        <div id="chat-messages"></div>
+                    </div>
+                    <div id="chat-input-area">
+                        <input type="text" id="chat-input" placeholder="Type a message...">
+                        <button id="chat-send" onclick="sendChatMessage()">Send</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- STATUS BAR -->
+        <div id="status-bar">
+            <span id="status-message">Ready</span>
+            <span id="status-info"></span>
+        </div>
+    </div>
+
+    <!-- MODALS -->
+    <!-- Plot Settings Modal -->
+    <div id="plot-settings-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                Plot Settings
+                <span class="modal-close" onclick="closeModal('plot-settings-modal')">×</span>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Chart Title:</label>
+                    <input type="text" id="chart-title-input" placeholder="Enter chart title">
+                </div>
+                <div class="form-group">
+                    <label>Chart Type:</label>
+                    <select id="chart-type-modal">
+                        <option value="scatter">Scatter Plot</option>
+                        <option value="line">Line Chart</option>
+                        <option value="histogram">Histogram</option>
+                        <option value="cumulative">Cumulative Distribution</option>
+                        <option value="rcdf">Reverse CDF</option>
+                        <option value="boxplot">Box Plot</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Background Color:</label>
+                    <input type="text" id="bg-color-input" placeholder="#ffffff" value="#ffffff">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="modal-btn" onclick="closeModal('plot-settings-modal')">Cancel</button>
+                <button class="modal-btn primary" onclick="applyPlotSettings()">Apply</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Axis Settings Modal -->
+    <div id="axis-settings-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                Axis Settings
+                <span class="modal-close" onclick="closeModal('axis-settings-modal')">×</span>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>X-Axis Title:</label>
+                    <input type="text" id="x-title-input" placeholder="X Axis">
+                </div>
+                <div class="form-group">
+                    <label>Y-Axis Title:</label>
+                    <input type="text" id="y-title-input" placeholder="Y Axis">
+                </div>
+                <div class="form-group">
+                    <label>X-Axis Min:</label>
+                    <input type="number" id="x-min-input">
+                </div>
+                <div class="form-group">
+                    <label>X-Axis Max:</label>
+                    <input type="number" id="x-max-input">
+                </div>
+                <div class="form-group">
+                    <label>Y-Axis Min:</label>
+                    <input type="number" id="y-min-input">
+                </div>
+                <div class="form-group">
+                    <label>Y-Axis Max:</label>
+                    <input type="number" id="y-max-input">
+                </div>
+                <div class="form-group">
+                    <label>
+                        <input type="checkbox" id="x-log-check-modal"> X-Axis Logarithmic
+                    </label>
+                </div>
+                <div class="form-group">
+                    <label>
+                        <input type="checkbox" id="y-log-check-modal"> Y-Axis Logarithmic
+                    </label>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="modal-btn" onclick="closeModal('axis-settings-modal')">Cancel</button>
+                <button class="modal-btn primary" onclick="applyAxisSettings()">Apply</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Marker Settings Modal -->
+    <div id="marker-settings-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                Marker Settings
+                <span class="modal-close" onclick="closeModal('marker-settings-modal')">×</span>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Marker Expression (one per line):</label>
+                    <textarea id="marker-expr-input" placeholder="e.g., x>5\ny<10"></textarea>
+                </div>
+                <div class="form-group">
+                    <label>Marker Color:</label>
+                    <input type="text" id="marker-color-input" placeholder="#FF0000" value="#FF0000">
+                </div>
+                <div class="form-group">
+                    <label>Marker Label:</label>
+                    <input type="text" id="marker-label-input" placeholder="Marker label">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="modal-btn" onclick="closeModal('marker-settings-modal')">Cancel</button>
+                <button class="modal-btn primary" onclick="applyMarkerSettings()">Add Marker</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Font Settings Modal -->
+    <div id="font-settings-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                Font Settings
+                <span class="modal-close" onclick="closeModal('font-settings-modal')">×</span>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Axis Font Size:</label>
+                    <input type="number" id="axis-font-size" placeholder="12" min="8" max="24">
+                </div>
+                <div class="form-group">
+                    <label>Point Size:</label>
+                    <input type="number" id="point-size-input" placeholder="4" min="1" max="10">
+                </div>
+                <div class="form-group">
+                    <label>Legend Font Size:</label>
+                    <input type="number" id="legend-font-size" placeholder="12" min="8" max="24">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="modal-btn" onclick="closeModal('font-settings-modal')">Cancel</button>
+                <button class="modal-btn primary" onclick="applyFontSettings()">Apply</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Filter Settings Modal -->
+    <div id="filter-settings-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                Filter Settings
+                <span class="modal-close" onclick="closeModal('filter-settings-modal')">×</span>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>X-Axis Range:</label>
+                    <div style="display: flex; gap: 8px;">
+                        <input type="number" id="filter-x-min" placeholder="Min" style="flex: 1;">
+                        <input type="number" id="filter-x-max" placeholder="Max" style="flex: 1;">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Y-Axis Range:</label>
+                    <div style="display: flex; gap: 8px;">
+                        <input type="number" id="filter-y-min" placeholder="Min" style="flex: 1;">
+                        <input type="number" id="filter-y-max" placeholder="Max" style="flex: 1;">
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="modal-btn" onclick="closeModal('filter-settings-modal')">Cancel</button>
+                <button class="modal-btn primary" onclick="applyFilterSettings()">Apply</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- About Modal -->
+    <div id="about-modal" class="modal">
+        <div class="modal-content" style="max-width: 400px;">
+            <div class="modal-header">
+                About FDV Chart Parser
+                <span class="modal-close" onclick="closeModal('about-modal')">×</span>
+            </div>
+            <div class="modal-body">
+                <p><strong>FDV Chart Parser - Rev4</strong></p>
+                <p>A modern desktop-style chart visualization and data analysis tool.</p>
+                <p style="margin-top: 16px; font-size: 11px; color: #666;">
+                    <strong>Features:</strong><br>
+                    • Multiple chart types (scatter, line, histogram, etc.)<br>
+                    • Interactive data filtering<br>
+                    • Custom markers and annotations<br>
+                    • Real-time data updates<br>
+                    • Chart export capabilities
+                </p>
+            </div>
+            <div class="modal-footer">
+                <button class="modal-btn primary" onclick="closeModal('about-modal')">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- File input -->
+    <input type="file" id="file-input">
+    <input type="file" id="dir-input" webkitdirectory>
+
+    <script>
+        // ===== STATE =====
+        let currentChart = null;
+        let currentChartType = 'scatter';
+        let currentData = [];
+        let markers = [];
+        let plotSettings = {
+            title: 'FDV Chart',
+            xTitle: 'X Axis',
+            yTitle: 'Y Axis',
+            backgroundColor: '#ffffff',
+            xLog: false,
+            yLog: false
+        };
+
+        // ===== UTILITY FUNCTIONS =====
+        function toggleMenu(event, menuId) {
+            event.stopPropagation();
+            const menu = document.getElementById(menuId);
+            const allMenus = document.querySelectorAll('.menu-dropdown');
+            allMenus.forEach(m => {
+                if (m.id !== menuId) m.classList.remove('show');
+            });
+            menu.classList.toggle('show');
+        }
+
+        document.addEventListener('click', () => {
+            document.querySelectorAll('.menu-dropdown').forEach(m => m.classList.remove('show'));
+        });
+
+        function openModal(modalId) {
+            document.getElementById(modalId).classList.add('show');
+        }
+
+        function closeModal(modalId) {
+            document.getElementById(modalId).classList.remove('show');
+        }
+
+        function updateStatus(message, type = 'info') {
+            document.getElementById('status-message').textContent = message;
+        }
+
+        function togglePanel(panelId) {
+            const panel = document.getElementById(panelId);
+            panel.style.display = panel.style.display === 'none' ? 'flex' : 'none';
+        }
+
+        function togglePanelContent(header) {
+            const content = header.nextElementSibling;
+            const toggle = header.querySelector('.panel-toggle');
+            content.classList.toggle('collapsed');
+            toggle.classList.toggle('collapsed');
+            toggle.classList.toggle('expanded');
+        }
+
+        // ===== DIALOG FUNCTIONS =====
+        function showPlotDialog() {
+            document.getElementById('chart-title-input').value = plotSettings.title;
+            openModal('plot-settings-modal');
+        }
+
+        function showAxisDialog() {
+            document.getElementById('x-title-input').value = plotSettings.xTitle;
+            document.getElementById('y-title-input').value = plotSettings.yTitle;
+            document.getElementById('x-log-check-modal').checked = plotSettings.xLog;
+            document.getElementById('y-log-check-modal').checked = plotSettings.yLog;
+            openModal('axis-settings-modal');
+        }
+
+        function showMarkerDialog() {
+            openModal('marker-settings-modal');
+        }
+
+        function showFontDialog() {
+            openModal('font-settings-modal');
+        }
+
+        function showFilterDialog() {
+            openModal('filter-settings-modal');
+        }
+
+        function showHelp() {
+            alert('FDV Chart Parser Help\n\n' +
+                  '1. Open a file using File > Open File\n' +
+                  '2. Select X and Y columns\n' +
+                  '3. Choose a chart type\n' +
+                  '4. Add markers and customize using Tools menu\n' +
+                  '5. Export your chart when satisfied');
+        }
+
+        function showAbout() {
+            openModal('about-modal');
+        }
+
+        function showPreferences() {
+            alert('Preferences dialog would go here');
+        }
+
+        // ===== APPLY FUNCTIONS =====
+        function applyPlotSettings() {
+            plotSettings.title = document.getElementById('chart-title-input').value;
+            updateStatus('Plot settings updated');
+            closeModal('plot-settings-modal');
+        }
+
+        function applyAxisSettings() {
+            plotSettings.xTitle = document.getElementById('x-title-input').value;
+            plotSettings.yTitle = document.getElementById('y-title-input').value;
+            plotSettings.xLog = document.getElementById('x-log-check-modal').checked;
+            plotSettings.yLog = document.getElementById('y-log-check-modal').checked;
+            updateStatus('Axis settings updated');
+            closeModal('axis-settings-modal');
+        }
+
+        function applyMarkerSettings() {
+            const expr = document.getElementById('marker-expr-input').value;
+            const color = document.getElementById('marker-color-input').value;
+            const label = document.getElementById('marker-label-input').value;
+            markers.push({ expr, color, label });
+            updateStatus(`Marker added: ${label}`);
+            closeModal('marker-settings-modal');
+        }
+
+        function applyFontSettings() {
+            updateStatus('Font settings updated');
+            closeModal('font-settings-modal');
+        }
+
+        function applyFilterSettings() {
+            updateStatus('Filter applied');
+            closeModal('filter-settings-modal');
+        }
+
+        // ===== FILE OPERATIONS =====
+        function openFileDialog() {
+            document.getElementById('file-input').click();
+        }
+
+        function openDirDialog() {
+            document.getElementById('dir-input').click();
+        }
+
+        function exportChart() {
+            if (currentChart) {
+                const url = document.getElementById('main-chart').toDataURL();
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = 'chart.png';
+                link.click();
+                updateStatus('Chart exported');
+            } else {
+                updateStatus('No chart to export');
+            }
+        }
+
+        function clearPlot() {
+            if (currentChart) {
+                currentChart.destroy();
+                currentChart = null;
+            }
+            currentData = [];
+            markers = [];
+            updateStatus('Chart cleared');
+        }
+
+        function closeApp() {
+            if (confirm('Close application?')) {
+                window.close();
+            }
+        }
+
+        // ===== CHART FUNCTIONS =====
+        function changeChartType(type) {
+            currentChartType = type;
+            updatePlot();
+        }
+
+        function updatePlot() {
+            const ctx = document.getElementById('main-chart').getContext('2d');
+            if (currentChart) {
+                currentChart.destroy();
+            }
+
+            currentChart = new Chart(ctx, {
+                type: currentChartType,
+                data: {
+                    labels: ['Data'],
+                    datasets: [{
+                        label: plotSettings.title,
+                        data: currentData.slice(0, 100),
+                        backgroundColor: 'rgba(75, 192, 192, 0.5)',
+                        borderColor: 'rgba(75, 192, 192, 1)',
+                        borderWidth: 1,
+                        pointRadius: 4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: plotSettings.title
+                        }
+                    },
+                    scales: {
+                        x: { type: plotSettings.xLog ? 'logarithmic' : 'linear' },
+                        y: { type: plotSettings.yLog ? 'logarithmic' : 'linear' }
+                    }
+                }
+            });
+
+            updateStatus('Plot updated');
+        }
+
+        function resetLayout() {
+            document.getElementById('data-panel').style.display = 'flex';
+            document.getElementById('chat-panel').style.display = 'flex';
+            updateStatus('Layout reset');
+        }
+
+        // Initial chart
+        updatePlot();
+    </script>
+</body>
+</html>
