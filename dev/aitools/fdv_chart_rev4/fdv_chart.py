@@ -5,9 +5,11 @@ log_path = r'd:\FDV\git\fdv_dashboard\dev\aitools\fdv_chart\fdv_chart_startup.lo
 with open(log_path, 'w') as f:
     f.write("STARTUP_BEGIN\n")
 
-print("PYTHON_START", flush=True)
+print("PYTHON_START")
+sys.stdout.flush()
 sys.stderr.write("STDERR_START\n")
 sys.stderr.flush()
+
 """
 FDV Chart Parser - Web UI for filtering and parsing FDV log files
 Based on process_fdv_poll.py structure but with user-configurable regex filtering
