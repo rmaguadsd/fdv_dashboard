@@ -3711,7 +3711,13 @@ function _drawSplitCharts() {
                     colCol || null, xRx, isXOnly ? null : yRx,
                     iv.xLo, iv.xHi, isXOnly ? '' : iv.yLo, isXOnly ? '' : iv.yHi);
 
-    /* Attach split key to each point using raw filteredIndices.
+    /* Build a map of valid row indices from res.points (these have already passed all filters & numeric extraction) */
+    var validRowMap = {};
+    res.points.forEach(function(pt) {
+        validRowMap[pt._ri] = pt;
+    });
+
+    /* Attach split key to each VALID point using the pre-filtered results.
        A row may match MULTIPLE keys (multi-capture regex) — it goes into each bucket. */
     var buckets = {};
     var bucketOrder = [];
@@ -3719,9 +3725,14 @@ function _drawSplitCharts() {
     var yi_bp = ct === 'boxplot' ? currentHeaders.indexOf(yCol) : -1;
     var yLo_bp = (ct === 'boxplot' && iv.yLo !== '') ? parseFloat(iv.yLo) : NaN;
     var yHi_bp = (ct === 'boxplot' && iv.yHi !== '') ? parseFloat(iv.yHi) : NaN;
+    
+    /* Only iterate rows that passed the pre-filtering from res.points */
     for (var r = 0; r < filteredIndices.length; r++) {
-        var row = allRows[filteredIndices[r]];
-        var rowIdx = filteredIndices[r];  /* Store the actual row index */
+        var rowIdx = filteredIndices[r];
+        /* Skip rows that didn't pass the interval/numeric filters */
+        if (!validRowMap[rowIdx]) continue;
+        
+        var row = allRows[rowIdx];
         var keys_r = _splitChartKeys(row, scIdx, scRx).map(function(k){ return k || '(blank)'; });
         keys_r.forEach(function(key) {
             if (!buckets[key]) { buckets[key] = []; bucketOrder.push(key); }
@@ -3740,27 +3751,17 @@ function _drawSplitCharts() {
                 return;
             }
 
-            /* Non-boxplot: re-extract numeric values for this row */
-            var xv2 = extractNum(row[currentHeaders.indexOf(xCol)] != null
-                ? String(row[currentHeaders.indexOf(xCol)]) : '', xRx);
-            var yv2 = isXOnly ? xv2 : extractNum(
-                row[currentHeaders.indexOf(yCol)] != null
-                ? String(row[currentHeaders.indexOf(yCol)]) : '', yRx);
-            if (xv2 === null || (!isXOnly && yv2 === null)) return;
-            var xLo2 = iv.xLo !== '' ? parseFloat(iv.xLo) : NaN;
-            var xHi2 = iv.xHi !== '' ? parseFloat(iv.xHi) : NaN;
-            var yLo2 = (!isXOnly && iv.yLo !== '') ? parseFloat(iv.yLo) : NaN;
-            var yHi2 = (!isXOnly && iv.yHi !== '') ? parseFloat(iv.yHi) : NaN;
-            if (!isNaN(xLo2) && xv2 < xLo2) return;
-            if (!isNaN(xHi2) && xv2 > xHi2) return;
-            if (!isNaN(yLo2) && yv2 < yLo2) return;
-            if (!isNaN(yHi2) && yv2 > yHi2) return;
-            var gi2  = colCol   ? currentHeaders.indexOf(colCol)   : -1;
-            var si2  = splitCol ? currentHeaders.indexOf(splitCol) : -1;
-            var pt2  = { x: xv2, y: isXOnly ? xv2 : yv2, _ri: rowIdx };
-            if (gi2 >= 0 && row[gi2] != null)  pt2.group      = String(row[gi2]);
-            if (si2 >= 0 && row[si2] != null)  pt2.splitGroup = String(row[si2]);
-            buckets[key].push(pt2);
+            /* Non-boxplot: use the already-validated point from res.points */
+            var validPt = validRowMap[rowIdx];
+            if (validPt) {
+                var gi2  = colCol   ? currentHeaders.indexOf(colCol)   : -1;
+                var si2  = splitCol ? currentHeaders.indexOf(splitCol) : -1;
+                var pt2  = { x: validPt.x, y: validPt.y, _ri: rowIdx };
+                if (validPt.group)  pt2.group      = validPt.group;
+                if (gi2 >= 0 && row[gi2] != null)  pt2.group      = String(row[gi2]);
+                if (si2 >= 0 && row[si2] != null)  pt2.splitGroup = String(row[si2]);
+                buckets[key].push(pt2);
+            }
         });
     }
 
