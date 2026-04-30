@@ -58,32 +58,14 @@
             align-items: center; max-width: 520px;
         }
         .file-pill {
-            display: inline-flex; align-items: center; gap: 2px;
+            display: inline-flex; align-items: center; gap: 4px;
             background: #d1ecf1; border: 1px solid #bee5eb; border-radius: 12px;
-            padding: 2px 6px 2px 8px; font-size: 0.78em; color: #0c5460; white-space: nowrap;
-            max-width: none;
+            padding: 2px 8px; font-size: 0.78em; color: #0c5460; white-space: nowrap;
+            max-width: 200px; overflow: hidden; text-overflow: ellipsis;
         }
-        .file-pill > span:first-child {
-            max-width: 150px; overflow: hidden; text-overflow: ellipsis;
-        }
-        .file-pill .pill-rm { 
-            cursor: pointer; 
-            font-size: 1.2em; 
-            color: #856404;
-            margin-left: 2px; 
-            flex-shrink: 0; 
-            padding: 0px 2px; 
-            border: none; 
-            background: none;
-            line-height: 0.8;
-            vertical-align: middle;
-            height: auto;
-            width: auto;
-            display: inline;
-        }
-        .file-pill .pill-rm:hover { 
-            color: #721c24; 
-        }
+        .file-pill .pill-rm { cursor: pointer; font-size: 0.9em; color: #856404;
+                               margin-left: 2px; flex-shrink: 0; }
+        .file-pill .pill-rm:hover { color: #721c24; }
         #input-source-tabs {
             display: flex; gap: 0; margin-bottom: 4px; font-size: 0.82em;
         }
@@ -1432,25 +1414,17 @@ function _rebuildPills() {
         var pill = document.createElement('span');
         pill.className = 'file-pill';
         pill.title = f.name;
-        
-        var fname = document.createElement('span');
-        fname.textContent = f.name.length > 28 ? '…' + f.name.slice(-25) : f.name;
-        pill.appendChild(fname);
-        
-        var btn = document.createElement('button');
-        btn.className = 'pill-rm';
-        btn.title = 'Remove';
-        btn.dataset.idx = i;
-        btn.textContent = '×';
-        btn.addEventListener('click', function(e) {
-            e.stopPropagation();
+        pill.innerHTML = escHtml(f.name.length > 28 ? '\u2026' + f.name.slice(-25) : f.name) +
+            ' <span class="pill-rm" title="Remove" data-idx="' + i + '">&times;</span>';
+        pl.appendChild(pill);
+    });
+    // remove-pill click
+    pl.querySelectorAll('.pill-rm').forEach(function(rm) {
+        rm.addEventListener('click', function() {
             var idx = parseInt(this.dataset.idx);
             _selectedFiles.splice(idx, 1);
             _rebuildPills();
         });
-        pill.appendChild(btn);
-        
-        pl.appendChild(pill);
     });
     // count label
     if (_selectedFiles.length > 1) {
@@ -3480,10 +3454,9 @@ function _destroySplitCharts() {
 /* Build one Chart.js config for a tile (reuses the main draw logic but
    accepts pre-filtered points / values and a canvas element). */
 function _buildTileChart(canvas, ct, tileData, xCol, yCol, xRx, yRx, colCol, colorRx,
-                          xLog, yLog, innerSplitCol, innerSplitRx, chartId, bucketColors) {
+                          xLog, yLog, innerSplitCol, innerSplitRx, chartId) {
     var ctx = canvas.getContext('2d');
     var colIdx = colCol ? currentHeaders.indexOf(colCol) : -1;
-    bucketColors = bucketColors || {};  /* Map of color values that exist in this bucket */
     
     /* Read multi-dimensional color-by selections at draw time */
     var colorDims = _gdimRead('color');
@@ -3667,84 +3640,24 @@ function _buildTileChart(canvas, ct, tileData, xCol, yCol, xRx, yRx, colCol, col
     /* ── Scatter / Line tile ── */
     var MAX_PTS = 5000;
     var pts = tileData, sampled = false;
-    
-    /* IMPORTANT: Discover ALL color groups BEFORE sampling to avoid missing colors */
-    var allColorGroups = {};
-    tileData.forEach(function(pt) {
-        var g = colorKey(pt);
-        if (!allColorGroups[g]) allColorGroups[g] = true;
-    });
-    
-    /* Also add any colors that exist in this bucket but aren't in the tile data points */
-    /* (This handles cases where color values exist in raw rows but don't have valid X/Y) */
-    Object.keys(bucketColors).forEach(function(colorVal) {
-        if (!allColorGroups[colorVal]) {
-            allColorGroups[colorVal] = true;
-        }
-    });
-    
-    /* STRATIFIED SAMPLING: Ensure each color group is represented */
     if (pts.length > MAX_PTS && ct !== 'line') {
+        var step = Math.ceil(pts.length / MAX_PTS);
+        pts = pts.filter(function(_, i){ return i % step === 0; });
         sampled = true;
-        /* Group points by color */
-        var ptsByColor = {};
-        tileData.forEach(function(pt) {
-            var g = colorKey(pt);
-            if (!ptsByColor[g]) ptsByColor[g] = [];
-            ptsByColor[g].push(pt);
-        });
-        
-        /* Sample proportionally from each color group */
-        var colorList = Object.keys(ptsByColor).sort();
-        var ptsPerColor = Math.floor(MAX_PTS / colorList.length);
-        var sampled_pts = [];
-        
-        colorList.forEach(function(color) {
-            var colorPts = ptsByColor[color];
-            if (colorPts.length <= ptsPerColor) {
-                /* Keep all points if this color has fewer than average */
-                sampled_pts = sampled_pts.concat(colorPts);
-            } else {
-                /* Sample uniformly from this color */
-                var step = Math.ceil(colorPts.length / ptsPerColor);
-                for (var i = 0; i < colorPts.length; i += step) {
-                    if (sampled_pts.length < MAX_PTS) {
-                        sampled_pts.push(colorPts[i]);
-                    }
-                }
-            }
-        });
-        pts = sampled_pts;
     }
-    
-    /* Build datasets from sampled points, but ensure ALL discovered colors appear in legend */
     var groups = {};
     pts.forEach(function(pt) {
         var g = colorKey(pt);
         if (!groups[g]) groups[g] = [];
         groups[g].push({ x: pt.x, y: pt.y });
     });
-    
-    /* Add empty datasets for any colors not in sampled data */
-    Object.keys(allColorGroups).forEach(function(colorVal) {
-        if (!groups[colorVal]) groups[colorVal] = [];
-    });
-    
-    var datasets = Object.keys(groups).sort().map(function(g, i) {
+    var datasets = Object.keys(groups).map(function(g, i) {
         return { label: g, data: groups[g],
             backgroundColor: PALETTE[i % PALETTE.length] + '99',
             borderColor:     PALETTE[i % PALETTE.length],
             borderWidth: ct === 'line' ? 1.5 : 0,
             pointRadius: ct === 'line' ? 2 : 3, showLine: ct === 'line' };
     });
-    
-    /* DEBUG: Log color groups found in this tile */
-    if (colCol) {
-        console.log('[_buildTileChart] Chart #' + chartId + ' - Color by: ' + colCol + ' | Regex: ' + (colorRx||'(none)'));
-        console.log('  Found ' + Object.keys(allColorGroups).length + ' color groups (all): ' + Object.keys(allColorGroups).sort().join(', '));
-        console.log('  Found ' + Object.keys(groups).filter(function(g){ return groups[g].length > 0; }).length + ' in sampled data');
-        console.log('  tileData length: ' + tileData.length + ', pts after sampling: ' + pts.length);
-    }
     return new Chart(ctx, {
         type: 'scatter',
         data: { datasets: datasets },
@@ -3799,124 +3712,60 @@ function _drawSplitCharts() {
                     iv.xLo, iv.xHi, isXOnly ? '' : iv.yLo, isXOnly ? '' : iv.yHi);
 
     /* Attach split key to each point using raw filteredIndices.
-       CRITICAL: Add ALL rows to split buckets, even those with invalid X/Y.
-       This ensures all color-by values are discovered for the legend.
-       Individual tiles will filter out invalid X/Y during rendering. */
+       A row may match MULTIPLE keys (multi-capture regex) — it goes into each bucket. */
     var buckets = {};
     var bucketOrder = [];
     var xi_bp = ct === 'boxplot' ? currentHeaders.indexOf(xCol) : -1;
     var yi_bp = ct === 'boxplot' ? currentHeaders.indexOf(yCol) : -1;
     var yLo_bp = (ct === 'boxplot' && iv.yLo !== '') ? parseFloat(iv.yLo) : NaN;
     var yHi_bp = (ct === 'boxplot' && iv.yHi !== '') ? parseFloat(iv.yHi) : NaN;
-    
-    /* DEBUG: Track statistics */
-    var skippedCount = 0;
-    var allDutValues = {};  /* Track all DUT values we encounter (before filtering) */
-    var allColorValues = {}; /* Track all COLOR values we encounter (even from rows with invalid X/Y) */
-    var colorsByBucket = {}; /* Track which COLOR values exist in each bucket */
-    var colorIdx = colCol ? currentHeaders.indexOf(colCol) : -1;
-    var blk316Count = 0;    /* DEBUG: count BLK 316 rows */
-    var blk316ByBucket = {}; /* DEBUG: track which buckets have BLK 316 */
-    
     for (var r = 0; r < filteredIndices.length; r++) {
         var row = allRows[filteredIndices[r]];
         var rowIdx = filteredIndices[r];  /* Store the actual row index */
-        
-        /* First, extract split keys from the split column */
         var keys_r = _splitChartKeys(row, scIdx, scRx).map(function(k){ return k || '(blank)'; });
-        
-        /* DEBUG: Track BLK 316 */
-        var rowBlk = colorIdx >= 0 && row[colorIdx] != null ? String(row[colorIdx]) : null;
-        if (rowBlk === '316') {
-            blk316Count++;
-            keys_r.forEach(function(k) { blk316ByBucket[k] = (blk316ByBucket[k] || 0) + 1; });
-        }
-        
-        /* Track all DUT values encountered */
-        keys_r.forEach(function(k) {
-            if (!allDutValues[k]) allDutValues[k] = 0;
-            allDutValues[k]++;
-        });
-        
-        /* Track all COLOR values encountered (for legend, even from invalid X/Y rows) */
-        if (colorIdx >= 0 && row[colorIdx] != null) {
-            var colorVal = String(row[colorIdx]);
-            if (!allColorValues[colorVal]) allColorValues[colorVal] = 0;
-            allColorValues[colorVal]++;
-            
-            /* Also track which colors exist in each bucket */
-            keys_r.forEach(function(k) {
-                if (!colorsByBucket[k]) colorsByBucket[k] = {};
-                colorsByBucket[k][colorVal] = true;
-            });
-        }
-        
-        /* Create bucket entries for all split keys if they don't exist */
         keys_r.forEach(function(key) {
             if (!buckets[key]) { buckets[key] = []; bucketOrder.push(key); }
-        });
 
-        if (ct === 'boxplot') {
-            /* X is category string, Y is numeric */
-            if (yi_bp >= 0) {
+            if (ct === 'boxplot') {
+                /* X is category string, Y is numeric */
+                if (yi_bp < 0) return;
                 var bpYraw = row[yi_bp] != null ? String(row[yi_bp]) : '';
                 var bpYv   = extractNum(bpYraw, yRx);
-                if (bpYv !== null && (isNaN(yLo_bp) || bpYv >= yLo_bp) && (isNaN(yHi_bp) || bpYv <= yHi_bp)) {
-                    var bpXraw = xi_bp >= 0 && row[xi_bp] != null ? String(row[xi_bp]).trim() : xCol;
-                    var bpPt = { x: 0, y: bpYv, group: bpXraw, _ri: rowIdx };
-                    keys_r.forEach(function(key) { buckets[key].push(bpPt); });
-                }
+                if (bpYv === null) return;
+                if (!isNaN(yLo_bp) && bpYv < yLo_bp) return;
+                if (!isNaN(yHi_bp) && bpYv > yHi_bp) return;
+                var bpXraw = xi_bp >= 0 && row[xi_bp] != null ? String(row[xi_bp]).trim() : xCol;
+                var bpPt = { x: 0, y: bpYv, group: bpXraw, _ri: rowIdx };
+                buckets[key].push(bpPt);
+                return;
             }
-        } else {
-            /* Non-boxplot: Extract X/Y values */
+
+            /* Non-boxplot: re-extract numeric values for this row */
             var xv2 = extractNum(row[currentHeaders.indexOf(xCol)] != null
                 ? String(row[currentHeaders.indexOf(xCol)]) : '', xRx);
             var yv2 = isXOnly ? xv2 : extractNum(
                 row[currentHeaders.indexOf(yCol)] != null
                 ? String(row[currentHeaders.indexOf(yCol)]) : '', yRx);
-            
-            /* Check if row has valid X/Y */
-            var hasValidXY = !(xv2 === null || (!isXOnly && yv2 === null));
-            if (hasValidXY) {
-                /* Check interval constraints */
-                var xLo2 = iv.xLo !== '' ? parseFloat(iv.xLo) : NaN;
-                var xHi2 = iv.xHi !== '' ? parseFloat(iv.xHi) : NaN;
-                var yLo2 = (!isXOnly && iv.yLo !== '') ? parseFloat(iv.yLo) : NaN;
-                var yHi2 = (!isXOnly && iv.yHi !== '') ? parseFloat(iv.yHi) : NaN;
-                
-                if ((!isNaN(xLo2) && xv2 < xLo2) || (!isNaN(xHi2) && xv2 > xHi2) ||
-                    (!isNaN(yLo2) && yv2 < yLo2) || (!isNaN(yHi2) && yv2 > yHi2)) {
-                    hasValidXY = false;
-                }
-            }
-            
-            /* Add point to all matching split key buckets (only if X/Y is valid) */
-            if (hasValidXY) {
-                var gi2  = colCol   ? currentHeaders.indexOf(colCol)   : -1;
-                var si2  = splitCol ? currentHeaders.indexOf(splitCol) : -1;
-                var pt2  = { x: xv2, y: isXOnly ? xv2 : yv2, _ri: rowIdx };
-                if (gi2 >= 0 && row[gi2] != null)  pt2.group      = String(row[gi2]);
-                if (si2 >= 0 && row[si2] != null)  pt2.splitGroup = String(row[si2]);
-                keys_r.forEach(function(key) { buckets[key].push(pt2); });
-            }
-        }
+            if (xv2 === null || (!isXOnly && yv2 === null)) return;
+            var xLo2 = iv.xLo !== '' ? parseFloat(iv.xLo) : NaN;
+            var xHi2 = iv.xHi !== '' ? parseFloat(iv.xHi) : NaN;
+            var yLo2 = (!isXOnly && iv.yLo !== '') ? parseFloat(iv.yLo) : NaN;
+            var yHi2 = (!isXOnly && iv.yHi !== '') ? parseFloat(iv.yHi) : NaN;
+            if (!isNaN(xLo2) && xv2 < xLo2) return;
+            if (!isNaN(xHi2) && xv2 > xHi2) return;
+            if (!isNaN(yLo2) && yv2 < yLo2) return;
+            if (!isNaN(yHi2) && yv2 > yHi2) return;
+            var gi2  = colCol   ? currentHeaders.indexOf(colCol)   : -1;
+            var si2  = splitCol ? currentHeaders.indexOf(splitCol) : -1;
+            var pt2  = { x: xv2, y: isXOnly ? xv2 : yv2, _ri: rowIdx };
+            if (gi2 >= 0 && row[gi2] != null)  pt2.group      = String(row[gi2]);
+            if (si2 >= 0 && row[si2] != null)  pt2.splitGroup = String(row[si2]);
+            buckets[key].push(pt2);
+        });
     }
 
     var keys    = bucketOrder.filter(function(k,i){ return bucketOrder.indexOf(k)===i; })
                              .sort(function(a,b){ return a.localeCompare(b, undefined, {numeric:true}); });
-    
-    /* DEBUG: Log bucket info to help diagnose missing DUT/BLK blocks */
-    console.log('[_drawSplitCharts] Split column:', scCol, '| Regex:', scRx);
-    console.log('[_drawSplitCharts] Color column:', colCol, '| Regex:', colorRx);
-    console.log('[_drawSplitCharts] All DUT values found (from all filtered rows):', Object.keys(allDutValues).sort());
-    console.log('[_drawSplitCharts] All COLOR values found (from all filtered rows):', Object.keys(allColorValues).sort());
-    console.log('[_drawSplitCharts] *** BLK 316 DEBUG: Total rows with BLK=316:', blk316Count);
-    console.log('[_drawSplitCharts] *** BLK 316 distribution by bucket:', blk316ByBucket);
-    console.log('[_drawSplitCharts] Found', keys.length, 'unique split keys:', keys);
-    keys.forEach(function(k) {
-        console.log('  - Bucket[' + k + ']: ' + (buckets[k]||[]).length + ' points (rows with this DUT: ' + (allDutValues[k] || 0) + ')');
-    });
-    
     var grid    = document.getElementById('plot-grid');
     var cols    = Math.max(1, parseInt(document.getElementById('split-chart-cols').value) || 3);
     var tileH   = Math.max(80,  parseInt(document.getElementById('split-chart-h').value)    || 200);
@@ -3961,8 +3810,7 @@ function _drawSplitCharts() {
         grid.appendChild(tile);
 
         var inst = _buildTileChart(canvas, ct, buckets[key] || [],
-                    xCol, yCol, xRx, yRx, colCol, colorRx, xLog, yLog, splitCol, splitRx, ki+1,
-                    colorsByBucket[key] || {});
+                    xCol, yCol, xRx, yRx, colCol, colorRx, xLog, yLog, splitCol, splitRx, ki+1);
         if (inst) _splitInsts.push(inst);
     });
 

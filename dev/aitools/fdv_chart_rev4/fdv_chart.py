@@ -564,7 +564,10 @@ class RequestHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         """Handle GET requests"""
         print(f"[DEBUG] GET {self.path}", flush=True)
-        if self.path == '/':
+        # Treat /fdv_chart.html (with or without query string) as an alias for /,
+        # so links/bookmarks created against the static dev server still work.
+        _root_path = self.path.split('?', 1)[0]
+        if _root_path in ('/', '/fdv_chart.html', '/index.html'):
             # Serve HTML interface
             try:
                 print(f"[DEBUG] Serving root path", flush=True)
