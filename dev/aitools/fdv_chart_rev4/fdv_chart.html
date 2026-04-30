@@ -3683,22 +3683,9 @@ function _buildTileChart(canvas, ct, tileData, xCol, yCol, xRx, yRx, colCol, col
     /* ── Scatter / Line tile ── */
     var MAX_PTS = 5000;
     var pts = tileData, sampled = false;
-    if (pts.length > MAX_PTS && ct !== 'line') {
-        /* FIXED: Use deterministic hash-based sampling by row index (same as main chart)
-           Problem: stride sampling doesn't ensure consistent results across filtered views
-           Solution: Sample if hash(_ri) < threshold, independent of context */
-        var threshold = MAX_PTS / allRows.length;  /* sample ratio */
-        pts = [];
-        for (var i = 0; i < tileData.length; i++) {
-            var ri = tileData[i]._ri;
-            var hash = (ri * 73856093) % 1000000007;  /* large prime */
-            var rand = hash / 1000000007;
-            if (rand < threshold) {
-                pts.push(tileData[i]);
-            }
-        }
-        sampled = true;
-    }
+    /* NO SAMPLING - Always display 100% of data */
+    pts = tileData;
+    sampled = false;
     
     /* Discover ALL colors from tile data (before interval filtering removes some)
        Ensures legend shows all color values even with zero plotted points */
@@ -4212,25 +4199,9 @@ function drawScatterLine() {
     }
 
     var MAX_PTS = 10000, plotPts = points, sampled = false;
-    if (points.length > MAX_PTS && ct !== 'line') {
-        /* FIXED: Use deterministic hash-based sampling by row index
-           Problem: stride by position (i % step) changes with filters
-           Problem: stride by row index (_ri % step) can miss all rows if they don't align
-           Solution: Sample if hash(_ri) < threshold, independent of array position or stride
-           This ensures: same rows sampled in filtered view as in unfiltered view */
-        var threshold = MAX_PTS / allRows.length;  /* sample ratio: ~MAX_PTS of allRows.length */
-        plotPts = [];
-        for (var i = 0; i < points.length; i++) {
-            var ri = points[i]._ri;
-            /* Simple hash: use modulo a large prime to get pseudo-random 0.0-1.0 value */
-            var hash = (ri * 73856093) % 1000000007;  /* large prime */
-            var rand = hash / 1000000007;  /* gives 0.0 to 1.0 */
-            if (rand < threshold) {
-                plotPts.push(points[i]);
-            }
-        }
-        sampled = true;
-    }
+    /* NO SAMPLING - Always display 100% of data */
+    plotPts = points;
+    sampled = false;
 
     var scatterColIdx = colCol ? currentHeaders.indexOf(colCol) : -1;
     function colorKey(pt) {
