@@ -3719,7 +3719,9 @@ function _drawSplitCharts() {
                     iv.xLo, iv.xHi, isXOnly ? '' : iv.yLo, isXOnly ? '' : iv.yHi);
 
     /* Attach split key to each point using raw filteredIndices.
-       A row may match MULTIPLE keys (multi-capture regex) — it goes into each bucket. */
+       CRITICAL: Add ALL rows to split buckets, even those with invalid X/Y.
+       This ensures all color-by values are discovered for the legend.
+       Individual tiles will filter out invalid X/Y during rendering. */
     var buckets = {};
     var bucketOrder = [];
     var xi_bp = ct === 'boxplot' ? currentHeaders.indexOf(xCol) : -1;
@@ -3727,9 +3729,8 @@ function _drawSplitCharts() {
     var yLo_bp = (ct === 'boxplot' && iv.yLo !== '') ? parseFloat(iv.yLo) : NaN;
     var yHi_bp = (ct === 'boxplot' && iv.yHi !== '') ? parseFloat(iv.yHi) : NaN;
     
-    /* DEBUG: Track which rows are skipped and why */
+    /* DEBUG: Track statistics */
     var skippedCount = 0;
-    var skippedByReason = { noXY: 0, outsideInterval: 0, boxplotFail: 0 };
     var allDutValues = {};  /* Track all DUT values we encounter (before filtering) */
     
     for (var r = 0; r < filteredIndices.length; r++) {
@@ -3745,54 +3746,55 @@ function _drawSplitCharts() {
             allDutValues[k]++;
         });
         
-        /* Then for each split key, try to add this row's data to the appropriate bucket */
+        /* Create bucket entries for all split keys if they don't exist */
         keys_r.forEach(function(key) {
             if (!buckets[key]) { buckets[key] = []; bucketOrder.push(key); }
+        });
 
-            if (ct === 'boxplot') {
-                /* X is category string, Y is numeric */
-                if (yi_bp < 0) { skippedByReason.boxplotFail++; return; }
+        if (ct === 'boxplot') {
+            /* X is category string, Y is numeric */
+            if (yi_bp >= 0) {
                 var bpYraw = row[yi_bp] != null ? String(row[yi_bp]) : '';
                 var bpYv   = extractNum(bpYraw, yRx);
-                if (bpYv === null) { skippedByReason.noXY++; return; }
-                if (!isNaN(yLo_bp) && bpYv < yLo_bp) { skippedByReason.outsideInterval++; return; }
-                if (!isNaN(yHi_bp) && bpYv > yHi_bp) { skippedByReason.outsideInterval++; return; }
-                var bpXraw = xi_bp >= 0 && row[xi_bp] != null ? String(row[xi_bp]).trim() : xCol;
-                var bpPt = { x: 0, y: bpYv, group: bpXraw, _ri: rowIdx };
-                buckets[key].push(bpPt);
-                return;
+                if (bpYv !== null && (isNaN(yLo_bp) || bpYv >= yLo_bp) && (isNaN(yHi_bp) || bpYv <= yHi_bp)) {
+                    var bpXraw = xi_bp >= 0 && row[xi_bp] != null ? String(row[xi_bp]).trim() : xCol;
+                    var bpPt = { x: 0, y: bpYv, group: bpXraw, _ri: rowIdx };
+                    keys_r.forEach(function(key) { buckets[key].push(bpPt); });
+                }
             }
-
-            /* Non-boxplot: re-extract numeric values for this row */
+        } else {
+            /* Non-boxplot: Extract X/Y values */
             var xv2 = extractNum(row[currentHeaders.indexOf(xCol)] != null
                 ? String(row[currentHeaders.indexOf(xCol)]) : '', xRx);
             var yv2 = isXOnly ? xv2 : extractNum(
                 row[currentHeaders.indexOf(yCol)] != null
                 ? String(row[currentHeaders.indexOf(yCol)]) : '', yRx);
-            /* IMPORTANT: Only skip if X extraction fails OR (for 2D plots) Y extraction fails */
-            if (xv2 === null || (!isXOnly && yv2 === null)) { 
-                skippedByReason.noXY++; 
-                return; 
+            
+            /* Check if row has valid X/Y */
+            var hasValidXY = !(xv2 === null || (!isXOnly && yv2 === null));
+            if (hasValidXY) {
+                /* Check interval constraints */
+                var xLo2 = iv.xLo !== '' ? parseFloat(iv.xLo) : NaN;
+                var xHi2 = iv.xHi !== '' ? parseFloat(iv.xHi) : NaN;
+                var yLo2 = (!isXOnly && iv.yLo !== '') ? parseFloat(iv.yLo) : NaN;
+                var yHi2 = (!isXOnly && iv.yHi !== '') ? parseFloat(iv.yHi) : NaN;
+                
+                if ((!isNaN(xLo2) && xv2 < xLo2) || (!isNaN(xHi2) && xv2 > xHi2) ||
+                    (!isNaN(yLo2) && yv2 < yLo2) || (!isNaN(yHi2) && yv2 > yHi2)) {
+                    hasValidXY = false;
+                }
             }
             
-            /* Apply X/Y interval constraints */
-            var xLo2 = iv.xLo !== '' ? parseFloat(iv.xLo) : NaN;
-            var xHi2 = iv.xHi !== '' ? parseFloat(iv.xHi) : NaN;
-            var yLo2 = (!isXOnly && iv.yLo !== '') ? parseFloat(iv.yLo) : NaN;
-            var yHi2 = (!isXOnly && iv.yHi !== '') ? parseFloat(iv.yHi) : NaN;
-            if (!isNaN(xLo2) && xv2 < xLo2) { skippedByReason.outsideInterval++; return; }
-            if (!isNaN(xHi2) && xv2 > xHi2) { skippedByReason.outsideInterval++; return; }
-            if (!isNaN(yLo2) && yv2 < yLo2) { skippedByReason.outsideInterval++; return; }
-            if (!isNaN(yHi2) && yv2 > yHi2) { skippedByReason.outsideInterval++; return; }
-            
-            /* Add point to the bucket for this split key */
-            var gi2  = colCol   ? currentHeaders.indexOf(colCol)   : -1;
-            var si2  = splitCol ? currentHeaders.indexOf(splitCol) : -1;
-            var pt2  = { x: xv2, y: isXOnly ? xv2 : yv2, _ri: rowIdx };
-            if (gi2 >= 0 && row[gi2] != null)  pt2.group      = String(row[gi2]);
-            if (si2 >= 0 && row[si2] != null)  pt2.splitGroup = String(row[si2]);
-            buckets[key].push(pt2);
-        });
+            /* Add point to all matching split key buckets (only if X/Y is valid) */
+            if (hasValidXY) {
+                var gi2  = colCol   ? currentHeaders.indexOf(colCol)   : -1;
+                var si2  = splitCol ? currentHeaders.indexOf(splitCol) : -1;
+                var pt2  = { x: xv2, y: isXOnly ? xv2 : yv2, _ri: rowIdx };
+                if (gi2 >= 0 && row[gi2] != null)  pt2.group      = String(row[gi2]);
+                if (si2 >= 0 && row[si2] != null)  pt2.splitGroup = String(row[si2]);
+                keys_r.forEach(function(key) { buckets[key].push(pt2); });
+            }
+        }
     }
 
     var keys    = bucketOrder.filter(function(k,i){ return bucketOrder.indexOf(k)===i; })
@@ -3802,7 +3804,6 @@ function _drawSplitCharts() {
     console.log('[_drawSplitCharts] Split column:', scCol, '| Regex:', scRx);
     console.log('[_drawSplitCharts] All DUT values found (before filtering):', Object.keys(allDutValues));
     console.log('[_drawSplitCharts] Found', keys.length, 'unique split keys:', keys);
-    console.log('[_drawSplitCharts] Skipped rows - noXY:', skippedByReason.noXY, 'outsideInterval:', skippedByReason.outsideInterval, 'boxplotFail:', skippedByReason.boxplotFail);
     keys.forEach(function(k) {
         console.log('  - Bucket[' + k + ']: ' + (buckets[k]||[]).length + ' points (all DUT rows with this key: ' + (allDutValues[k] || 0) + ')');
     });
