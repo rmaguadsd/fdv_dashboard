@@ -3658,6 +3658,13 @@ function _buildTileChart(canvas, ct, tileData, xCol, yCol, xRx, yRx, colCol, col
             borderWidth: ct === 'line' ? 1.5 : 0,
             pointRadius: ct === 'line' ? 2 : 3, showLine: ct === 'line' };
     });
+    
+    /* DEBUG: Log color groups found in this tile */
+    if (colCol) {
+        console.log('[_buildTileChart] Chart #' + chartId + ' - Color by: ' + colCol + ' | Regex: ' + (colorRx||'(none)'));
+        console.log('  Found ' + Object.keys(groups).length + ' color groups: ' + Object.keys(groups).join(', '));
+        console.log('  tileData length: ' + tileData.length + ', pts after sampling: ' + pts.length);
+    }
     return new Chart(ctx, {
         type: 'scatter',
         data: { datasets: datasets },
@@ -3719,21 +3726,37 @@ function _drawSplitCharts() {
     var yi_bp = ct === 'boxplot' ? currentHeaders.indexOf(yCol) : -1;
     var yLo_bp = (ct === 'boxplot' && iv.yLo !== '') ? parseFloat(iv.yLo) : NaN;
     var yHi_bp = (ct === 'boxplot' && iv.yHi !== '') ? parseFloat(iv.yHi) : NaN;
+    
+    /* DEBUG: Track which rows are skipped and why */
+    var skippedCount = 0;
+    var skippedByReason = { noXY: 0, outsideInterval: 0, boxplotFail: 0 };
+    var allDutValues = {};  /* Track all DUT values we encounter (before filtering) */
+    
     for (var r = 0; r < filteredIndices.length; r++) {
         var row = allRows[filteredIndices[r]];
         var rowIdx = filteredIndices[r];  /* Store the actual row index */
+        
+        /* First, extract split keys from the split column */
         var keys_r = _splitChartKeys(row, scIdx, scRx).map(function(k){ return k || '(blank)'; });
+        
+        /* Track all DUT values encountered */
+        keys_r.forEach(function(k) {
+            if (!allDutValues[k]) allDutValues[k] = 0;
+            allDutValues[k]++;
+        });
+        
+        /* Then for each split key, try to add this row's data to the appropriate bucket */
         keys_r.forEach(function(key) {
             if (!buckets[key]) { buckets[key] = []; bucketOrder.push(key); }
 
             if (ct === 'boxplot') {
                 /* X is category string, Y is numeric */
-                if (yi_bp < 0) return;
+                if (yi_bp < 0) { skippedByReason.boxplotFail++; return; }
                 var bpYraw = row[yi_bp] != null ? String(row[yi_bp]) : '';
                 var bpYv   = extractNum(bpYraw, yRx);
-                if (bpYv === null) return;
-                if (!isNaN(yLo_bp) && bpYv < yLo_bp) return;
-                if (!isNaN(yHi_bp) && bpYv > yHi_bp) return;
+                if (bpYv === null) { skippedByReason.noXY++; return; }
+                if (!isNaN(yLo_bp) && bpYv < yLo_bp) { skippedByReason.outsideInterval++; return; }
+                if (!isNaN(yHi_bp) && bpYv > yHi_bp) { skippedByReason.outsideInterval++; return; }
                 var bpXraw = xi_bp >= 0 && row[xi_bp] != null ? String(row[xi_bp]).trim() : xCol;
                 var bpPt = { x: 0, y: bpYv, group: bpXraw, _ri: rowIdx };
                 buckets[key].push(bpPt);
@@ -3746,15 +3769,23 @@ function _drawSplitCharts() {
             var yv2 = isXOnly ? xv2 : extractNum(
                 row[currentHeaders.indexOf(yCol)] != null
                 ? String(row[currentHeaders.indexOf(yCol)]) : '', yRx);
-            if (xv2 === null || (!isXOnly && yv2 === null)) return;
+            /* IMPORTANT: Only skip if X extraction fails OR (for 2D plots) Y extraction fails */
+            if (xv2 === null || (!isXOnly && yv2 === null)) { 
+                skippedByReason.noXY++; 
+                return; 
+            }
+            
+            /* Apply X/Y interval constraints */
             var xLo2 = iv.xLo !== '' ? parseFloat(iv.xLo) : NaN;
             var xHi2 = iv.xHi !== '' ? parseFloat(iv.xHi) : NaN;
             var yLo2 = (!isXOnly && iv.yLo !== '') ? parseFloat(iv.yLo) : NaN;
             var yHi2 = (!isXOnly && iv.yHi !== '') ? parseFloat(iv.yHi) : NaN;
-            if (!isNaN(xLo2) && xv2 < xLo2) return;
-            if (!isNaN(xHi2) && xv2 > xHi2) return;
-            if (!isNaN(yLo2) && yv2 < yLo2) return;
-            if (!isNaN(yHi2) && yv2 > yHi2) return;
+            if (!isNaN(xLo2) && xv2 < xLo2) { skippedByReason.outsideInterval++; return; }
+            if (!isNaN(xHi2) && xv2 > xHi2) { skippedByReason.outsideInterval++; return; }
+            if (!isNaN(yLo2) && yv2 < yLo2) { skippedByReason.outsideInterval++; return; }
+            if (!isNaN(yHi2) && yv2 > yHi2) { skippedByReason.outsideInterval++; return; }
+            
+            /* Add point to the bucket for this split key */
             var gi2  = colCol   ? currentHeaders.indexOf(colCol)   : -1;
             var si2  = splitCol ? currentHeaders.indexOf(splitCol) : -1;
             var pt2  = { x: xv2, y: isXOnly ? xv2 : yv2, _ri: rowIdx };
@@ -3766,6 +3797,16 @@ function _drawSplitCharts() {
 
     var keys    = bucketOrder.filter(function(k,i){ return bucketOrder.indexOf(k)===i; })
                              .sort(function(a,b){ return a.localeCompare(b, undefined, {numeric:true}); });
+    
+    /* DEBUG: Log bucket info to help diagnose missing DUT/BLK blocks */
+    console.log('[_drawSplitCharts] Split column:', scCol, '| Regex:', scRx);
+    console.log('[_drawSplitCharts] All DUT values found (before filtering):', Object.keys(allDutValues));
+    console.log('[_drawSplitCharts] Found', keys.length, 'unique split keys:', keys);
+    console.log('[_drawSplitCharts] Skipped rows - noXY:', skippedByReason.noXY, 'outsideInterval:', skippedByReason.outsideInterval, 'boxplotFail:', skippedByReason.boxplotFail);
+    keys.forEach(function(k) {
+        console.log('  - Bucket[' + k + ']: ' + (buckets[k]||[]).length + ' points (all DUT rows with this key: ' + (allDutValues[k] || 0) + ')');
+    });
+    
     var grid    = document.getElementById('plot-grid');
     var cols    = Math.max(1, parseInt(document.getElementById('split-chart-cols').value) || 3);
     var tileH   = Math.max(80,  parseInt(document.getElementById('split-chart-h').value)    || 200);
