@@ -3480,9 +3480,10 @@ function _destroySplitCharts() {
 /* Build one Chart.js config for a tile (reuses the main draw logic but
    accepts pre-filtered points / values and a canvas element). */
 function _buildTileChart(canvas, ct, tileData, xCol, yCol, xRx, yRx, colCol, colorRx,
-                          xLog, yLog, innerSplitCol, innerSplitRx, chartId) {
+                          xLog, yLog, innerSplitCol, innerSplitRx, chartId, bucketColors) {
     var ctx = canvas.getContext('2d');
     var colIdx = colCol ? currentHeaders.indexOf(colCol) : -1;
+    bucketColors = bucketColors || {};  /* Map of color values that exist in this bucket */
     
     /* Read multi-dimensional color-by selections at draw time */
     var colorDims = _gdimRead('color');
@@ -3666,18 +3667,70 @@ function _buildTileChart(canvas, ct, tileData, xCol, yCol, xRx, yRx, colCol, col
     /* ── Scatter / Line tile ── */
     var MAX_PTS = 5000;
     var pts = tileData, sampled = false;
+    
+    /* IMPORTANT: Discover ALL color groups BEFORE sampling to avoid missing colors */
+    var allColorGroups = {};
+    tileData.forEach(function(pt) {
+        var g = colorKey(pt);
+        if (!allColorGroups[g]) allColorGroups[g] = true;
+    });
+    
+    /* Also add any colors that exist in this bucket but aren't in the tile data points */
+    /* (This handles cases where color values exist in raw rows but don't have valid X/Y) */
+    Object.keys(bucketColors).forEach(function(colorVal) {
+        if (!allColorGroups[colorVal]) {
+            allColorGroups[colorVal] = true;
+        }
+    });
+    
+    /* STRATIFIED SAMPLING: Ensure each color group is represented */
     if (pts.length > MAX_PTS && ct !== 'line') {
-        var step = Math.ceil(pts.length / MAX_PTS);
-        pts = pts.filter(function(_, i){ return i % step === 0; });
         sampled = true;
+        /* Group points by color */
+        var ptsByColor = {};
+        tileData.forEach(function(pt) {
+            var g = colorKey(pt);
+            if (!ptsByColor[g]) ptsByColor[g] = [];
+            ptsByColor[g].push(pt);
+        });
+        
+        /* Sample proportionally from each color group */
+        var colorList = Object.keys(ptsByColor).sort();
+        var ptsPerColor = Math.floor(MAX_PTS / colorList.length);
+        var sampled_pts = [];
+        
+        colorList.forEach(function(color) {
+            var colorPts = ptsByColor[color];
+            if (colorPts.length <= ptsPerColor) {
+                /* Keep all points if this color has fewer than average */
+                sampled_pts = sampled_pts.concat(colorPts);
+            } else {
+                /* Sample uniformly from this color */
+                var step = Math.ceil(colorPts.length / ptsPerColor);
+                for (var i = 0; i < colorPts.length; i += step) {
+                    if (sampled_pts.length < MAX_PTS) {
+                        sampled_pts.push(colorPts[i]);
+                    }
+                }
+            }
+        });
+        pts = sampled_pts;
     }
+    
+    /* Build datasets from sampled points, but ensure ALL discovered colors appear in legend */
     var groups = {};
     pts.forEach(function(pt) {
         var g = colorKey(pt);
         if (!groups[g]) groups[g] = [];
         groups[g].push({ x: pt.x, y: pt.y });
     });
-    var datasets = Object.keys(groups).map(function(g, i) {
+    
+    /* Add empty datasets for any colors not in sampled data */
+    Object.keys(allColorGroups).forEach(function(colorVal) {
+        if (!groups[colorVal]) groups[colorVal] = [];
+    });
+    
+    var datasets = Object.keys(groups).sort().map(function(g, i) {
         return { label: g, data: groups[g],
             backgroundColor: PALETTE[i % PALETTE.length] + '99',
             borderColor:     PALETTE[i % PALETTE.length],
@@ -3688,7 +3741,8 @@ function _buildTileChart(canvas, ct, tileData, xCol, yCol, xRx, yRx, colCol, col
     /* DEBUG: Log color groups found in this tile */
     if (colCol) {
         console.log('[_buildTileChart] Chart #' + chartId + ' - Color by: ' + colCol + ' | Regex: ' + (colorRx||'(none)'));
-        console.log('  Found ' + Object.keys(groups).length + ' color groups: ' + Object.keys(groups).join(', '));
+        console.log('  Found ' + Object.keys(allColorGroups).length + ' color groups (all): ' + Object.keys(allColorGroups).sort().join(', '));
+        console.log('  Found ' + Object.keys(groups).filter(function(g){ return groups[g].length > 0; }).length + ' in sampled data');
         console.log('  tileData length: ' + tileData.length + ', pts after sampling: ' + pts.length);
     }
     return new Chart(ctx, {
@@ -3758,6 +3812,11 @@ function _drawSplitCharts() {
     /* DEBUG: Track statistics */
     var skippedCount = 0;
     var allDutValues = {};  /* Track all DUT values we encounter (before filtering) */
+    var allColorValues = {}; /* Track all COLOR values we encounter (even from rows with invalid X/Y) */
+    var colorsByBucket = {}; /* Track which COLOR values exist in each bucket */
+    var colorIdx = colCol ? currentHeaders.indexOf(colCol) : -1;
+    var blk316Count = 0;    /* DEBUG: count BLK 316 rows */
+    var blk316ByBucket = {}; /* DEBUG: track which buckets have BLK 316 */
     
     for (var r = 0; r < filteredIndices.length; r++) {
         var row = allRows[filteredIndices[r]];
@@ -3766,11 +3825,31 @@ function _drawSplitCharts() {
         /* First, extract split keys from the split column */
         var keys_r = _splitChartKeys(row, scIdx, scRx).map(function(k){ return k || '(blank)'; });
         
+        /* DEBUG: Track BLK 316 */
+        var rowBlk = colorIdx >= 0 && row[colorIdx] != null ? String(row[colorIdx]) : null;
+        if (rowBlk === '316') {
+            blk316Count++;
+            keys_r.forEach(function(k) { blk316ByBucket[k] = (blk316ByBucket[k] || 0) + 1; });
+        }
+        
         /* Track all DUT values encountered */
         keys_r.forEach(function(k) {
             if (!allDutValues[k]) allDutValues[k] = 0;
             allDutValues[k]++;
         });
+        
+        /* Track all COLOR values encountered (for legend, even from invalid X/Y rows) */
+        if (colorIdx >= 0 && row[colorIdx] != null) {
+            var colorVal = String(row[colorIdx]);
+            if (!allColorValues[colorVal]) allColorValues[colorVal] = 0;
+            allColorValues[colorVal]++;
+            
+            /* Also track which colors exist in each bucket */
+            keys_r.forEach(function(k) {
+                if (!colorsByBucket[k]) colorsByBucket[k] = {};
+                colorsByBucket[k][colorVal] = true;
+            });
+        }
         
         /* Create bucket entries for all split keys if they don't exist */
         keys_r.forEach(function(key) {
@@ -3828,10 +3907,14 @@ function _drawSplitCharts() {
     
     /* DEBUG: Log bucket info to help diagnose missing DUT/BLK blocks */
     console.log('[_drawSplitCharts] Split column:', scCol, '| Regex:', scRx);
-    console.log('[_drawSplitCharts] All DUT values found (before filtering):', Object.keys(allDutValues));
+    console.log('[_drawSplitCharts] Color column:', colCol, '| Regex:', colorRx);
+    console.log('[_drawSplitCharts] All DUT values found (from all filtered rows):', Object.keys(allDutValues).sort());
+    console.log('[_drawSplitCharts] All COLOR values found (from all filtered rows):', Object.keys(allColorValues).sort());
+    console.log('[_drawSplitCharts] *** BLK 316 DEBUG: Total rows with BLK=316:', blk316Count);
+    console.log('[_drawSplitCharts] *** BLK 316 distribution by bucket:', blk316ByBucket);
     console.log('[_drawSplitCharts] Found', keys.length, 'unique split keys:', keys);
     keys.forEach(function(k) {
-        console.log('  - Bucket[' + k + ']: ' + (buckets[k]||[]).length + ' points (all DUT rows with this key: ' + (allDutValues[k] || 0) + ')');
+        console.log('  - Bucket[' + k + ']: ' + (buckets[k]||[]).length + ' points (rows with this DUT: ' + (allDutValues[k] || 0) + ')');
     });
     
     var grid    = document.getElementById('plot-grid');
@@ -3878,7 +3961,8 @@ function _drawSplitCharts() {
         grid.appendChild(tile);
 
         var inst = _buildTileChart(canvas, ct, buckets[key] || [],
-                    xCol, yCol, xRx, yRx, colCol, colorRx, xLog, yLog, splitCol, splitRx, ki+1);
+                    xCol, yCol, xRx, yRx, colCol, colorRx, xLog, yLog, splitCol, splitRx, ki+1,
+                    colorsByBucket[key] || {});
         if (inst) _splitInsts.push(inst);
     });
 
