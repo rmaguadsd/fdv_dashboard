@@ -411,26 +411,63 @@
             text-overflow: ellipsis; display: none;
         }
 
-        /* ── CHAT DRAWER ─────────────────────────────────────────── */
+        /* ── CHAT DRAWER (FLOATING WINDOW) ─────────────────────── */
         #chat-drawer {
-            flex: 0 0 auto; display: none; flex-direction: column;
-            border-top: 2px solid #17a2b8; background: #f0fafa;
-            height: 260px; min-height: 100px; max-height: 700px;
+            display: none; flex-direction: column;
+            position: fixed;
+            bottom: 20px; right: 20px;
+            width: 420px; height: 480px;
+            border: 2px solid #17a2b8;
+            border-radius: 6px;
+            background: #f0fafa;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            z-index: 1000;
             box-sizing: border-box;
         }
-        #chat-drawer-hdr {
-            flex: 0 0 auto; display: flex; align-items: center;
-            justify-content: space-between;
-            padding: 3px 10px; background: #17a2b8; color: #fff;
-            font-size: 0.82em; font-weight: bold;
+        #chat-drawer.active { display: flex; }
+        #chat-grip {
+            cursor: move;
+            background: linear-gradient(90deg, #17a2b8, #17a2b8);
+            height: 6px;
+            border-radius: 3px 3px 0 0;
+            flex: 0 0 auto;
         }
-        #chat-drawer-hdr .ch-btns { display: flex; gap: 5px; align-items: center; }
+        #chat-drawer-hdr {
+            flex: 0 0 auto; display: flex; flex-direction: column; gap: 8px;
+            padding: 8px 12px; background: #17a2b8; color: #fff;
+            font-size: 0.82em; font-weight: bold;
+            border-radius: 2px;
+        }
+        #chat-drawer-title {
+            flex-shrink: 0;
+            font-size: 0.95em;
+            line-height: 1.4;
+        }
+        #chat-font-size {
+            background: #138496;
+            color: #fff;
+        }
+        #chat-font-size option {
+            background: #138496;
+            color: #fff;
+        }
+        #chat-drawer-hdr .ch-btns { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; overflow-y: auto; max-height: 80px; }
         #chat-drawer-hdr button {
             background: rgba(255,255,255,0.18); border: 1px solid rgba(255,255,255,0.35);
             color: #fff; border-radius: 3px; cursor: pointer;
             padding: 1px 7px; font-size: 0.82em; white-space: nowrap;
         }
         #chat-drawer-hdr button:hover { background: rgba(255,255,255,0.32); }
+        #chat-resize {
+            position: absolute;
+            bottom: 0; right: 0;
+            width: 16px; height: 16px;
+            cursor: nwse-resize;
+            background: linear-gradient(135deg, transparent 0%, transparent 50%, #17a2b8 50%, #17a2b8 100%);
+            opacity: 0.6;
+            border-radius: 0 0 4px 0;
+        }
+        #chat-resize:hover { opacity: 1; }
         #chat-messages {
             flex: 1 1 0; overflow-y: auto; padding: 6px 10px;
             display: flex; flex-direction: column; gap: 5px;
@@ -551,32 +588,21 @@
             background: #6610f2;
             width: 60px;
         }
-        /* Chat drawer grip — taller, more prominent, drag-up-to-grow */
+        /* Chat drawer grip — now acts as title bar for window dragging */
         #chat-grip {
-            flex: 0 0 10px; cursor: n-resize;
-            background: rgba(23,162,184,0.10);
+            cursor: move;
+            background: linear-gradient(90deg, #17a2b8 0%, #138496 100%);
+            height: 6px;
+            border-radius: 3px 3px 0 0;
+            flex: 0 0 auto;
             transition: background 0.15s;
             user-select: none;
         }
-        #chat-grip::after {
-            content: ''; display: block;
-            width: 44px; height: 4px; border-radius: 3px;
-            background: rgba(23,162,184,0.45);
-            transition: background 0.15s, width 0.15s;
-        }
         #chat-grip:hover {
-            background: rgba(23,162,184,0.22);
-        }
-        #chat-grip:hover::after {
-            background: rgba(23,162,184,0.9);
-            width: 60px;
+            background: linear-gradient(90deg, #138496 0%, #0d5a66 100%);
         }
         #chat-grip.dragging {
-            background: rgba(23,162,184,0.30);
-        }
-        #chat-grip.dragging::after {
-            background: #17a2b8;
-            width: 60px;
+            background: linear-gradient(90deg, #0d5a66 0%, #0a3f47 100%);
         }
     </style>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
@@ -589,8 +615,26 @@
 
 <!-- TOP PANEL -->
 <div id="top-panel">
-    <button id="panel-toggle-btn" onclick="toggleTopPanel()">▼ Hide</button>
-    <h1>&#128202; FDV Chart Maker</h1>
+    <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:8px;padding:0 10px">
+        <h1 style="margin:0;flex:1">&#128202; FDV Chart Maker</h1>
+        <!-- Performance/Sampling group on the right -->
+        <span class="ctrl-label" style="color:#6c757d;font-weight:bold;white-space:nowrap">⚡&nbsp;Performance:</span>
+        <select id="sampling-mode" style="padding:3px 6px;font-size:0.85em;border:1px solid #adb5bd;border-radius:3px;min-width:140px"
+                title="Sampling mode: 100% Data (accurate/slow), Random (fast), or Decimation (fast/smooth)"
+                onchange="_onSamplingModeChange()">
+            <option value="none">100% Data</option>
+            <option value="random">Random</option>
+            <option value="decimation">Decimation</option>
+        </select>
+        <label style="font-size:0.85em;color:#555;white-space:nowrap">
+            Max points:
+            <input type="number" id="max-points" value="10000" min="100" max="100000" step="1000"
+                   style="width:80px;padding:3px 6px;font-size:0.85em;border:1px solid #adb5bd;border-radius:3px"
+                   title="Maximum number of points to render (100-100,000)">
+        </label>
+        <span id="sampling-status" style="font-size:0.8em;color:#6c757d;white-space:nowrap"></span>
+        <button id="panel-toggle-btn" onclick="toggleTopPanel()">▼ Hide</button>
+    </div>
 
     <!-- Source mode tabs -->
     <div id="input-source-tabs">
@@ -610,16 +654,27 @@
         </label>
     </div>
 
-    <!-- Upload files row (hidden by default) -->
+    <!-- Upload files row (hidden by default) — now combined with Store dir -->
     <div class="ctrl-row" id="src-row-files" style="display:none">
         <span class="ctrl-label">Files:</span>
         <button class="btn sec" style="padding:4px 10px;font-size:0.82em"
                 onclick="document.getElementById('file-input').click()">&#128194; Browse&hellip;</button>
         <input type="file" id="file-input" accept=".txt,.log,.csv" multiple>
         <div id="file-pill-list"><span style="font-size:0.8em;color:#888">No files selected</span></div>
+        
+        <!-- Store directory inline with Files -->
+        <span class="ctrl-label" style="color:#6c757d;font-weight:bold;white-space:nowrap;margin-left:20px">&#128193;&nbsp;Store&nbsp;dir:</span>
+        <input type="text" id="store-dir-input" autocomplete="off"
+               placeholder="e.g. D:\FDV\recipes"
+               style="flex:1 1 200px;min-width:140px;max-width:320px;padding:3px 7px;font-size:0.85em;border:1px solid #adb5bd;border-radius:3px"
+               title="Directory where recipes and sessions are saved as files on disk"
+               onkeydown="if(event.key==='Enter')_storeDirSet()">
+        <button class="btn" style="padding:4px 10px;font-size:0.85em" onclick="_storeDirSet()"
+                title="Validate and activate this directory">&#10003;&nbsp;Set</button>
+        <span id="store-dir-status" style="font-size:0.8em;color:#6c757d;white-space:nowrap"></span>
     </div>
 
-    <!-- Upload directory row (hidden by default) -->
+    <!-- Upload directory row (hidden by default) — combined with Files on same row -->
     <div class="ctrl-row" id="src-row-dir" style="display:none">
         <span class="ctrl-label">Directory:</span>
         <button class="btn sec" style="padding:4px 10px;font-size:0.82em"
@@ -649,20 +704,6 @@
 
     <!-- Recipe + Session row — always visible at the landing page -->
     <div class="ctrl-row" id="recipe-row" style="border-top:1px dashed #ced4da;padding-top:5px;margin-top:2px;flex-wrap:wrap;gap:6px">
-
-        <!-- Store directory group -->
-        <span class="ctrl-label" style="color:#6c757d;font-weight:bold;white-space:nowrap">&#128193;&nbsp;Store&nbsp;dir:</span>
-        <input type="text" id="store-dir-input" autocomplete="off"
-               placeholder="e.g. D:\FDV\recipes"
-               style="flex:1 1 200px;min-width:140px;max-width:320px;padding:3px 7px;font-size:0.85em;border:1px solid #adb5bd;border-radius:3px"
-               title="Directory where recipes and sessions are saved as files on disk"
-               onkeydown="if(event.key==='Enter')_storeDirSet()">
-        <button class="btn" style="padding:4px 10px;font-size:0.85em" onclick="_storeDirSet()"
-                title="Validate and activate this directory">&#10003;&nbsp;Set</button>
-        <span id="store-dir-status" style="font-size:0.8em;color:#6c757d;white-space:nowrap"></span>
-
-        <!-- Divider -->
-        <span style="color:#ced4da;font-size:1.1em;align-self:center">&#9474;</span>
 
         <!-- Recipe group -->
         <span class="ctrl-label" style="color:#6c757d;font-weight:bold;white-space:nowrap">&#128196;&nbsp;Recipe:</span>
@@ -706,23 +747,6 @@
 
         <!-- Divider -->
         <span style="color:#ced4da;font-size:1.1em;align-self:center;width:100%;height:1px;background:#ced4da;margin:4px 0"></span>
-
-        <!-- Performance/Sampling group -->
-        <span class="ctrl-label" style="color:#6c757d;font-weight:bold;white-space:nowrap">⚡&nbsp;Performance:</span>
-        <select id="sampling-mode" style="padding:3px 6px;font-size:0.85em;border:1px solid #adb5bd;border-radius:3px;min-width:140px"
-                title="Sampling mode: 100% Data (accurate/slow), Random (fast), or Decimation (fast/smooth)"
-                onchange="_onSamplingModeChange()">
-            <option value="none">100% Data</option>
-            <option value="random">Random</option>
-            <option value="decimation">Decimation</option>
-        </select>
-        <label style="font-size:0.85em;color:#555;white-space:nowrap">
-            Max points:
-            <input type="number" id="max-points" value="10000" min="100" max="100000" step="1000"
-                   style="width:80px;padding:3px 6px;font-size:0.85em;border:1px solid #adb5bd;border-radius:3px"
-                   title="Maximum number of points to render (100-100,000)">
-        </label>
-        <span id="sampling-status" style="font-size:0.8em;color:#6c757d"></span>
     </div>
 
     <div id="status-bar">Ready -- select a file and click Parse.</div>
@@ -821,56 +845,6 @@
                     title="Open a multi-turn chat with the selected model">
                 &#128172; Chat
             </button>
-            <label style="font-size:0.8em;color:#17a2b8;margin-left:4px"
-                   title="Select chat provider">
-                <select id="chat-provider-sel"
-                        style="font-size:0.82em;padding:2px 3px;border-radius:3px;
-                               border:1px solid #17a2b8;color:#17a2b8;cursor:pointer"
-                        onchange="_onChatProviderChange()">
-                    <option value="ollama">Ollama</option>
-                    <option value="connectmaigpt" selected>ConnectMaiGPT</option>
-                </select>
-            </label>
-            <label id="ollama-model-wrap" style="font-size:0.8em;color:#17a2b8;margin-left:4px"
-                   title="Select Ollama model — click pull button to download new ones">
-                <select id="llm-model-sel" onchange="_updateChatBanner()"
-                        style="font-size:0.82em;padding:2px 3px;border-radius:3px;
-                               border:1px solid #17a2b8;color:#17a2b8;cursor:pointer">
-                    <option value="llama3">llama3</option>
-                </select>
-            </label>
-            <button id="llm-pull-btn" type="button" onclick="_pullSelectedModel()"
-                    title="Pull / download the selected model from Ollama registry">
-                &#8615;
-            </button>
-            <button id="llm-refresh-btn" type="button" onclick="_loadModelList()"
-                    title="Refresh model list from Ollama">
-                &#128257;
-            </button>
-            <span id="llm-pull-status"></span>
-            <label id="maigpt-model-wrap" style="font-size:0.8em;color:#17a2b8;margin-left:4px;display:none"
-                   title="ConnectMaiGPT model — claude-3-5-sonnet answers from injected data; gpt4 uses datasheet RAG">
-                <select id="maigpt-model-sel"
-                        style="font-size:0.82em;padding:2px 3px;border-radius:3px;
-                               border:1px solid #17a2b8;color:#17a2b8;cursor:pointer">
-                    <option value="gpt4" selected>gpt4 (recommended)</option>
-                    <option value="claude-3-5-sonnet">claude-3-5-sonnet</option>
-                </select>
-            </label>
-            <label style="font-size:0.8em;color:#17a2b8;margin-left:2px"
-                   title="Number of raw data rows included in each chat context message">
-                Rows:
-                <select id="chat-sample-size" style="font-size:0.82em;padding:2px 3px;border-radius:3px;
-                        border:1px solid #17a2b8;color:#17a2b8;cursor:pointer"
-                        onchange="_chatDataSampleSize=parseInt(this.value)">
-                    <option value="0">none</option>
-                    <option value="20">20</option>
-                    <option value="50" selected>50</option>
-                    <option value="100">100</option>
-                    <option value="200">200</option>
-                    <option value="500">500</option>
-                </select>
-            </label>
             <!-- Divider -->
             <span style="color:#ced4da;font-size:1.1em;margin:0 2px">|</span>
             <!-- Axis labels -->
@@ -984,16 +958,84 @@
     </div>
     <!-- CHAT DRAWER -->
     <div id="chat-drawer">
-        <div id="chat-grip" title="Drag up/down to resize &#x2022; Double-click to snap height"></div>
+        <div id="chat-grip" title="Drag to move window"></div>
         <div id="chat-drawer-hdr">
-            <span id="chat-drawer-title">&#128172; Chat with llama3 &mdash; ask about your data</span>
-            <div class="ch-btns">
-                <button type="button" onclick="_chatInjectContext()"
-                        title="Re-send current chart statistics as context">&#8635; Inject context</button>
-                <button type="button" onclick="_chatReset()"
-                        title="Clear history and start a new session">&#128465; New session</button>
-                <button type="button" onclick="_toggleChat()"
+            <div style="display:flex;justify-content:space-between;align-items:center;width:100%">
+                <span id="chat-drawer-title">&#128172; Chat &mdash; ask about your data</span>
+                <button type="button" onclick="_toggleChat()" style="padding:2px 6px;font-size:0.8em;background:rgba(255,255,255,0.18);border:1px solid rgba(255,255,255,0.35);color:#fff;border-radius:3px;cursor:pointer;white-space:nowrap;flex-shrink:0"
                         title="Close chat">&#10006;</button>
+            </div>
+            <div class="ch-btns">
+                <!-- Font size control -->
+                <label style="font-size:0.82em;color:#fff;white-space:nowrap;margin-right:6px;display:flex;align-items:center;gap:3px"
+                       title="Chat message text size">
+                    <span>Font:</span>
+                    <select id="chat-font-size" style="padding:2px 3px;font-size:0.82em;border-radius:3px;border:1px solid rgba(255,255,255,0.3);background:#138496;color:#fff;cursor:pointer"
+                            onchange="_applyChatFontSize(this.value)">
+                        <option value="0.75em">XS</option>
+                        <option value="0.82em" selected>S</option>
+                        <option value="0.90em">M</option>
+                        <option value="1.0em">L</option>
+                        <option value="1.15em">XL</option>
+                    </select>
+                </label>
+                
+                <!-- Chat provider control -->
+                <label style="font-size:0.82em;color:#fff;white-space:nowrap;margin-right:6px;display:flex;align-items:center;gap:3px"
+                       title="Select chat provider">
+                    <span>Provider:</span>
+                    <select id="chat-provider-sel"
+                            style="font-size:0.82em;padding:2px 3px;border-radius:3px;border:1px solid rgba(255,255,255,0.3);background:#138496;color:#fff;cursor:pointer"
+                            onchange="_onChatProviderChange()">
+                        <option value="ollama">Ollama</option>
+                        <option value="connectmaigpt" selected>ConnectMaiGPT</option>
+                    </select>
+                </label>
+                
+                <!-- Ollama model selector -->
+                <label id="ollama-model-wrap" style="font-size:0.82em;color:#fff;white-space:nowrap;margin-right:6px;display:flex;align-items:center;gap:3px"
+                       title="Select Ollama model">
+                    <select id="llm-model-sel" onchange="_updateChatBanner()"
+                            style="font-size:0.82em;padding:2px 3px;border-radius:3px;border:1px solid rgba(255,255,255,0.3);background:#138496;color:#fff;cursor:pointer">
+                        <option value="llama3">llama3</option>
+                    </select>
+                    <button id="llm-pull-btn" type="button" onclick="_pullSelectedModel()" style="padding:2px 6px;font-size:0.8em;background:rgba(255,255,255,0.18);border:1px solid rgba(255,255,255,0.35);color:#fff;border-radius:3px;cursor:pointer;white-space:nowrap"
+                            title="Pull / download the selected model">&#8615;</button>
+                    <button id="llm-refresh-btn" type="button" onclick="_loadModelList()" style="padding:2px 6px;font-size:0.8em;background:rgba(255,255,255,0.18);border:1px solid rgba(255,255,255,0.35);color:#fff;border-radius:3px;cursor:pointer;white-space:nowrap"
+                            title="Refresh model list">&#128257;</button>
+                    <span id="llm-pull-status" style="font-size:0.75em;margin-left:2px"></span>
+                </label>
+                
+                <!-- MaiGPT model selector -->
+                <label id="maigpt-model-wrap" style="font-size:0.82em;color:#fff;white-space:nowrap;margin-right:6px;display:none;align-items:center;gap:3px"
+                       title="ConnectMaiGPT model">
+                    <select id="maigpt-model-sel"
+                            style="font-size:0.82em;padding:2px 3px;border-radius:3px;border:1px solid rgba(255,255,255,0.3);background:#138496;color:#fff;cursor:pointer">
+                        <option value="gpt4" selected>gpt4</option>
+                        <option value="claude-3-5-sonnet">claude-3-5-sonnet</option>
+                    </select>
+                </label>
+                
+                <!-- Rows control -->
+                <label style="font-size:0.82em;color:#fff;white-space:nowrap;margin-right:6px;display:flex;align-items:center;gap:3px"
+                       title="Number of raw data rows in chat context">
+                    <span>Rows:</span>
+                    <select id="chat-sample-size" style="font-size:0.82em;padding:2px 3px;border-radius:3px;border:1px solid rgba(255,255,255,0.3);background:#138496;color:#fff;cursor:pointer"
+                            onchange="_chatDataSampleSize=parseInt(this.value)">
+                        <option value="0">none</option>
+                        <option value="20">20</option>
+                        <option value="50" selected>50</option>
+                        <option value="100">100</option>
+                        <option value="200">200</option>
+                        <option value="500">500</option>
+                    </select>
+                </label>
+                
+                <!-- Action buttons -->
+                <button type="button" onclick="_chatInjectContext()" style="padding:2px 6px;font-size:0.8em;background:rgba(255,255,255,0.18);border:1px solid rgba(255,255,255,0.35);color:#fff;border-radius:3px;cursor:pointer;white-space:nowrap"
+                        title="Re-send current chart statistics as context">&#8635; Inject</button>
+                <button type="button" onclick="_chatReset()" style="padding:2px 6px;font-size:0.8em;background:rgba(255,255,255,0.18);border:1px solid rgba(255,255,255,0.35);color:#fff;border-radius:3px;cursor:pointer;white-space:nowrap"
+                        title="Clear history and start a new session">&#128465; New</button>
             </div>
         </div>
         <div id="chat-messages"></div>
@@ -1003,6 +1045,7 @@
                       onkeydown="_chatKeydown(event)"></textarea>
             <button id="chat-send-btn" type="button" onclick="_chatSend()">Send &#9658;</button>
         </div>
+        <div id="chat-resize" title="Drag to resize"></div>
     </div>
     <div id="drag-handle" title="Drag to resize plot"></div>
 </div>
@@ -5901,7 +5944,7 @@ function _toggleChat() {
     var btn    = document.getElementById('chat-toggle-btn');
     _chatOpen  = !_chatOpen;
     if (_chatOpen) {
-        drawer.style.display = 'flex';
+        drawer.classList.add('active');
         btn.classList.add('active');
         var msgs = document.getElementById('chat-messages');
         if (!msgs.firstChild) {
@@ -5911,9 +5954,17 @@ function _toggleChat() {
         }
         document.getElementById('chat-input').focus();
     } else {
-        drawer.style.display = 'none';
+        drawer.classList.remove('active');
         btn.classList.remove('active');
     }
+}
+
+function _applyChatFontSize(fontSize) {
+    var msgs = document.getElementById('chat-messages');
+    var input = document.getElementById('chat-input');
+    if (msgs) msgs.style.fontSize = fontSize;
+    if (input) input.style.fontSize = fontSize;
+    localStorage.setItem('fdv_chat_font_size', fontSize);
 }
 
 function _chatScrollBottom() {
@@ -6668,41 +6719,48 @@ function _chatKeydown(e) {
         });
     })();
 
-    /* ── Chat drawer resize — drag UP to grow, with snap + persistence ── */
+    /* ── Chat drawer window drag — move floating window around ── */
     (function() {
         var grip   = document.getElementById('chat-grip');
         var drawer = document.getElementById('chat-drawer');
         if (!grip || !drawer) return;
 
-        var STORAGE_KEY = 'fdv_chat_drawer_h';
-        var SNAP_STEPS  = [0.30, 0.50, 0.72]; /* fractions of viewport height */
-        var MIN_H = 120, MAX_H = Math.round(window.innerHeight * 0.85);
+        var STORAGE_KEY_X = 'fdv_chat_x';
+        var STORAGE_KEY_Y = 'fdv_chat_y';
 
-        /* Restore persisted height */
-        var savedH = parseInt(localStorage.getItem(STORAGE_KEY));
-        if (savedH && savedH >= MIN_H && savedH <= MAX_H) {
-            drawer.style.height    = savedH + 'px';
-            drawer.style.minHeight = savedH + 'px';
+        /* Restore persisted position */
+        var savedX = parseInt(localStorage.getItem(STORAGE_KEY_X));
+        var savedY = parseInt(localStorage.getItem(STORAGE_KEY_Y));
+        if (savedX && savedY) {
+            drawer.style.right = 'auto';
+            drawer.style.bottom = 'auto';
+            drawer.style.left = savedX + 'px';
+            drawer.style.top = savedY + 'px';
         }
 
-        var dragging = false, startY = 0, startH = 0;
+        var dragging = false, startX = 0, startY = 0, startLeft = 0, startTop = 0;
 
         grip.addEventListener('mousedown', function(e) {
             dragging = true;
-            startY   = e.clientY;
-            startH   = drawer.offsetHeight;
+            startX = e.clientX;
+            startY = e.clientY;
+            startLeft = drawer.offsetLeft;
+            startTop = drawer.offsetTop;
             grip.classList.add('dragging');
-            document.body.style.cursor = 'n-resize';
+            document.body.style.cursor = 'move';
             e.preventDefault();
         });
 
         document.addEventListener('mousemove', function(e) {
             if (!dragging) return;
-            /* Grip is at top of drawer — drag UP (negative delta) grows panel */
-            var delta = startY - e.clientY;   /* positive when mouse moves up */
-            var newH  = Math.max(MIN_H, Math.min(MAX_H, startH + delta));
-            drawer.style.height    = newH + 'px';
-            drawer.style.minHeight = newH + 'px';
+            var deltaX = e.clientX - startX;
+            var deltaY = e.clientY - startY;
+            var newLeft = Math.max(0, Math.min(window.innerWidth - drawer.offsetWidth, startLeft + deltaX));
+            var newTop = Math.max(0, Math.min(window.innerHeight - drawer.offsetHeight, startTop + deltaY));
+            drawer.style.left = newLeft + 'px';
+            drawer.style.top = newTop + 'px';
+            drawer.style.right = 'auto';
+            drawer.style.bottom = 'auto';
         });
 
         document.addEventListener('mouseup', function() {
@@ -6710,21 +6768,60 @@ function _chatKeydown(e) {
             dragging = false;
             grip.classList.remove('dragging');
             document.body.style.cursor = '';
-            /* Persist */
-            localStorage.setItem(STORAGE_KEY, drawer.offsetHeight);
+            /* Persist position */
+            localStorage.setItem(STORAGE_KEY_X, drawer.offsetLeft);
+            localStorage.setItem(STORAGE_KEY_Y, drawer.offsetTop);
+        });
+    })();
+
+    /* ── Chat drawer window resize ── */
+    (function() {
+        var resizer = document.getElementById('chat-resize');
+        var drawer = document.getElementById('chat-drawer');
+        if (!resizer || !drawer) return;
+
+        var STORAGE_KEY_W = 'fdv_chat_width';
+        var STORAGE_KEY_H = 'fdv_chat_height';
+        var MIN_WIDTH = 300, MAX_WIDTH = window.innerWidth - 40;
+        var MIN_HEIGHT = 200, MAX_HEIGHT = window.innerHeight - 40;
+
+        /* Restore persisted dimensions */
+        var savedW = parseInt(localStorage.getItem(STORAGE_KEY_W));
+        var savedH = parseInt(localStorage.getItem(STORAGE_KEY_H));
+        if (savedW && savedH) {
+            drawer.style.width = Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, savedW)) + 'px';
+            drawer.style.height = Math.max(MIN_HEIGHT, Math.min(MAX_HEIGHT, savedH)) + 'px';
+        }
+
+        var resizing = false, startX = 0, startY = 0, startW = 0, startH = 0;
+
+        resizer.addEventListener('mousedown', function(e) {
+            resizing = true;
+            startX = e.clientX;
+            startY = e.clientY;
+            startW = drawer.offsetWidth;
+            startH = drawer.offsetHeight;
+            document.body.style.cursor = 'nwse-resize';
+            e.preventDefault();
         });
 
-        /* Double-click: cycle through snap heights */
-        var _snapIdx = 0;
-        grip.addEventListener('dblclick', function(e) {
-            e.preventDefault();
-            var vh   = window.innerHeight;
-            var snapH = Math.round(SNAP_STEPS[_snapIdx % SNAP_STEPS.length] * vh);
-            snapH = Math.max(MIN_H, Math.min(MAX_H, snapH));
-            drawer.style.height    = snapH + 'px';
-            drawer.style.minHeight = snapH + 'px';
-            localStorage.setItem(STORAGE_KEY, snapH);
-            _snapIdx++;
+        document.addEventListener('mousemove', function(e) {
+            if (!resizing) return;
+            var deltaX = e.clientX - startX;
+            var deltaY = e.clientY - startY;
+            var newW = Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, startW + deltaX));
+            var newH = Math.max(MIN_HEIGHT, Math.min(MAX_HEIGHT, startH + deltaY));
+            drawer.style.width = newW + 'px';
+            drawer.style.height = newH + 'px';
+        });
+
+        document.addEventListener('mouseup', function() {
+            if (!resizing) return;
+            resizing = false;
+            document.body.style.cursor = '';
+            /* Persist dimensions */
+            localStorage.setItem(STORAGE_KEY_W, drawer.offsetWidth);
+            localStorage.setItem(STORAGE_KEY_H, drawer.offsetHeight);
         });
     })();
 })();
@@ -6792,6 +6889,18 @@ function _chatKeydown(e) {
             })
             .catch(e => console.log('Version check failed:', e));
     }, 5000); // Check every 5 seconds
+})();
+
+/* ── Initialize chat font size from localStorage ─────────────────────── */
+(function() {
+    var savedFontSize = localStorage.getItem('fdv_chat_font_size');
+    if (savedFontSize) {
+        var selector = document.getElementById('chat-font-size');
+        if (selector) {
+            selector.value = savedFontSize;
+        }
+        _applyChatFontSize(savedFontSize);
+    }
 })();
 </script>
 </body>
