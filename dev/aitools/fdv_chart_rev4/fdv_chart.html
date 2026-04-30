@@ -58,14 +58,32 @@
             align-items: center; max-width: 520px;
         }
         .file-pill {
-            display: inline-flex; align-items: center; gap: 4px;
+            display: inline-flex; align-items: center; gap: 2px;
             background: #d1ecf1; border: 1px solid #bee5eb; border-radius: 12px;
-            padding: 2px 8px; font-size: 0.78em; color: #0c5460; white-space: nowrap;
-            max-width: 200px; overflow: hidden; text-overflow: ellipsis;
+            padding: 2px 6px 2px 8px; font-size: 0.78em; color: #0c5460; white-space: nowrap;
+            max-width: none;
         }
-        .file-pill .pill-rm { cursor: pointer; font-size: 0.9em; color: #856404;
-                               margin-left: 2px; flex-shrink: 0; }
-        .file-pill .pill-rm:hover { color: #721c24; }
+        .file-pill > span:first-child {
+            max-width: 150px; overflow: hidden; text-overflow: ellipsis;
+        }
+        .file-pill .pill-rm { 
+            cursor: pointer; 
+            font-size: 1.2em; 
+            color: #856404;
+            margin-left: 2px; 
+            flex-shrink: 0; 
+            padding: 0px 2px; 
+            border: none; 
+            background: none;
+            line-height: 0.8;
+            vertical-align: middle;
+            height: auto;
+            width: auto;
+            display: inline;
+        }
+        .file-pill .pill-rm:hover { 
+            color: #721c24; 
+        }
         #input-source-tabs {
             display: flex; gap: 0; margin-bottom: 4px; font-size: 0.82em;
         }
@@ -1414,17 +1432,25 @@ function _rebuildPills() {
         var pill = document.createElement('span');
         pill.className = 'file-pill';
         pill.title = f.name;
-        pill.innerHTML = escHtml(f.name.length > 28 ? '\u2026' + f.name.slice(-25) : f.name) +
-            ' <span class="pill-rm" title="Remove" data-idx="' + i + '">&times;</span>';
-        pl.appendChild(pill);
-    });
-    // remove-pill click
-    pl.querySelectorAll('.pill-rm').forEach(function(rm) {
-        rm.addEventListener('click', function() {
+        
+        var fname = document.createElement('span');
+        fname.textContent = f.name.length > 28 ? '…' + f.name.slice(-25) : f.name;
+        pill.appendChild(fname);
+        
+        var btn = document.createElement('button');
+        btn.className = 'pill-rm';
+        btn.title = 'Remove';
+        btn.dataset.idx = i;
+        btn.textContent = '×';
+        btn.addEventListener('click', function(e) {
+            e.stopPropagation();
             var idx = parseInt(this.dataset.idx);
             _selectedFiles.splice(idx, 1);
             _rebuildPills();
         });
+        pill.appendChild(btn);
+        
+        pl.appendChild(pill);
     });
     // count label
     if (_selectedFiles.length > 1) {
