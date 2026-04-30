@@ -61,11 +61,14 @@
             display: inline-flex; align-items: center; gap: 4px;
             background: #d1ecf1; border: 1px solid #bee5eb; border-radius: 12px;
             padding: 2px 8px; font-size: 0.78em; color: #0c5460; white-space: nowrap;
-            max-width: 200px; overflow: hidden; text-overflow: ellipsis;
+            max-width: 300px; overflow: visible; text-overflow: clip;
         }
-        .file-pill .pill-rm { cursor: pointer; font-size: 0.9em; color: #856404;
-                               margin-left: 2px; flex-shrink: 0; }
-        .file-pill .pill-rm:hover { color: #721c24; }
+        .file-pill .pill-rm { cursor: pointer; font-size: 1.3em; color: #d32f2f;
+                               margin-left: 6px; margin-right: 0px; flex-shrink: 0; 
+                               padding: 0 4px; font-weight: bold; line-height: 1;
+                               display: inline; min-width: 16px; text-align: center; }
+        .file-pill .pill-rm:hover { color: #721c24; background: rgba(211, 47, 47, 0.1); 
+                                    border-radius: 3px; padding: 0 4px; display: inline; }
         #input-source-tabs {
             display: flex; gap: 0; margin-bottom: 4px; font-size: 0.82em;
         }
@@ -640,7 +643,7 @@
         </label>
         <button class="btn" onclick="parseFile()">&#9654; Parse</button>
         <button class="btn sec" onclick="resetAll()">&#10006; Clear</button>
-        <button class="btn grn" id="download-btn" onclick="downloadCSV()" style="display:none">&#8595; CSV</button>
+        <button class="btn grn" id="download-btn" onclick="downloadCSV()">&#8595; CSV</button>
     </div>
 
     <!-- Recipe + Session row — always visible at the landing page -->
@@ -1414,17 +1417,27 @@ function _rebuildPills() {
         var pill = document.createElement('span');
         pill.className = 'file-pill';
         pill.title = f.name;
-        pill.innerHTML = escHtml(f.name.length > 28 ? '\u2026' + f.name.slice(-25) : f.name) +
-            ' <span class="pill-rm" title="Remove" data-idx="' + i + '">&times;</span>';
+        
+        var nameSpan = document.createElement('span');
+        nameSpan.textContent = f.name.length > 28 ? '\u2026' + f.name.slice(-25) : f.name;
+        pill.appendChild(nameSpan);
+        
+        var closeBtn = document.createElement('span');
+        closeBtn.className = 'pill-rm';
+        closeBtn.innerHTML = '&times;';
+        closeBtn.title = 'Remove this file';
+        closeBtn.setAttribute('data-idx', String(i));
+        closeBtn.style.cursor = 'pointer';
+        (function(index) {
+            closeBtn.addEventListener('click', function(e) {
+                e.stopPropagation();
+                _selectedFiles.splice(index, 1);
+                _rebuildPills();
+            });
+        })(i);
+        pill.appendChild(closeBtn);
+        
         pl.appendChild(pill);
-    });
-    // remove-pill click
-    pl.querySelectorAll('.pill-rm').forEach(function(rm) {
-        rm.addEventListener('click', function() {
-            var idx = parseInt(this.dataset.idx);
-            _selectedFiles.splice(idx, 1);
-            _rebuildPills();
-        });
     });
     // count label
     if (_selectedFiles.length > 1) {
@@ -1799,8 +1812,38 @@ function resetAll() {
 }
 
 function downloadCSV() {
-    if (!currentCsvId) { setStatus('No data to download','error'); return; }
-    window.location.href = '/download/' + currentCsvId;
+    if (!currentCsvId || !allRows.length) { setStatus('No data to download','error'); return; }
+    
+    // Build CSV from current in-memory data
+    var csv = '';
+    
+    // Add headers
+    if (currentHeaders && currentHeaders.length) {
+        csv += currentHeaders.map(function(h) { 
+            return '"' + (h || '').replace(/"/g, '""') + '"'; 
+        }).join(',') + '\n';
+    }
+    
+    // Add rows
+    allRows.forEach(function(row) {
+        var rowCells = [];
+        for (var i = 0; i < currentHeaders.length; i++) {
+            var val = row[i] !== undefined ? row[i] : '';
+            rowCells.push('"' + (val + '').replace(/"/g, '""') + '"');
+        }
+        csv += rowCells.join(',') + '\n';
+    });
+    
+    // Download via blob
+    var blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    var link = document.createElement('a');
+    var url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', 'data.csv');
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
 }
 
 /* ================================================================
