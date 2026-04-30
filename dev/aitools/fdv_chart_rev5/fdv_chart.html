@@ -2,10 +2,11 @@
 <html>
 <head>
     <meta charset="utf-8">
-    <meta http-equiv="cache-control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="cache-control" content="no-cache, no-store, must-revalidate, max-age=0">
     <meta http-equiv="pragma" content="no-cache">
     <meta http-equiv="expires" content="0">
-    <title>FDV Chart Maker</title>
+    <!-- VERSION: v2.1.0-histogram-color-by -->
+    <title>FDV Chart Maker [v2.1.0]</title>
     <style>
         * { box-sizing: border-box; }
         html, body {
@@ -1045,6 +1046,8 @@ var ROW_H       = 22;   // estimated row height px (recalibrated after first ren
 var VS_OVERSCAN = 8;    // extra rows above/below viewport
 var vsFirstRow  = 0;    // first rendered row index (into filteredIndices)
 var colWidths   = [];   // pixel widths per column (set by resize grippers)
+
+console.log('[APP VERSION] v2.1.0 - Histogram color-by support active');
 
 var PALETTE = [
     '#007bff','#e83e8c','#28a745','#fd7e14','#6610f2',
@@ -3696,33 +3699,80 @@ function _buildTileChart(canvas, ct, tileData, xCol, yCol, xRx, yRx, colCol, col
 
     /* ── Histogram tile ── */
     if (ct === 'histogram') {
-        var vals = tileData.map(function(p) { return p.x; });
-        if (!vals.length) return null;
+        /* Group by inner-split col if set, else by color-col */
+        var histGroups = {}, histOrder = [];
+        tileData.forEach(function(pt) {
+            var g = innerSplitCol ? innerSplitKey(pt) : colorKey(pt);
+            if (!histGroups[g]) { histGroups[g] = []; histOrder.push(g); }
+            histGroups[g].push(pt.x);
+        });
+        /* deduplicate + sort group keys naturally */
+        var histKeys = histOrder.filter(function(k,i){ return histOrder.indexOf(k)===i; })
+                                .sort(function(a,b){ return a.localeCompare(b, undefined, {numeric:true}); });
+        if (!histKeys.length) return null;
+        
         var userBins = parseInt(document.getElementById('hist-bins').value);
-        var nBins    = userBins >= 2 ? userBins : autoBins(vals.length);
-        var h        = buildHistBins(vals, nBins);
+        
+        /* CRITICAL: Calculate bins from ALL data, not per-group */
+        var allVals = tileData.map(function(p) { return p.x; });
+        var nBins    = userBins >= 2 ? userBins : autoBins(allVals.length);
+        var refH     = buildHistBins(allVals, nBins);  /* Use ALL data to get shared bins */
+        var binEdges = refH.bins;  /* Shared bin centers */
+        
+        /* Now bin each color group into the SAME bins */
+        var histDatasets = histKeys.map(function(g, i) {
+            var vals = histGroups[g];
+            var binWidth = refH.width;
+            var minVal = refH.bins.length > 0 ? (refH.bins[0] - binWidth/2) : 0;
+            
+            /* Initialize counts for each bin */
+            var counts = [];
+            for (var b = 0; b < nBins; b++) counts[b] = 0;
+            
+            /* Distribute this group's values into shared bins */
+            vals.forEach(function(v) {
+                if (isNaN(v)) return;
+                var binIdx = Math.min(nBins - 1, Math.max(0, Math.floor((v - minVal) / binWidth)));
+                counts[binIdx]++;
+            });
+            
+            return {
+                label: g,
+                data: counts,
+                backgroundColor: PALETTE[i % PALETTE.length] + 'bb',
+                borderColor: PALETTE[i % PALETTE.length],
+                borderWidth: 1,
+                barPercentage: 0.8,
+                categoryPercentage: 0.85
+            };
+        });
+        
+        var binLabels = binEdges.map(function(b){ return b.toFixed(4); });
+        
         return new Chart(ctx, {
             type: 'bar',
             data: {
-                labels: h.bins.map(function(b){ return b.toFixed(4); }),
-                datasets: [{ label: xCol, data: h.counts,
-                    backgroundColor: PALETTE[0] + 'bb', borderColor: PALETTE[0],
-                    borderWidth: 1, barPercentage: 1.0, categoryPercentage: 1.0 }]
+                labels: binLabels,
+                datasets: histDatasets
             },
             options: {
                 animation: false, responsive: true, maintainAspectRatio: false,
-                plugins: { legend: { display: false }, annotation: ann,
+                plugins: { 
+                    legend: { display: histDatasets.length > 1, position: 'bottom',
+                              labels: { boxWidth: 10, font: { size: _legendFontSize || 9 } } }, 
+                    annotation: ann,
                     tooltip: { enabled: false, external: _htmlTooltip, callbacks: {
                         title: function(i){ return 'Centre: ' + i[0].label; },
-                        label: function(i){ return 'Count: ' + i.parsed.y; }
-                    }}},
+                        label: function(i){ return i.dataset.label + ': ' + i.parsed.y; }
+                    }}
+                },
                 scales: {
-                    x: Object.assign({ title: { display: true, text: _axisXTitle(xCol) },
+                    x: Object.assign({ stacked: false, title: { display: true, text: _axisXTitle(xCol) },
                         ticks: Object.assign({ maxTicksLimit: 8, maxRotation: 45 },
                             (function(){ var s=parseFloat(document.getElementById('x-step').value);
                                          return (!isNaN(s)&&s>0)?{stepSize:s}:{}; })())
                     }, xScale),
-                    y: Object.assign({ type: yLog ? 'logarithmic' : 'linear',
+                    y: Object.assign({ stacked: false, type: yLog ? 'logarithmic' : 'linear',
                         title: { display: true, text: _axisYTitle('Count') }, beginAtZero: !yLog }, yScale)
                 }
             }
@@ -4221,6 +4271,7 @@ function drawPlot() {
         }
 
         var ct = document.getElementById('chart-type').value;
+        console.log('[drawPlot] Chart type selected:', ct);
         if (ct === 'histogram') { drawHistogram(); return; }
         if (ct === 'cumproba')  { drawCumProba();  return; }
         if (ct === 'rcdf')      { drawRcdf();      return; }
@@ -4440,54 +4491,108 @@ function drawHistogram() {
     if (!currentCsvId) { status.textContent = 'Session expired \u2014 re-parse file.'; _spinStop(); return; }
     status.textContent = 'Computing\u2026';
 
+    /* Re-read color dims from UI at draw time (don't rely on global sync) */
+    var colorDims = _gdimRead('color');
+    var hasColorDims = colorDims.length > 0 && colorDims.some(function(d){ return d.colIdx >= 0; });
+    console.log('[drawHistogram] NEW VERSION with color-by support - colorDims:', colorDims, 'hasColorDims:', hasColorDims);
+
     var iv      = _getIntervals();
     var res     = readFilteredFromMemory(xCol, null, null, xRx, null, iv.xLo, iv.xHi, '', '');
-    var vals    = res.points.map(function(p){ return p.x; });
+    var points  = res.points;
     var skipped = res.skipped;
 
-    if (!vals.length) { status.textContent = 'No numeric values in column ' + xCol; _spinStop(); return; }
+    if (!points.length) { status.textContent = 'No numeric values in column ' + xCol; _spinStop(); return; }
+
+    /* Group by color-by dimensions */
+    function groupKey(pt) {
+        if (hasColorDims && pt._ri != null && allRows[pt._ri] != null) {
+            var key = _compoundKey(allRows[pt._ri], colorDims) || '(all)';
+            return key;
+        }
+        return '(all)';
+    }
+
+    var groups = {};
+    points.forEach(function(pt) {
+        var g = groupKey(pt);
+        if (!groups[g]) groups[g] = [];
+        groups[g].push(pt.x);
+    });
 
     var userBins = parseInt(binsEl.value);
-    var nBins    = userBins >= 2 ? userBins : autoBins(vals.length);
+    var nBins    = userBins >= 2 ? userBins : autoBins(points.length);
     var autoLbl  = userBins >= 2 ? '' : ' (auto)';
-    var h = buildHistBins(vals, nBins);
+
+    /* CRITICAL: Calculate bins from ALL data, not per-group */
+    var allVals = points.map(function(p) { return p.x; });
+    var refH = buildHistBins(allVals, nBins);  /* Use ALL data to get shared bins */
+    var binEdges = refH.bins;
+    var binWidth = refH.width;
+    var minVal = binEdges.length > 0 ? (binEdges[0] - binWidth/2) : 0;
+
+    /* Now bin each color group into the SAME bins */
+    var datasets = Object.keys(groups).sort().map(function(g, i) {
+        var vals = groups[g];
+        
+        /* Initialize counts for each bin */
+        var counts = [];
+        for (var b = 0; b < nBins; b++) counts[b] = 0;
+        
+        /* Distribute this group's values into shared bins */
+        vals.forEach(function(v) {
+            if (isNaN(v)) return;
+            var binIdx = Math.min(nBins - 1, Math.max(0, Math.floor((v - minVal) / binWidth)));
+            counts[binIdx]++;
+        });
+        
+        console.log('[drawHistogram] Group', g, '- dataset', i, 'with', vals.length, 'values, color:', PALETTE[i % PALETTE.length]);
+        return {
+            label: g,
+            data: counts,
+            backgroundColor: PALETTE[i % PALETTE.length] + 'bb',
+            borderColor: PALETTE[i % PALETTE.length],
+            borderWidth: 1,
+            barPercentage: 0.8,
+            categoryPercentage: 0.85
+        };
+    });
+    console.log('[drawHistogram] Created', datasets.length, 'datasets');
+
+    var binLabels = binEdges.map(function(b){ return b.toFixed(4); });
 
     if (chartInst) chartInst.destroy();
     try {
     chartInst = new Chart(document.getElementById('plot-canvas').getContext('2d'), {
         type: 'bar',
         data: {
-            labels: h.bins.map(function(b){ return b.toFixed(4); }),
-            datasets: [{
-                label: xCol,
-                data: h.counts,
-                backgroundColor: PALETTE[0] + 'bb',
-                borderColor: PALETTE[0],
-                borderWidth: 1,
-                barPercentage: 1.0,
-                categoryPercentage: 1.0
-            }]
+            labels: binLabels,
+            datasets: datasets
         },
         options: {
             animation: false,
             responsive: true,
             maintainAspectRatio: false,
+            indexAxis: undefined,
             plugins: {
-                legend: { display: false },
+                filler: { propagate: true },
+                legend: { display: Object.keys(groups).length > 1, position: 'bottom',
+                          labels: { boxWidth: 12, font: { size: _legendFontSize || 10 } } },
                 tooltip: { enabled: false, external: _htmlTooltip, callbacks: {
                     title: function(items){ return 'Centre: ' + items[0].label; },
-                    label: function(item) { return 'Count: ' + item.parsed.y; }
+                    label: function(item) { return item.dataset.label + ': ' + item.parsed.y; }
                 }},
                 annotation: { annotations: _buildAnnotations() }
             },
             scales: {
                 x: Object.assign({
+                    stacked: false,
                     title: { display: true, text: _axisXTitle(xCol + (xRx ? ' [' + xRx + ']' : '')) },
                     ticks: Object.assign({ maxTicksLimit: 12, maxRotation: 45 },
                            (function(){ var s=parseFloat(document.getElementById('x-step').value);
                                         return (!isNaN(s)&&s>0)?{stepSize:s}:{}; })())
                 }, getAxisScale('x-min', 'x-max')),
                 y: Object.assign({
+                    stacked: false,
                     type: yLog ? 'logarithmic' : 'linear',
                     title: { display: true, text: _axisYTitle('Count' + (yLog ? ' (log)' : '')) },
                     beginAtZero: !yLog
@@ -4501,9 +4606,13 @@ function drawHistogram() {
         return;
     }
 
-    _syncMainTitle('Histogram │ ' + xCol);
+    _syncMainTitle('Histogram │ ' + xCol + (hasColorDims ? '  │  ' + colorDims.map(function(d){ return d.col; }).join(', ') : ''));
     var filtNote = hasActiveFilters() ? ' — filtered' : '';
-    status.textContent = vals.length.toLocaleString() + ' values, ' + nBins + ' bins' + autoLbl +
+    var nGroups = Object.keys(groups).length;
+    var splitDesc = hasColorDims
+        ? (' grouped by ' + colorDims.map(function(d){ return d.col + (d.rx ? ' [' + d.rx + ']' : ''); }).join(', ')) : '';
+    status.textContent = points.length.toLocaleString() + ' values' + splitDesc + 
+        (nGroups > 1 ? ', ' + nGroups + ' groups' : '') + ', ' + nBins + ' bins' + autoLbl +
         (skipped > 0 ? ', ' + skipped + ' skipped' : '') + filtNote + _intervalNote();
     _showChartIdBadge();  /* Show badge for single chart */
     _spinStop();
