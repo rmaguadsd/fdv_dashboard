@@ -3641,18 +3641,42 @@ function _buildTileChart(canvas, ct, tileData, xCol, yCol, xRx, yRx, colCol, col
     var MAX_PTS = 5000;
     var pts = tileData, sampled = false;
     if (pts.length > MAX_PTS && ct !== 'line') {
+        /* FIXED: Use stride sampling by row index, NOT by color (same as main chart)
+           Problem: color-based bucketing changes when color-by dimension changes
+           Solution: Simple uniform stride on all points using row index pattern */
         var step = Math.ceil(pts.length / MAX_PTS);
-        pts = pts.filter(function(_, i){ return i % step === 0; });
+        pts = [];
+        for (var i = 0; i < tileData.length; i += step) {
+            pts.push(tileData[i]);
+        }
         sampled = true;
     }
+    
+    /* Discover ALL colors from tile data (before interval filtering removes some)
+       Ensures legend shows all color values even with zero plotted points */
+    var allColorValues = {};
+    var colIdx = colCol ? currentHeaders.indexOf(colCol) : -1;
+    tileData.forEach(function(pt) {
+        var g = colorKey(pt);
+        allColorValues[g] = true;
+    });
+    
     var groups = {};
     pts.forEach(function(pt) {
         var g = colorKey(pt);
         if (!groups[g]) groups[g] = [];
         groups[g].push({ x: pt.x, y: pt.y });
     });
-    var datasets = Object.keys(groups).map(function(g, i) {
-        return { label: g, data: groups[g],
+    
+    /* Add empty datasets for all discovered colors with zero plotted points */
+    Object.keys(allColorValues).forEach(function(colorVal) {
+        if (!groups[colorVal]) {
+            groups[colorVal] = [];
+        }
+    });
+    var datasets = Object.keys(groups).sort().map(function(g, i) {
+        return { label: g + ' (n=' + groups[g].length + ')',
+                 data: groups[g],
             backgroundColor: PALETTE[i % PALETTE.length] + '99',
             borderColor:     PALETTE[i % PALETTE.length],
             borderWidth: ct === 'line' ? 1.5 : 0,
@@ -4095,9 +4119,33 @@ function drawScatterLine() {
     status.textContent = 'Computing\u2026';
 
     var iv      = _getIntervals();
-    var res     = readFilteredFromMemory(xCol, yCol, colCol || null, xRx, yRx, iv.xLo, iv.xHi, iv.yLo, iv.yHi);
+    var res     = readFilteredFromMemory(xCol, yCol, null, xRx, yRx, iv.xLo, iv.xHi, iv.yLo, iv.yHi);
     var points  = res.points;
     var skipped = res.skipped;
+
+    /* CRITICAL: Discover color values ONLY from points that pass interval filtering
+       This ensures dataset remains unchanged when color-by is added (dataset must be determined
+       by column filters and intervals, NEVER by color settings).
+       Use _colorDims if available (multi-dim coloring), otherwise fall back to single colCol. */
+    var allColorValues = {};
+    var scatterColIdx = colCol ? currentHeaders.indexOf(colCol) : -1;
+    points.forEach(function(pt) {
+        var row = allRows[pt._ri];
+        if (!row) return;
+        var colorVal;
+        var hasColorDims = _colorDims.length > 0 && _colorDims.some(function(d){ return d.colIdx >= 0; });
+        if (hasColorDims) {
+            /* Multi-dim: build compound key from all color dimensions */
+            colorVal = _compoundKey(row, _colorDims) || '(all)';
+        } else {
+            /* Single-dim or no coloring: use same logic as colorKey() function below */
+            var raw = (scatterColIdx >= 0 && row[scatterColIdx] != null)
+                ? String(row[scatterColIdx])
+                : '';
+            colorVal = _extractGroupKey(raw || '(blank)', colorRx);
+        }
+        allColorValues[colorVal] = true;
+    });
 
     /* Legend-by: extract label from legend column (does not affect grouping) */
     var legendIdx = legendCol ? currentHeaders.indexOf(legendCol) : -1;
@@ -4117,8 +4165,15 @@ function drawScatterLine() {
 
     var MAX_PTS = 10000, plotPts = points, sampled = false;
     if (points.length > MAX_PTS && ct !== 'line') {
+        /* FIXED: Use stride sampling by row index, NOT by color
+           Problem: color-based bucketing changes when color-by dimension changes
+           This causes dataset size to vary even though filteredIndices + intervals are constant
+           Solution: Simple uniform stride on all points using row index pattern */
         var step = Math.ceil(points.length / MAX_PTS);
-        plotPts = points.filter(function(_, i){ return i % step === 0; });
+        plotPts = [];
+        for (var i = 0; i < points.length; i += step) {
+            plotPts.push(points[i]);
+        }
         sampled = true;
     }
 
@@ -4147,10 +4202,18 @@ function drawScatterLine() {
         groups[g].push(dp);
     });
 
+    /* FIXED: Add empty datasets for all discovered colors that have no plotted points
+       This ensures complete legend showing all filtered color values (even with n=0) */
+    Object.keys(allColorValues).forEach(function(colorVal) {
+        if (!groups[colorVal]) {
+            groups[colorVal] = [];
+        }
+    });
+
     var pointSize = _pointSize || 8;  /* Use global font control value */
-    var datasets = Object.keys(groups).map(function(g, i) {
+    var datasets = Object.keys(groups).sort().map(function(g, i) {
         return {
-            label: g,
+            label: g + ' (n=' + groups[g].length + ')',
             data: groups[g],
             backgroundColor: PALETTE[i % PALETTE.length] + '99',
             borderColor:     PALETTE[i % PALETTE.length],
