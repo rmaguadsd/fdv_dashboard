@@ -40,7 +40,6 @@ from socketserver import ThreadingMixIn
 from urllib.parse import urlparse
 
 # ── Local Ollama / LLM config ────────────────────────────────────────────────
-_LLM_URL     = 'http://localhost:11434/v1/chat/completions'
 _LLM_MODEL   = 'llama3'
 _LLM_APIKEY  = ''    # leave empty for Ollama (no key needed)
 _LLM_TIMEOUT      = 180   # seconds — llama3 can be slow; long conversations need more headroom
@@ -86,7 +85,7 @@ _OLLAMA_BASE = 'http://localhost:11434'
 # ── ConnectMaiGPT MCP config ─────────────────────────────────────────────────
 _MAIGPT_HOST   = 'fmgnpsgautoplt01.elements.local'
 _MAIGPT_PATH   = '/mcp'
-_MAIGPT_TOKEN  = 'd4f8e2a1-3c9b-4e7a-9b2f-1a2b3c4d5e6f'
+_MAIGPT_TOKEN  = 'b9e1c4f2-6a3d-4f8b-9c2e-7d1a5b3e6f4c'
 _MAIGPT_USER   = 'russel.maguad@solidigm.com'
 
 # Per-csv_id MaiGPT MCP sessions  { csv_id: {'session_id': str, 'chat_id': str} }
@@ -182,12 +181,10 @@ def _call_llm(messages, model=None):
         'temperature': 0.3
     }).encode('utf-8')
     headers = {'Content-Type': 'application/json'}
-    if _LLM_APIKEY:
-        headers['Authorization'] = 'Bearer ' + _LLM_APIKEY
-    req = urllib.request.Request(_LLM_URL, data=payload, headers=headers)
+    req = urllib.request.Request(_OLLAMA_BASE + '/api/chat', data=payload, headers=headers)
     with urllib.request.urlopen(req, timeout=_LLM_TIMEOUT) as r:
         body = json.loads(r.read().decode('utf-8'))
-    return body['choices'][0]['message']['content'].strip()
+    return body['message']['content'].strip()
 
 # ── Chat session store  {csv_id: [{"role":..,"content":..}, ...]} ─────
 _chat_sessions      = {}
@@ -1406,22 +1403,39 @@ class RequestHandler(BaseHTTPRequestHandler):
                 modelname = body.get('modelname', 'gpt4').strip() or 'gpt4'
                 inject_system = body.get('inject_system', False)  # from Inject Context btn
 
-                # Always ensure @general: prefix so ConnectMaiGPT routes correctly.
-                # @general:system and @general: variants are left as-is.
-                if message and not message.lower().startswith('@general'):
+                # Prefix routing: check for @datasheet, @trimdb, @policy, otherwise use @general
+                # @general:system and @general:system variants are left as-is for context injection.
+                msg_lower = message.lower() if message else ''
+                has_custom_prefix = any(msg_lower.startswith(p) for p in ['@datasheet', '@trimdb', '@policy'])
+                
+                if message and not msg_lower.startswith('@') and not has_custom_prefix:
+                    # No prefix provided — use @general
                     message = '@general: ' + message
+                elif message and msg_lower.startswith(('@datasheet', '@trimdb', '@policy')):
+                    # Custom prefix provided — keep it as-is
+                    pass
+                elif message and msg_lower.startswith('@general'):
+                    # @general prefix already provided — keep it
+                    pass
+                else:
+                    # Fallback: ensure some prefix for routing
+                    if message:
+                        message = '@general: ' + message
 
                 if not message and not inject_system:
                     raise ValueError('Empty message')
 
-                # ── Detect @general: prefixes ─────────────────────────────
+                # ── Detect prefix modes ───────────────────────────────────
+                msg_lower = message.lower() if message else ''
                 is_general_system = (
                     inject_system or
-                    message.lower().startswith('@general:system')
+                    msg_lower.startswith('@general:system')
                 )
+                is_custom_prefix = any(msg_lower.startswith(p) for p in ['@datasheet', '@trimdb', '@policy'])
                 is_general_query = (
                     not is_general_system and
-                    message.lower().startswith('@general:')
+                    msg_lower.startswith('@general:') and
+                    not is_custom_prefix
                 )
 
                 # ── Build query string ────────────────────────────────────
@@ -1439,6 +1453,18 @@ class RequestHandler(BaseHTTPRequestHandler):
                     # No chart data, no history — pure general question.
                     bare = message[len('@general:'):].strip()
                     query = '@general: ' + bare
+
+                elif is_custom_prefix:
+                    # Custom prefix (@datasheet, @trimdb, @policy) — send bare query.
+                    # Strip the prefix and send the query as-is.
+                    # No chart data, no history — pure query with custom routing.
+                    for prefix in ['@datasheet', '@trimdb', '@policy']:
+                        if message.lower().startswith(prefix):
+                            bare = message[len(prefix):].strip()
+                            query = prefix + ' ' + bare
+                            break
+                    else:
+                        query = message
 
                 else:
                     # Normal message — maintain conversation history and embed
