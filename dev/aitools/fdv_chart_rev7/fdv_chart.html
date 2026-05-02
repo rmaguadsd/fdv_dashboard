@@ -818,6 +818,10 @@
                title="Show individual data points overlaid on box plot">
             <input type="checkbox" id="bp-overlay" style="cursor:pointer"> Data Points
         </label>
+        <label id="bp-jitter-label" style="margin-left:4px;display:none;align-items:center;gap:4px;cursor:pointer"
+               title="Add random horizontal jitter to data points to reduce overlap">
+            <input type="checkbox" id="bp-jitter" checked style="cursor:pointer"> Jitter
+        </label>
         <button id="plot-btn" class="btn" style="padding:4px 12px" onclick="drawPlot()">&#9654; Plot</button>
         <!-- Font sizing controls - inline with Plot button -->
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
@@ -1202,6 +1206,11 @@ if (!window._scatterResizeState) {
         minRadius: 2,
         maxRadius: 10
     };
+}
+
+/* Global jitter state - default to true (jitter enabled) */
+if (window._useScatterJitter === undefined) {
+    window._useScatterJitter = true;
 }
 
 Chart.register({
@@ -1710,6 +1719,15 @@ document.addEventListener('DOMContentLoaded', function() {
                 });
             }
         }
+    });
+
+    /* Box plot jitter toggle - regenerates scatter data with/without jitter */
+    document.getElementById('bp-jitter').addEventListener('change', function() {
+        var useJitter = this.checked;
+        window._useScatterJitter = useJitter;
+        console.log('[jitter toggle] Jitter is now', useJitter ? 'enabled' : 'disabled');
+        /* Redraw the current plot to apply jitter setting */
+        drawPlot();
     });
 
     /* Handle window resize - redraw all split charts to maintain overlay */
@@ -2301,7 +2319,8 @@ function onChartTypeChange() {
     var isCum   = ct === 'cumproba' || ct === 'rcdf';
     var isHist  = ct === 'histogram';
     var isBox   = ct === 'boxplot';
-    console.log('[onChartTypeChange] isBox:', isBox);
+    var isScatter = ct === 'scatter';
+    console.log('[onChartTypeChange] isBox:', isBox, 'isScatter:', isScatter);
     function show(id, vis) { var el=document.getElementById(id); if(el) el.style.display=vis?'':'none'; }
     /* boxplot: X = category col (label), Y = numeric value col — both shown */
     show('y-col-label',    !isXOnly);
@@ -2311,6 +2330,7 @@ function onChartTypeChange() {
     show('bins-label',      isHist);
     show('bp-maxgroups-label', isBox);
     show('bp-overlay-label',   isBox);
+    show('bp-jitter-label',    isBox || isScatter);
     show('split-label',     false);               /* cumproba now uses color-col for grouping */
     show('split-rx-label',  false);
     show('y-min-label',    !isXOnly);
@@ -2473,7 +2493,7 @@ function _recipeIds() {
         'chart-type','x-col','y-col','x-regex','y-regex',
         'color-col','color-regex',
         'split-chart-cols','split-chart-h','split-grid-h',
-        'hist-bins','bp-maxgroups','bp-overlay',
+        'hist-bins','bp-maxgroups','bp-overlay','bp-jitter',
         'x-log','y-log',
         'x-min','x-max','x-step','y-min','y-max','y-step',
         'x-ivlo','x-ivhi','y-ivlo','y-ivhi',
@@ -4034,13 +4054,13 @@ function _buildTileChart(canvas, ct, tileData, xCol, yCol, xRx, yRx, colCol, col
                             .sort(function(a,b){ return a.localeCompare(b,undefined,{numeric:true}); });
         if (!bpKeys.length) return null;
         
-        /* Generate scatter data with ADAPTIVE jitter based on density */
+        /* Generate scatter data with ADAPTIVE jitter based on density (or no jitter if disabled) */
         var scatterData = [];
         bpKeys.forEach(function(k, gIdx) {
             var groupData = bpGroups[k];
             var n = groupData.length;
             /* Higher density groups get wider spread, lower density groups get tighter spread */
-            var maxJitter = 0.15 + (Math.min(n, 100) / 100) * 0.25;  /* 0.15 to 0.4 range */
+            var maxJitter = window._useScatterJitter ? (0.15 + (Math.min(n, 100) / 100) * 0.25) : 0;  /* 0.15 to 0.4 range, or 0 if jitter disabled */
             groupData.forEach(function(yVal) {
                 var xJitter = gIdx + (Math.random() - 0.5) * maxJitter;
                 scatterData.push({ x: xJitter, y: yVal, gIdx: gIdx });
@@ -4252,7 +4272,12 @@ function _buildTileChart(canvas, ct, tileData, xCol, yCol, xRx, yRx, colCol, col
     pts.forEach(function(pt) {
         var g = colorKey(pt);
         if (!groups[g]) groups[g] = [];
-        groups[g].push({ x: pt.x, y: pt.y });
+        var jitteredX = pt.x;
+        /* Apply jitter if enabled - scatter plots need small random X offset to avoid overlap */
+        if (window._useScatterJitter) {
+            jitteredX = pt.x + (Math.random() - 0.5) * 0.1;  /* Small jitter: +/- 0.05 units */
+        }
+        groups[g].push({ x: jitteredX, y: pt.y });
     });
     
     /* Add empty datasets for all discovered colors with zero plotted points */
@@ -4818,7 +4843,12 @@ function drawScatterLine() {
     plotPts.forEach(function(pt) {
         var g = colorKey(pt);
         if (!groups[g]) groups[g] = [];
-        var dp = { x: pt.x, y: pt.y };
+        var jitteredX = pt.x;
+        /* Apply jitter if enabled - scatter plots need small random X offset to avoid overlap */
+        if (window._useScatterJitter) {
+            jitteredX = pt.x + (Math.random() - 0.5) * 0.1;  /* Small jitter: +/- 0.05 units */
+        }
+        var dp = { x: jitteredX, y: pt.y };
         if (useLegend) dp._lbl = legendKey(pt);
         groups[g].push(dp);
     });
@@ -5383,20 +5413,20 @@ function drawBoxPlot() {
 
     if (!keys.length) { status.textContent = 'No numeric values in column ' + yCol; _spinStop(); return; }
 
-    /* Helper: create jittered scatter data points with ADAPTIVE density-based spread */
+    /* Helper: create jittered scatter data points with ADAPTIVE density-based spread (or no jitter if disabled) */
     var scatterData = [];
     keys.forEach(function(k, gIdx) {
         var groupData = groups[k];
         var n = groupData.length;
         /* Higher density groups get wider spread, lower density groups get tighter spread */
-        var maxJitter = 0.15 + (Math.min(n, 100) / 100) * 0.25;  /* 0.15 to 0.4 range */
+        var maxJitter = window._useScatterJitter ? (0.15 + (Math.min(n, 100) / 100) * 0.25) : 0;  /* 0.15 to 0.4 range, or 0 if jitter disabled */
         groupData.forEach(function(yVal) {
             /* Jitter x-position based on group density */
             var xJitter = gIdx + (Math.random() - 0.5) * maxJitter;
             scatterData.push({ x: xJitter, y: yVal, gIdx: gIdx });
         });
     });
-    console.log('[boxplot] Generated', scatterData.length, 'scatter points with adaptive density-based jitter');
+    console.log('[boxplot] Generated', scatterData.length, 'scatter points with', window._useScatterJitter ? 'adaptive density-based jitter' : 'no jitter');
 
     var datasets = [
         {
