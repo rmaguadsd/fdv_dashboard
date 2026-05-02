@@ -4268,14 +4268,39 @@ function _buildTileChart(canvas, ct, tileData, xCol, yCol, xRx, yRx, colCol, col
         allColorValues[g] = true;
     });
     
+    /* Calculate jitter amount based on x-axis scale */
+    var tileJitterAmount = 0;
+    if (window._useScatterJitter && pts.length > 0) {
+        /* Get x-axis min/max from UI inputs or calculate from data */
+        var xMinEl = document.getElementById('x-min');
+        var xMaxEl = document.getElementById('x-max');
+        var axisMin = xMinEl ? parseFloat(xMinEl.value) : null;
+        var axisMax = xMaxEl ? parseFloat(xMaxEl.value) : null;
+        
+        /* If axis bounds not set, calculate from data range */
+        if (isNaN(axisMin) || isNaN(axisMax)) {
+            var xMin = pts[0].x, xMax = pts[0].x;
+            pts.forEach(function(pt) {
+                if (pt.x < xMin) xMin = pt.x;
+                if (pt.x > xMax) xMax = pt.x;
+            });
+            if (isNaN(axisMin)) axisMin = xMin;
+            if (isNaN(axisMax)) axisMax = xMax;
+        }
+        
+        /* Calculate jitter as 5% of the axis width */
+        var axisWidth = Math.abs(axisMax - axisMin);
+        tileJitterAmount = axisWidth > 0 ? (axisWidth * 0.05) : 0.1;
+    }
+    
     var groups = {};
     pts.forEach(function(pt) {
         var g = colorKey(pt);
         if (!groups[g]) groups[g] = [];
         var jitteredX = pt.x;
         /* Apply jitter if enabled - scatter plots need small random X offset to avoid overlap */
-        if (window._useScatterJitter) {
-            jitteredX = pt.x + (Math.random() - 0.5) * 0.1;  /* Small jitter: +/- 0.05 units */
+        if (window._useScatterJitter && tileJitterAmount > 0) {
+            jitteredX = pt.x + (Math.random() - 0.5) * tileJitterAmount;
         }
         groups[g].push({ x: jitteredX, y: pt.y });
     });
@@ -4838,6 +4863,31 @@ function drawScatterLine() {
         return _extractGroupKey(raw || '(blank)', colorRx);
     }
 
+    /* Calculate jitter amount based on x-axis scale */
+    var jitterAmount = 0;
+    if (window._useScatterJitter && plotPts.length > 0) {
+        /* Get x-axis min/max from UI inputs or calculate from data */
+        var xMinEl = document.getElementById('x-min');
+        var xMaxEl = document.getElementById('x-max');
+        var axisMin = xMinEl ? parseFloat(xMinEl.value) : null;
+        var axisMax = xMaxEl ? parseFloat(xMaxEl.value) : null;
+        
+        /* If axis bounds not set, calculate from data range */
+        if (isNaN(axisMin) || isNaN(axisMax)) {
+            var xMin = plotPts[0].x, xMax = plotPts[0].x;
+            plotPts.forEach(function(pt) {
+                if (pt.x < xMin) xMin = pt.x;
+                if (pt.x > xMax) xMax = pt.x;
+            });
+            if (isNaN(axisMin)) axisMin = xMin;
+            if (isNaN(axisMax)) axisMax = xMax;
+        }
+        
+        /* Calculate jitter as 5% of the axis width */
+        var axisWidth = Math.abs(axisMax - axisMin);
+        jitterAmount = axisWidth > 0 ? (axisWidth * 0.05) : 0.1;
+    }
+
     var groups = {};
     var useLegend = legendIdx >= 0;
     plotPts.forEach(function(pt) {
@@ -4845,8 +4895,8 @@ function drawScatterLine() {
         if (!groups[g]) groups[g] = [];
         var jitteredX = pt.x;
         /* Apply jitter if enabled - scatter plots need small random X offset to avoid overlap */
-        if (window._useScatterJitter) {
-            jitteredX = pt.x + (Math.random() - 0.5) * 0.1;  /* Small jitter: +/- 0.05 units */
+        if (window._useScatterJitter && jitterAmount > 0) {
+            jitteredX = pt.x + (Math.random() - 0.5) * jitterAmount;
         }
         var dp = { x: jitteredX, y: pt.y };
         if (useLegend) dp._lbl = legendKey(pt);
