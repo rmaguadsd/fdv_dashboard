@@ -769,6 +769,11 @@
         <label>X:<select id="x-col"></select></label>
         <label style="margin-left:4px">X&nbsp;regex:
             <input type="text" id="x-regex" placeholder="e.g. ([0-9]+)" autocomplete="off" style="width:110px"></label>
+        <label style="margin-left:4px">X&nbsp;hierarchy:
+            <select id="x-hier-col" title="Optional: column for hierarchical x-axis grouping (shows categories with parent groups)">
+                <option value="">(none)</option>
+            </select>
+        </label>
         <label id="y-col-label" style="margin-left:8px">Y:<select id="y-col"></select></label>
         <label id="y-regex-label" style="margin-left:4px">Y&nbsp;regex:
             <input type="text" id="y-regex" placeholder="e.g. ([0-9]+)" autocomplete="off" style="width:110px"></label>
@@ -2359,6 +2364,20 @@ function populatePlotSelectors(headers) {
             /* If previous value doesn't exist in new headers, don't force it */
         }
     });
+    /* Populate x-hier-col (hierarchical column) */
+    var hierSel = document.getElementById('x-hier-col');
+    if (hierSel) {
+        var hierPrev = hierSel.value;
+        hierSel.innerHTML = '<option value="">(none)</option>';
+        headers.forEach(function(h) {
+            var o = document.createElement('option');
+            o.value = h; o.textContent = h; hierSel.appendChild(o);
+        });
+        /* Try to restore previous value */
+        if (hierPrev && headers.indexOf(hierPrev) >= 0) {
+            hierSel.value = hierPrev;
+        }
+    }
     function tryDefault(id, candidates) {
         var sel = document.getElementById(id);
         for (var ci=0; ci<candidates.length; ci++)
@@ -2426,6 +2445,45 @@ function extractNum(val, rxStr) {
     }
     var n = parseFloat(String(val).replace(/[^0-9.eE+\-]/g,''));
     return isNaN(n) ? null : n;
+}
+
+/** Build hierarchical axis labels: "parentGroup > childLabel" */
+function _buildHierarchicalLabels(points, xCol, xHierCol, xRx) {
+    if (!xHierCol) return null;  /* No hierarchy requested */
+    
+    var hierIdx = currentHeaders.indexOf(xHierCol);
+    if (hierIdx < 0) return null;  /* Hierarchy column not found */
+    
+    var xIdx = currentHeaders.indexOf(xCol);
+    if (xIdx < 0) return null;
+    
+    var xRxRe = null;
+    if (xRx) {
+        try { xRxRe = new RegExp(xRx); } catch(e) {}
+    }
+    
+    var labels = {};
+    points.forEach(function(pt) {
+        if (pt._ri == null || !allRows[pt._ri]) return;
+        var row = allRows[pt._ri];
+        
+        /* Extract X value (primary key for x-axis) */
+        var xRaw = row[xIdx] != null ? String(row[xIdx]) : '';
+        var xKey = xRaw;
+        if (xRxRe) {
+            var m = xRxRe.exec(xRaw);
+            if (m) xKey = (m[1] !== undefined ? m[1] : m[0]);
+        }
+        
+        /* Extract hierarchy value (parent group) */
+        var hierRaw = row[hierIdx] != null ? String(row[hierIdx]) : '';
+        
+        /* Store as "parent > child" or just use the combination */
+        var label = hierRaw + ' > ' + xKey;
+        if (!labels[xKey]) labels[xKey] = label;  /* Use first occurrence */
+    });
+    
+    return labels;  /* Returns mapping of xKey -> "parent > child" label */
 }
 
 function getAxisScale(minId, maxId, stepId) {
@@ -4786,6 +4844,7 @@ function drawScatterLine() {
     var yCol     = document.getElementById('y-col').value;
     var xRx      = document.getElementById('x-regex').value.trim();
     var yRx      = document.getElementById('y-regex').value.trim();
+    var xHierCol = document.getElementById('x-hier-col') ? document.getElementById('x-hier-col').value : '';
     var colCol   = document.getElementById('color-col').value;
     var colorRx  = document.getElementById('color-regex').value.trim();
     var legendCol = '';
@@ -4928,8 +4987,26 @@ function drawScatterLine() {
         };
     });
 
+    /* Build hierarchical labels if requested */
+    var hierLabels = xHierCol ? _buildHierarchicalLabels(plotPts, xCol, xHierCol, xRx) : null;
+
     /* Feed the global fdvPointLabels plugin: array-of-arrays, one per dataset */
     if (chartInst) chartInst.destroy();
+    
+    var xAxisConfig = Object.assign(getAxisScale('x-min', 'x-max', 'x-step'), {
+        type: xLog ? 'logarithmic' : 'linear',
+        title: { display: true,
+                 text: _axisXTitle(xCol + (xRx ? ' [' + xRx + ']' : '') + (xLog ? ' (log)' : '') + (xHierCol ? ' by ' + xHierCol : '')) }
+    });
+    
+    /* If hierarchical labels exist, add callback for label rendering */
+    if (hierLabels) {
+        xAxisConfig.ticks = xAxisConfig.ticks || {};
+        xAxisConfig.ticks.callback = function(value) {
+            return hierLabels[value] || value;
+        };
+    }
+    
     chartInst = new Chart(document.getElementById('plot-canvas').getContext('2d'), {
         type: 'scatter',
         data: { datasets: datasets },
@@ -4959,11 +5036,7 @@ function drawScatterLine() {
                 annotation: { annotations: _buildAnnotations() }
             },
             scales: {
-                x: Object.assign(getAxisScale('x-min', 'x-max', 'x-step'), {
-                    type: xLog ? 'logarithmic' : 'linear',
-                    title: { display: true,
-                             text: _axisXTitle(xCol + (xRx ? ' [' + xRx + ']' : '') + (xLog ? ' (log)' : '')) }
-                }),
+                x: xAxisConfig,
                 y: Object.assign(getAxisScale('y-min', 'y-max', 'y-step'), {
                     type: yLog ? 'logarithmic' : 'linear',
                     title: { display: true,
@@ -5490,7 +5563,7 @@ function drawBoxPlot() {
             medianColor: '#fff',
             /* Store scatter data for later rendering */
             _scatterData: scatterData,
-            _scatterVisible: true
+            _scatterVisible: document.getElementById('bp-overlay') && document.getElementById('bp-overlay').checked
         }
     ];
 
@@ -5498,13 +5571,19 @@ function drawBoxPlot() {
     
     /* Register custom scatter overlay plugin */
     console.log('[boxplot] Checking if plugin already registered...');
-    var existingPlugin = Chart.plugins.getAll().find(p => p.id === 'scatterOverlay');
+    console.log('[boxplot] Chart object:', typeof Chart, Chart ? 'exists' : 'undefined');
+    console.log('[boxplot] Chart.plugins:', typeof Chart.plugins, Chart.plugins ? 'exists' : 'undefined');
+    
+    var existingPlugin = null;
+    if (Chart && Chart.plugins && Chart.plugins.getAll) {
+        existingPlugin = Chart.plugins.getAll().find(p => p.id === 'boxplotScatterOverlay');
+    }
     console.log('[boxplot] Existing plugin found:', !!existingPlugin);
     
     if (!existingPlugin) {
-        console.log('[boxplot] Registering NEW scatterOverlay plugin...');
+        console.log('[boxplot] Registering NEW boxplotScatterOverlay plugin...');
         Chart.register({
-            id: 'scatterOverlay',
+            id: 'boxplotScatterOverlay',
             afterDraw: function(chart) {
                 console.log('[scatterOverlay] afterDraw FIRED!');
                 if (!chart.data || !chart.data.datasets || !chart.data.datasets[0]) {
@@ -5545,11 +5624,11 @@ function drawBoxPlot() {
                         var color = palette[p.gIdx % palette.length];
                         
                         ctx.beginPath();
-                        ctx.arc(xPixel, yPixel, 4.5, 0, 2 * Math.PI);  /* Larger radius for visibility */
-                        ctx.fillStyle = color + 'FF';  /* Fully opaque for debugging */
+                        ctx.arc(xPixel, yPixel, 1.5, 0, 2 * Math.PI);  /* Smallest practical radius */
+                        ctx.fillStyle = color + 'FF';  /* Fully opaque */
                         ctx.fill();
                         ctx.strokeStyle = color;
-                        ctx.lineWidth = 2;
+                        ctx.lineWidth = 0.5;
                         ctx.stroke();
                         pointsRendered++;
                     } catch(e) {
@@ -5595,7 +5674,8 @@ function drawBoxPlot() {
                         }
                     }
                 },
-                annotation: { annotations: _buildAnnotations() }
+                annotation: { annotations: _buildAnnotations() },
+                boxplotScatterOverlay: {}
             },
             scales: {
                 x: {
