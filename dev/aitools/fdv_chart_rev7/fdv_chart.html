@@ -814,6 +814,10 @@
         <label id="bp-maxgroups-label" style="margin-left:4px;display:none"
                title="Maximum number of X groups to render (more groups = slower)">Max&nbsp;groups:
             <input type="number" id="bp-maxgroups" min="1" max="2000" value="200" autocomplete="off" style="width:60px"></label>
+        <label id="bp-overlay-label" style="margin-left:4px;display:none;align-items:center;gap:4px;cursor:pointer"
+               title="Show individual data points overlaid on box plot">
+            <input type="checkbox" id="bp-overlay" style="cursor:pointer"> Data Points
+        </label>
         <button id="plot-btn" class="btn" style="padding:4px 12px" onclick="drawPlot()">&#9654; Plot</button>
         <!-- Font sizing controls - inline with Plot button -->
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
@@ -1184,6 +1188,147 @@ Chart.register({
 });
 
 /* ================================================================
+   SCATTER OVERLAY PLUGIN for Jittered Points on Box & Whisker charts
+   Draws jittered scatter points on boxplot when _scatterVisible=true
+   Black points, small by default, with adaptive jitter spread based on density
+================================================================ */
+if (!window._scatterResizeState) {
+    window._scatterResizeState = {
+        hoveredIndex: -1,
+        draggingIndex: -1,
+        startRadius: 0,
+        startMouseX: 0,
+        startMouseY: 0,
+        minRadius: 2,
+        maxRadius: 10
+    };
+}
+
+Chart.register({
+    id: 'scatterOverlay',
+    afterDraw: function(chart) {
+        var dataset = chart.data.datasets[0];
+        if (!dataset || !dataset._scatterVisible) return;
+        if (!dataset._scatterData || dataset._scatterData.length === 0) return;
+        
+        var xScale = chart.scales.x;
+        var yScale = chart.scales.y;
+        if (!xScale || !yScale) return;
+        
+        /* Compute and cache point positions for interaction */
+        if (!dataset._pointPositions) {
+            dataset._pointPositions = [];
+        }
+        dataset._pointPositions = [];
+        
+        var ctx = chart.ctx;
+        ctx.save();
+        
+        var pointRadius = 2.5;  /* Small by default */
+        var pointColor = 'rgba(128, 128, 128, 0.6)';  /* Gray, semi-transparent */
+        var hoveredColor = 'rgba(255, 100, 0, 0.9)';  /* Orange when hovered */
+        var state = window._scatterResizeState;
+        
+        dataset._scatterData.forEach(function(pt, idx) {
+            var xPixel = xScale.getPixelForValue(pt.x);
+            var yPixel = yScale.getPixelForValue(pt.y);
+            
+            /* Store position and current radius for interaction */
+            var radius = pt.radius !== undefined ? pt.radius : pointRadius;
+            dataset._pointPositions[idx] = {
+                x: xPixel,
+                y: yPixel,
+                dataX: pt.x,
+                dataY: pt.y,
+                radius: radius
+            };
+            
+            var isHovered = idx === state.hoveredIndex;
+            var isDragging = idx === state.draggingIndex;
+            
+            /* Draw filled circle - no outline */
+            ctx.fillStyle = isHovered || isDragging ? hoveredColor : pointColor;
+            ctx.beginPath();
+            ctx.arc(xPixel, yPixel, radius, 0, 2 * Math.PI);
+            ctx.fill();
+        });
+        ctx.restore();
+        
+        /* Setup canvas event listeners (only once per chart) */
+        if (!dataset._interactivitySetup) {
+            var canvas = chart.canvas;
+            var rect = canvas.getBoundingClientRect();
+            var lastUpdate = 0;
+            var updateThrottle = 16;  /* ~60fps */
+            
+            canvas.addEventListener('mousemove', function(e) {
+                var now = Date.now();
+                if (now - lastUpdate < updateThrottle) return;
+                lastUpdate = now;
+                
+                var x = e.clientX - rect.left;
+                var y = e.clientY - rect.top;
+                
+                var oldHovered = state.hoveredIndex;
+                state.hoveredIndex = -1;
+                
+                /* Check if mouse is over any point */
+                if (dataset._pointPositions) {
+                    for (var i = 0; i < dataset._pointPositions.length; i++) {
+                        var pos = dataset._pointPositions[i];
+                        var dist = Math.sqrt((x - pos.x) ** 2 + (y - pos.y) ** 2);
+                        if (dist <= pos.radius + 4) {  /* Slightly larger hitbox for hover */
+                            state.hoveredIndex = i;
+                            canvas.style.cursor = 'grab';
+                            break;
+                        }
+                    }
+                }
+                
+                if (state.hoveredIndex === -1) {
+                    canvas.style.cursor = 'default';
+                }
+                
+                /* If dragging, update radius based on vertical distance */
+                if (state.draggingIndex >= 0 && dataset._pointPositions) {
+                    var pos = dataset._pointPositions[state.draggingIndex];
+                    var dy = y - state.startMouseY;
+                    var newRadius = Math.max(state.minRadius, Math.min(state.maxRadius, state.startRadius + dy/20));
+                    dataset._scatterData[state.draggingIndex].radius = newRadius;
+                    chart.update('none');  /* Redraw without animation */
+                }
+                
+                if (oldHovered !== state.hoveredIndex && state.draggingIndex < 0) {
+                    chart.update('none');
+                }
+            });
+            
+            canvas.addEventListener('mousedown', function(e) {
+                if (state.hoveredIndex >= 0) {
+                    state.draggingIndex = state.hoveredIndex;
+                    state.startMouseY = e.clientY - rect.top;
+                    state.startRadius = dataset._scatterData[state.draggingIndex].radius || pointRadius;
+                    canvas.style.cursor = 'grabbing';
+                }
+            });
+            
+            document.addEventListener('mouseup', function() {
+                if (state.draggingIndex >= 0) {
+                    state.draggingIndex = -1;
+                    if (state.hoveredIndex >= 0) {
+                        canvas.style.cursor = 'grab';
+                    } else {
+                        canvas.style.cursor = 'default';
+                    }
+                }
+            });
+            
+            dataset._interactivitySetup = true;
+        }
+    }
+});
+
+/* ================================================================
    UTILITIES
 ================================================================ */
 function setStatus(msg, cls) {
@@ -1542,7 +1687,107 @@ document.addEventListener('DOMContentLoaded', function() {
         document.getElementById('dir-file-count').textContent =
             n ? n + ' file' + (n !== 1 ? 's' : '') + ' selected' : 'No directory selected';
     });
+
+    /* Box plot data points overlay toggle */
+    document.getElementById('bp-overlay').addEventListener('change', function() {
+        var showOverlay = this.checked;
+        var ct = document.getElementById('chart-type').value;
+        
+        if (ct === 'boxplot') {
+            /* Handle single-chart mode */
+            if (chartInst && chartInst.data.datasets[0]) {
+                chartInst.data.datasets[0]._scatterVisible = showOverlay;
+                chartInst.update('none');  /* Update without animation */
+            }
+            
+            /* Handle split-chart mode */
+            if (_splitInsts && _splitInsts.length > 0) {
+                _splitInsts.forEach(function(inst) {
+                    if (inst && inst.data.datasets[0]) {
+                        inst.data.datasets[0]._scatterVisible = showOverlay;
+                        inst.draw();  /* Force redraw of the plugin */
+                    }
+                });
+            }
+        }
+    });
+
+    /* Handle window resize - redraw all split charts to maintain overlay */
+    var _resizeTimeout = null;
+    window.addEventListener('resize', function() {
+        clearTimeout(_resizeTimeout);
+        _resizeTimeout = setTimeout(function() {
+            console.log('[resize] Handling resize event for', _splitInsts ? _splitInsts.length : 0, 'split charts');
+            if (_splitInsts && _splitInsts.length > 0) {
+                _splitInsts.forEach(function(inst, idx) {
+                    if (inst && inst.canvas) {
+                        console.log('[resize] Resizing and redrawing chart', idx);
+                        /* Get parent container dimensions */
+                        var container = inst.canvas.parentElement;
+                        if (container) {
+                            inst.canvas.width = container.clientWidth;
+                            inst.canvas.height = container.clientHeight;
+                        }
+                        inst.resize();  /* Let Chart.js handle layout recalculation */
+                        inst.update('none');  /* Update chart without animation to trigger plugin */
+                    }
+                });
+            }
+            /* Also handle single-chart mode */
+            if (chartInst && chartInst.canvas) {
+                console.log('[resize] Resizing single chart');
+                var container = chartInst.canvas.parentElement;
+                if (container) {
+                    chartInst.canvas.width = container.clientWidth;
+                    chartInst.canvas.height = container.clientHeight;
+                }
+                chartInst.resize();
+                chartInst.update('none');
+            }
+        }, 150);  /* Debounce resize events */
+    });
 });
+
+/* ================================================================
+   GLOBAL RESIZE HANDLER (outside DOMContentLoaded to persist)
+================================================================ */
+(function() {
+    console.log('[resize-setup] Initializing global resize handler');
+    var _resizeTimeout = null;
+    window.addEventListener('resize', function() {
+        console.log('[global resize] Event fired - _splitInsts:', window._splitInsts ? window._splitInsts.length : 'undefined');
+        clearTimeout(_resizeTimeout);
+        _resizeTimeout = setTimeout(function() {
+            console.log('[global resize] Handler executing for', window._splitInsts ? window._splitInsts.length : 0, 'split charts');
+            if (window._splitInsts && window._splitInsts.length > 0) {
+                window._splitInsts.forEach(function(inst, idx) {
+                    if (inst && inst.canvas) {
+                        console.log('[global resize] Updating chart', idx);
+                        var container = inst.canvas.parentElement;
+                        if (container) {
+                            inst.canvas.width = container.clientWidth;
+                            inst.canvas.height = container.clientHeight;
+                        }
+                        inst.resize();
+                        inst.update('none');
+                    }
+                });
+            }
+            /* Also handle single-chart mode */
+            if (window.chartInst && window.chartInst.canvas) {
+                console.log('[global resize] Updating single chart');
+                var container = window.chartInst.canvas.parentElement;
+                if (container) {
+                    window.chartInst.canvas.width = container.clientWidth;
+                    window.chartInst.canvas.height = container.clientHeight;
+                }
+                window.chartInst.resize();
+                window.chartInst.update('none');
+            }
+        }, 150);
+    });
+    console.log('[resize-setup] Global resize handler attached');
+})();
 
 /* ================================================================
    SAMPLING / PERFORMANCE (three modes)
@@ -2051,10 +2296,12 @@ function readFilteredFromMemory(xCol, yCol, groupCol, xRx, yRx, ivXlo, ivXhi, iv
 ================================================================ */
 function onChartTypeChange() {
     var ct      = document.getElementById('chart-type').value;
+    console.log('[onChartTypeChange] Chart type changed to:', ct);
     var isXOnly = ct === 'histogram' || ct === 'cumproba' || ct === 'rcdf';
     var isCum   = ct === 'cumproba' || ct === 'rcdf';
     var isHist  = ct === 'histogram';
     var isBox   = ct === 'boxplot';
+    console.log('[onChartTypeChange] isBox:', isBox);
     function show(id, vis) { var el=document.getElementById(id); if(el) el.style.display=vis?'':'none'; }
     /* boxplot: X = category col (label), Y = numeric value col — both shown */
     show('y-col-label',    !isXOnly);
@@ -2063,6 +2310,7 @@ function onChartTypeChange() {
     show('color-rx-label',  !isBox);
     show('bins-label',      isHist);
     show('bp-maxgroups-label', isBox);
+    show('bp-overlay-label',   isBox);
     show('split-label',     false);               /* cumproba now uses color-col for grouping */
     show('split-rx-label',  false);
     show('y-min-label',    !isXOnly);
@@ -2225,7 +2473,7 @@ function _recipeIds() {
         'chart-type','x-col','y-col','x-regex','y-regex',
         'color-col','color-regex',
         'split-chart-cols','split-chart-h','split-grid-h',
-        'hist-bins','bp-maxgroups',
+        'hist-bins','bp-maxgroups','bp-overlay',
         'x-log','y-log',
         'x-min','x-max','x-step','y-min','y-max','y-step',
         'x-ivlo','x-ivhi','y-ivlo','y-ivhi',
@@ -3764,6 +4012,7 @@ function _buildTileChart(canvas, ct, tileData, xCol, yCol, xRx, yRx, colCol, col
     /* ── Box & Whisker tile ── */
     if (ct === 'boxplot') {
         if (!tileData.length) return null;
+        console.log('[_buildTileChart] Building boxplot tile with', tileData.length, 'points');
         /* For boxplot tiles: X col = category (stored in pt.group), Y col = numeric (pt.y).
            Use seen-set for O(1) dedup; cap at MAX_GROUPS to stay responsive. */
         var _maxGrpEl2 = document.getElementById('bp-maxgroups');
@@ -3784,6 +4033,21 @@ function _buildTileChart(canvas, ct, tileData, xCol, yCol, xRx, yRx, colCol, col
         var bpKeys = bpOrder.slice()
                             .sort(function(a,b){ return a.localeCompare(b,undefined,{numeric:true}); });
         if (!bpKeys.length) return null;
+        
+        /* Generate scatter data with ADAPTIVE jitter based on density */
+        var scatterData = [];
+        bpKeys.forEach(function(k, gIdx) {
+            var groupData = bpGroups[k];
+            var n = groupData.length;
+            /* Higher density groups get wider spread, lower density groups get tighter spread */
+            var maxJitter = 0.15 + (Math.min(n, 100) / 100) * 0.25;  /* 0.15 to 0.4 range */
+            groupData.forEach(function(yVal) {
+                var xJitter = gIdx + (Math.random() - 0.5) * maxJitter;
+                scatterData.push({ x: xJitter, y: yVal, gIdx: gIdx });
+            });
+        });
+        console.log('[_buildTileChart] Generated', scatterData.length, 'scatter points with adaptive density-based jitter');
+        
         var bpDataset = [{
             label: yCol,
             data: bpKeys.map(function(k){ return bpGroups[k]; }),
@@ -3792,8 +4056,12 @@ function _buildTileChart(canvas, ct, tileData, xCol, yCol, xRx, yRx, colCol, col
             borderWidth: 1.5,
             outlierBackgroundColor: bpKeys.map(function(_,i){ return PALETTE[i%PALETTE.length]; }),
             outlierRadius: 3,
-            medianColor: '#fff'
+            medianColor: '#fff',
+            /* Attach scatter data for overlay plugin */
+            _scatterData: scatterData,
+            _scatterVisible: document.getElementById('bp-overlay') && document.getElementById('bp-overlay').checked
         }];
+        
         return new Chart(ctx, {
             type: 'boxplot',
             data: { labels: bpKeys, datasets: bpDataset },
@@ -3801,7 +4069,8 @@ function _buildTileChart(canvas, ct, tileData, xCol, yCol, xRx, yRx, colCol, col
                 animation: false, responsive: true, maintainAspectRatio: false,
                 plugins: {
                     legend: { display: false }, annotation: ann,
-                    tooltip: { enabled: false, external: _htmlTooltip }
+                    tooltip: { enabled: false, external: _htmlTooltip },
+                    scatterOverlay: {}  /* Enable the plugin */
                 },
                 scales: {
                     x: { type: 'category', title: { display: true, text: _axisXTitle(xCol + (xRx ? ' [' + xRx + ']' : '')) },
@@ -4171,7 +4440,23 @@ function _drawSplitCharts() {
 
         var inst = _buildTileChart(canvas, ct, buckets[key] || [],
                     xCol, yCol, xRx, yRx, colCol, colorRx, xLog, yLog, splitCol, splitRx, ki+1);
-        if (inst) _splitInsts.push(inst);
+        if (inst) {
+            _splitInsts.push(inst);
+            /* Attach ResizeObserver to tile for responsive resize handling */
+            if (window.ResizeObserver) {
+                var resizeObs = new ResizeObserver(function() {
+                    console.log('[ResizeObserver] Tile resized, updating chart');
+                    if (inst && inst.canvas && inst.canvas.parentElement) {
+                        var container = inst.canvas.parentElement;
+                        inst.canvas.width = container.clientWidth;
+                        inst.canvas.height = container.clientHeight;
+                        inst.resize();
+                        inst.update('none');
+                    }
+                });
+                resizeObs.observe(tile);
+            }
+        }
     });
 
     _wireTileTitles();
@@ -4388,17 +4673,26 @@ function _savePlotPng() {
 function drawPlot() {
     try {
         console.log('[drawPlot] Starting drawPlot()');
-        _updatePlotCoverBanner();
-        _spinStart();
-        var scDims = _gdimRead('sc');
-        var scCol = scDims.length > 0 ? scDims[0].col : '';
-
-        /* Toggle between single-chart and split-chart modes */
-        var singleArea = document.getElementById('plot-area');
-        var gridArea   = document.getElementById('plot-grid');
-
         try {
+            console.log('[drawPlot] About to call _updatePlotCoverBanner()');
+            _updatePlotCoverBanner();
+            console.log('[drawPlot] _updatePlotCoverBanner() completed');
+            
+            console.log('[drawPlot] About to call _spinStart()');
+            _spinStart();
+            console.log('[drawPlot] _spinStart() completed');
+            
+            console.log('[drawPlot] About to call _gdimRead');
+            var scDims = _gdimRead('sc');
+            var scCol = scDims.length > 0 ? scDims[0].col : '';
+            console.log('[drawPlot] scDims:', scDims.length, 'scCol:', scCol);
+
+            /* Toggle between single-chart and split-chart modes */
+            var singleArea = document.getElementById('plot-area');
+            var gridArea   = document.getElementById('plot-grid');
+
             if (scCol) {
+                console.log('[drawPlot] Split-chart mode detected');
                 /* Split-chart mode */
                 if (chartInst) { chartInst.destroy(); chartInst = null; }
                 singleArea.style.display = 'none';
@@ -4407,36 +4701,35 @@ function drawPlot() {
                 return;
             }
 
+            console.log('[drawPlot] Single-chart mode');
             /* Single-chart mode */
             _destroySplitCharts();
             gridArea.style.display   = 'none';
             singleArea.style.display = '';
             /* Restore a sensible floor if the handle had previously collapsed it */
             if (!singleArea.style.minHeight || parseInt(singleArea.style.minHeight) < 80) {
-            singleArea.style.minHeight = '220px';
-            singleArea.style.maxHeight = '340px';
-        }
+                singleArea.style.minHeight = '220px';
+                singleArea.style.maxHeight = '340px';
+            }
 
-        var ct = document.getElementById('chart-type').value;
-        console.log('[drawPlot] Chart type selected:', ct);
-        if (ct === 'histogram') { drawHistogram(); return; }
-        if (ct === 'cumproba')  { drawCumProba();  return; }
-        if (ct === 'rcdf')      { drawRcdf();      return; }
-        if (ct === 'boxplot')   { drawBoxPlot();   return; }
-        drawScatterLine();
-    } catch(e) {
-        console.error('[drawPlot] Inner error:', e.message, e.stack);
-        var st = document.getElementById('plot-status');
-        if (st) st.textContent = 'Plot error: ' + e.message;
-        _spinStop();
-    }
+            var ct = document.getElementById('chart-type').value;
+            console.log('[drawPlot] Chart type selected:', ct);
+            if (ct === 'histogram') { drawHistogram(); return; }
+            if (ct === 'cumproba')  { drawCumProba();  return; }
+            if (ct === 'rcdf')      { drawRcdf();      return; }
+            if (ct === 'boxplot')   { console.log('[drawPlot] Calling drawBoxPlot()'); drawBoxPlot();   return; }
+            drawScatterLine();
+        } catch(e) {
+            console.error('[drawPlot] Inner error:', e.message, e.stack);
+            var st = document.getElementById('plot-status');
+            if (st) st.textContent = 'Plot error: ' + e.message;
+            _spinStop();
+        }
     } catch(outerE) {
         console.error('[drawPlot] OUTER ERROR:', outerE.message, outerE.stack);
         _spinStop();
     }
-}
-
-/* ── Scatter / Line ──────────────────────────────────────────────────── */
+}/* ── Scatter / Line ──────────────────────────────────────────────────── */
 function drawScatterLine() {
     _resetTitleBar();
     var xCol     = document.getElementById('x-col').value;
@@ -4879,11 +5172,11 @@ function drawCumProba() {
                     title: { display: true,
                              text: _axisXTitle(xCol + (xRx ? ' [' + xRx + ']' : '') + (xLog ? ' (log)' : '')) }
                 }, getAxisScale('x-min', 'x-max', 'x-step')),
-                y: {
+                y: Object.assign({
                     title: { display: true, text: _axisYTitle('Cumulative Probability') },
                     min: 0, max: 1,
                     ticks: { callback: function(v){ return (v*100).toFixed(0)+'%'; } }
-                }
+                }, getAxisScale('y-min', 'y-max', 'y-step'))
             }
         }
     });
@@ -5006,11 +5299,11 @@ function drawRcdf() {
                     title: { display: true,
                              text: _axisXTitle(xCol + (xRx ? ' [' + xRx + ']' : '') + (xLog ? ' (log)' : '')) }
                 }, getAxisScale('x-min', 'x-max', 'x-step')),
-                y: {
+                y: Object.assign({
                     title: { display: true, text: _axisYTitle('Reverse Cumulative Probability') },
                     min: 0, max: 1,
                     ticks: { callback: function(v){ return (v*100).toFixed(0)+'%'; } }
-                }
+                }, getAxisScale('y-min', 'y-max', 'y-step'))
             }
         }
     });
@@ -5045,8 +5338,9 @@ function drawBoxPlot() {
     var yRx     = document.getElementById('y-regex').value.trim();
     var status  = document.getElementById('plot-status');
 
-    if (!currentCsvId) { status.textContent = 'Session expired \u2014 re-parse file.'; _spinStop(); return; }
-    if (!yCol)         { status.textContent = 'Select a Y column for the numeric values.'; _spinStop(); return; }
+    console.log('[boxplot] drawBoxPlot() ENTERED - xCol:', xCol, 'yCol:', yCol);
+    if (!currentCsvId) { console.log('[boxplot] EARLY EXIT: currentCsvId missing'); status.textContent = 'Session expired \u2014 re-parse file.'; _spinStop(); return; }
+    if (!yCol)         { console.log('[boxplot] EARLY EXIT: yCol missing'); status.textContent = 'Select a Y column for the numeric values.'; _spinStop(); return; }
     status.textContent = 'Computing\u2026';
 
     var xi = currentHeaders.indexOf(xCol);
@@ -5089,18 +5383,107 @@ function drawBoxPlot() {
 
     if (!keys.length) { status.textContent = 'No numeric values in column ' + yCol; _spinStop(); return; }
 
-    var datasets = [{
-        label: yCol,
-        data: keys.map(function(k){ return groups[k]; }),
-        backgroundColor: keys.map(function(_,i){ return PALETTE[i % PALETTE.length] + '55'; }),
-        borderColor:     keys.map(function(_,i){ return PALETTE[i % PALETTE.length]; }),
-        borderWidth: 1.5,
-        outlierBackgroundColor: keys.map(function(_,i){ return PALETTE[i % PALETTE.length]; }),
-        outlierRadius: 3,
-        medianColor: '#fff'
-    }];
+    /* Helper: create jittered scatter data points with ADAPTIVE density-based spread */
+    var scatterData = [];
+    keys.forEach(function(k, gIdx) {
+        var groupData = groups[k];
+        var n = groupData.length;
+        /* Higher density groups get wider spread, lower density groups get tighter spread */
+        var maxJitter = 0.15 + (Math.min(n, 100) / 100) * 0.25;  /* 0.15 to 0.4 range */
+        groupData.forEach(function(yVal) {
+            /* Jitter x-position based on group density */
+            var xJitter = gIdx + (Math.random() - 0.5) * maxJitter;
+            scatterData.push({ x: xJitter, y: yVal, gIdx: gIdx });
+        });
+    });
+    console.log('[boxplot] Generated', scatterData.length, 'scatter points with adaptive density-based jitter');
+
+    var datasets = [
+        {
+            label: yCol,
+            data: keys.map(function(k){ return groups[k]; }),
+            backgroundColor: keys.map(function(_,i){ return PALETTE[i % PALETTE.length] + '55'; }),
+            borderColor:     keys.map(function(_,i){ return PALETTE[i % PALETTE.length]; }),
+            borderWidth: 1.5,
+            outlierBackgroundColor: keys.map(function(_,i){ return PALETTE[i % PALETTE.length]; }),
+            outlierRadius: 3,
+            medianColor: '#fff',
+            /* Store scatter data for later rendering */
+            _scatterData: scatterData,
+            _scatterVisible: true
+        }
+    ];
 
     if (chartInst) chartInst.destroy();
+    
+    /* Register custom scatter overlay plugin */
+    console.log('[boxplot] Checking if plugin already registered...');
+    var existingPlugin = Chart.plugins.getAll().find(p => p.id === 'scatterOverlay');
+    console.log('[boxplot] Existing plugin found:', !!existingPlugin);
+    
+    if (!existingPlugin) {
+        console.log('[boxplot] Registering NEW scatterOverlay plugin...');
+        Chart.register({
+            id: 'scatterOverlay',
+            afterDraw: function(chart) {
+                console.log('[scatterOverlay] afterDraw FIRED!');
+                if (!chart.data || !chart.data.datasets || !chart.data.datasets[0]) {
+                    console.log('[scatterOverlay] Missing chart data');
+                    return;
+                }
+                if (!chart.data.datasets[0]._scatterVisible) {
+                    console.log('[scatterOverlay] _scatterVisible is false, skipping');
+                    return;
+                }
+                var scatterData = chart.data.datasets[0]._scatterData;
+                console.log('[scatterOverlay] scatterData length:', scatterData ? scatterData.length : 'null/undefined');
+                if (!scatterData || !scatterData.length) {
+                    console.log('[scatterOverlay] No scatterData, returning');
+                    return;
+                }
+                
+                var ctx = chart.ctx;
+                var xScale = chart.scales.x;
+                var yScale = chart.scales.y;
+                console.log('[scatterOverlay] Scales available:', !!xScale, !!yScale);
+                
+                if (!xScale || !yScale) {
+                    console.log('[scatterOverlay] Missing scales');
+                    return;
+                }
+                
+                var palette = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf'];
+                var pointsRendered = 0;
+                
+                scatterData.forEach(function(p) {
+                    try {
+                        var baseXPixel = xScale.getPixelForValue(p.gIdx);
+                        var categoryWidth = xScale.getPixelForValue(1) - xScale.getPixelForValue(0);
+                        var jitterX = (p.x - p.gIdx) * categoryWidth;
+                        var xPixel = baseXPixel + jitterX;
+                        var yPixel = yScale.getPixelForValue(p.y);
+                        var color = palette[p.gIdx % palette.length];
+                        
+                        ctx.beginPath();
+                        ctx.arc(xPixel, yPixel, 4.5, 0, 2 * Math.PI);  /* Larger radius for visibility */
+                        ctx.fillStyle = color + 'FF';  /* Fully opaque for debugging */
+                        ctx.fill();
+                        ctx.strokeStyle = color;
+                        ctx.lineWidth = 2;
+                        ctx.stroke();
+                        pointsRendered++;
+                    } catch(e) {
+                        console.log('[scatterOverlay] Error rendering point:', e);
+                    }
+                });
+                console.log('[scatterOverlay] Successfully rendered', pointsRendered, 'points');
+            }
+        });
+        console.log('[boxplot] Plugin registration complete');
+    } else {
+        console.log('[boxplot] Plugin already exists, skipping registration');
+    }
+    
     try {
     chartInst = new Chart(document.getElementById('plot-canvas').getContext('2d'), {
         type: 'boxplot',
@@ -5137,11 +5520,12 @@ function drawBoxPlot() {
             scales: {
                 x: {
                     type: 'category',
-                    title: { display: true, text: _axisXTitle(xCol + (xRx ? ' [' + xRx + ']' : '')) },
+                    title: { display: true, text: _axisXTitle(xCol + (xRx ? ' [' + xRx + ']' : '')), font: { size: _axisFontSize || 12 } },
                     ticks: {
                         maxRotation: 45,
                         minRotation: 0,
-                        autoSkip: false
+                        autoSkip: false,
+                        font: { size: _axisFontSize || 12 }
                     },
                     offset: true
                 },
@@ -5158,7 +5542,7 @@ function drawBoxPlot() {
     var capNote  = capped ? ' \u26a0 capped at ' + MAX_GROUPS + ' groups \u2014 use X regex to reduce' : '';
     status.textContent = total.toLocaleString() + ' values, '
         + keys.length + ' group' + (keys.length !== 1 ? 's' : '')
-        + (skipped > 0 ? ', ' + skipped + ' skipped' : '') + filtNote + _intervalNote() + capNote;
+        + (skipped > 0 ? ', ' + skipped + ' skipped' : '') + filtNote + _intervalNote() + capNote + ' [overlay: ' + scatterData.length + ' pts]';
     _showChartIdBadge();  /* Show badge for single chart */
     _spinStop();
 }
