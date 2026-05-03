@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Chat Debug Test</title>
+    <style>
+        body { font-family: Arial; margin: 20px; }
+        #console { border: 1px solid #ccc; padding: 10px; height: 300px; overflow-y: auto; background: #f5f5f5; margin-top: 10px; font-size: 12px; }
+        .log { margin: 2px 0; }
+        .error { color: red; }
+        .info { color: blue; }
+        button { padding: 10px 20px; font-size: 14px; }
+    </style>
+</head>
+<body>
+    <h1>Chat Debug Test</h1>
+    <button onclick="testChat()">Send Test Message</button>
+    <button onclick="clearConsole()">Clear Console</button>
+    <div id="console"></div>
+
+    <script>
+        function log(msg, type = 'info') {
+            var consoleDiv = document.getElementById('console');
+            var div = document.createElement('div');
+            div.className = 'log ' + type;
+            div.textContent = '[' + new Date().toLocaleTimeString() + '] ' + msg;
+            consoleDiv.appendChild(div);
+            consoleDiv.scrollTop = consoleDiv.scrollHeight;
+            console.log(msg);
+        }
+
+        function clearConsole() {
+            document.getElementById('console').innerHTML = '';
+        }
+
+        // Patch console.log to also show in our debug console
+        var originalLog = console.log;
+        var originalError = console.error;
+        console.log = function(...args) {
+            log(args.join(' '), 'info');
+            originalLog.apply(console, args);
+        };
+        console.error = function(...args) {
+            log(args.join(' '), 'error');
+            originalError.apply(console, args);
+        };
+
+        function testChat() {
+            log('Testing chat endpoint...', 'info');
+            
+            var payload = {
+                csv_id: '__default__',
+                message: 'Hello',
+                context: 'Test context',
+                model: 'mistral:latest'
+            };
+            
+            log('Sending payload: ' + JSON.stringify(payload), 'info');
+            
+            fetch('/chat_stream', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            })
+            .then(function(r) {
+                log('Response received: ' + r.status + ' ' + r.statusText, 'info');
+                
+                if (!r.body) {
+                    log('ERROR: No response body!', 'error');
+                    return;
+                }
+                
+                var reader = r.body.getReader();
+                var decoder = new TextDecoder();
+                var buf = '';
+                var chunkCount = 0;
+                
+                function pump() {
+                    return reader.read().then(function(result) {
+                        if (result.done) {
+                            log('Stream finished after ' + chunkCount + ' chunks', 'info');
+                            return;
+                        }
+                        chunkCount++;
+                        buf += decoder.decode(result.value, {stream: true});
+                        var parts = buf.split('\n\n');
+                        buf = parts.pop();
+                        parts.forEach(function(part) {
+                            if (part.trim().startsWith('data:')) {
+                                try {
+                                    var d = JSON.parse(part.trim().slice(5).trim());
+                                    if (d.token) {
+                                        log('Token: ' + d.token, 'info');
+                                    }
+                                } catch(e) {}
+                            }
+                        });
+                        return pump();
+                    });
+                }
+                return pump();
+            })
+            .catch(function(err) {
+                log('Fetch error: ' + err.message, 'error');
+            });
+        }
+
+        log('Chat debug page loaded', 'info');
+    </script>
+</body>
+</html>
