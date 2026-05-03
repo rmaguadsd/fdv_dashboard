@@ -3488,7 +3488,7 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 /* Font size selection handlers */
-var _pointSize = 8;
+var _pointSize = 1.5;
 var _axisFontSize = 12;
 var _legendFontSize = 12;
 var _selectedFontItem = 'point'; // Currently selected font item - default to 'point'
@@ -3511,10 +3511,12 @@ function _onFontItemSelect() {
     var currentVal = '';
     
     if (_selectedFontItem === 'point') {
-        // Point size: 4-20px
-        for (var i = 4; i <= 20; i += 2) {
-            var selected = (i === _pointSize) ? ' selected' : '';
-            options += '<option value="' + i + '"' + selected + '>' + i + 'px</option>';
+        // Point size: 1.5-20px (including 1.5 as explicit option)
+        var pointSizes = [1.5, 4, 6, 8, 10, 12, 14, 16, 18, 20];
+        for (var j = 0; j < pointSizes.length; j++) {
+            var size = pointSizes[j];
+            var selected = (size === _pointSize) ? ' selected' : '';
+            options += '<option value="' + size + '"' + selected + '>' + size + 'px</option>';
         }
         currentVal = _pointSize + 'px';
     } else if (_selectedFontItem === 'axis') {
