@@ -1196,6 +1196,11 @@ class RequestHandler(BaseHTTPRequestHandler):
                 model   = body.get('model', '').strip() or None
                 if not message:
                     raise ValueError('Empty message')
+                
+                # Log context reception for debugging
+                context_len = len(context) if context else 0
+                with open(log_path, 'a') as f:
+                    f.write(f"[CHAT] csv_id={csv_id} context_bytes={context_len} message_len={len(message)}\n")
 
                 with _chat_sessions_lock:
                     if csv_id not in _chat_sessions:
@@ -1240,6 +1245,15 @@ class RequestHandler(BaseHTTPRequestHandler):
 
                     messages_snapshot = list(_chat_sessions[csv_id])
 
+                # Log the messages being sent to Ollama
+                system_count = sum(1 for m in messages_snapshot if m['role'] == 'system')
+                user_count = sum(1 for m in messages_snapshot if m['role'] == 'user')
+                assistant_count = sum(1 for m in messages_snapshot if m['role'] == 'assistant')
+                context_in_system = any('chart context' in m.get('content', '').lower() 
+                                       for m in messages_snapshot if m['role'] == 'system')
+                with open(log_path, 'a') as f:
+                    f.write(f"[CHAT_SEND] system={system_count} user={user_count} assistant={assistant_count} has_chart_context={context_in_system}\n")
+
                 # Call LLM outside the lock (slow network I/O)
                 reply = _call_llm(messages_snapshot, model=model)
 
@@ -1263,6 +1277,11 @@ class RequestHandler(BaseHTTPRequestHandler):
                 model   = body.get('model', '').strip() or _LLM_MODEL
                 if not message:
                     raise ValueError('Empty message')
+                
+                # Log context reception for debugging
+                context_len = len(context) if context else 0
+                with open(log_path, 'a') as f:
+                    f.write(f"[CHAT_STREAM] csv_id={csv_id} context_bytes={context_len} message_len={len(message)} model={model}\n")
 
                 # ── Build / update session history (same logic as /chat) ──
                 with _chat_sessions_lock:
@@ -1298,6 +1317,15 @@ class RequestHandler(BaseHTTPRequestHandler):
                         conv_msgs = conv_msgs[-max_conv:]
                     _chat_sessions[csv_id] = system_msgs + conv_msgs
                     messages_snapshot = list(_chat_sessions[csv_id])
+                
+                # Log the messages being sent to Ollama
+                system_count = sum(1 for m in messages_snapshot if m['role'] == 'system')
+                user_count = sum(1 for m in messages_snapshot if m['role'] == 'user')
+                assistant_count = sum(1 for m in messages_snapshot if m['role'] == 'assistant')
+                context_in_system = any('chart context' in m.get('content', '').lower() 
+                                       for m in messages_snapshot if m['role'] == 'system')
+                with open(log_path, 'a') as f:
+                    f.write(f"[OLLAMA_SEND] system={system_count} user={user_count} assistant={assistant_count} has_chart_context={context_in_system}\n")
 
                 # ── Send SSE headers ──
                 self.send_response(200)

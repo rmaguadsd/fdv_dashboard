@@ -485,7 +485,7 @@
         }
         .ch-msg {
             max-width: 88%; padding: 5px 10px; border-radius: 8px;
-            font-size: 0.82em; line-height: 1.5;
+            font-size: 1.1em; line-height: 1.5;
             white-space: pre-wrap; word-break: break-word;
         }
         .ch-msg.user {
@@ -497,7 +497,7 @@
             border: 1px solid #bee5eb; border-bottom-left-radius: 2px;
         }
         .ch-msg.note {
-            align-self: center; font-size: 0.74em; color: #888;
+            align-self: center; font-size: 1.0em; color: #888;
             font-style: italic; background: none; border: none; padding: 1px 0;
             max-width: 100%;
         }
@@ -510,7 +510,7 @@
             padding: 5px 8px; border-top: 1px solid #bee5eb; background: #fff;
         }
         #chat-input {
-            flex: 1 1 0; padding: 5px 8px; font-size: 0.83em;
+            flex: 1 1 0; padding: 5px 8px; font-size: 1.1em;
             border: 1px solid #17a2b8; border-radius: 4px;
             resize: none; height: 36px; font-family: inherit; overflow-y: auto;
         }
@@ -518,7 +518,7 @@
         #chat-send-btn {
             padding: 5px 14px; background: #17a2b8; color: #fff;
             border: none; border-radius: 4px; cursor: pointer;
-            font-size: 0.83em; white-space: nowrap; align-self: flex-end;
+            font-size: 1.1em; white-space: nowrap; align-self: flex-end;
         }
         #chat-send-btn:hover    { background: #138496; }
         #chat-send-btn:disabled { opacity: 0.55; cursor: not-allowed; }
@@ -991,10 +991,10 @@
             </div>
             <div class="ch-btns">
                 <!-- Font size control -->
-                <label style="font-size:0.82em;color:#fff;white-space:nowrap;margin-right:6px;display:flex;align-items:center;gap:3px"
+                <label style="font-size:1.1em;color:#fff;white-space:nowrap;margin-right:6px;display:flex;align-items:center;gap:3px"
                        title="Chat message text size">
                     <span>Font:</span>
-                    <select id="chat-font-size" style="padding:2px 3px;font-size:0.82em;border-radius:3px;border:1px solid rgba(255,255,255,0.3);background:#138496;color:#fff;cursor:pointer"
+                    <select id="chat-font-size" style="padding:2px 3px;font-size:1.1em;border-radius:3px;border:1px solid rgba(255,255,255,0.3);background:#138496;color:#fff;cursor:pointer"
                             onchange="_applyChatFontSize(this.value)">
                         <option value="0.75em">XS</option>
                         <option value="0.82em" selected>S</option>
@@ -1005,11 +1005,11 @@
                 </label>
                 
                 <!-- Chat provider control -->
-                <label style="font-size:0.82em;color:#fff;white-space:nowrap;margin-right:6px;display:flex;align-items:center;gap:3px"
+                <label style="font-size:1.1em;color:#fff;white-space:nowrap;margin-right:6px;display:flex;align-items:center;gap:3px"
                        title="Select chat provider">
                     <span>Provider:</span>
                     <select id="chat-provider-sel"
-                            style="font-size:0.82em;padding:2px 3px;border-radius:3px;border:1px solid rgba(255,255,255,0.3);background:#138496;color:#fff;cursor:pointer"
+                            style="font-size:1.1em;padding:2px 3px;border-radius:3px;border:1px solid rgba(255,255,255,0.3);background:#138496;color:#fff;cursor:pointer"
                             onchange="_onChatProviderChange()">
                         <option value="ollama">Ollama</option>
                         <option value="connectmaigpt" selected>ConnectMaiGPT</option>
@@ -1017,10 +1017,10 @@
                 </label>
                 
                 <!-- Ollama model selector -->
-                <label id="ollama-model-wrap" style="font-size:0.82em;color:#fff;white-space:nowrap;margin-right:6px;display:flex;align-items:center;gap:3px"
+                <label id="ollama-model-wrap" style="font-size:1.1em;color:#fff;white-space:nowrap;margin-right:6px;display:flex;align-items:center;gap:3px"
                        title="Select Ollama model">
                     <select id="llm-model-sel" onchange="_updateChatBanner()"
-                            style="font-size:0.82em;padding:2px 3px;border-radius:3px;border:1px solid rgba(255,255,255,0.3);background:#138496;color:#fff;cursor:pointer">
+                            style="font-size:1.1em;padding:2px 3px;border-radius:3px;border:1px solid rgba(255,255,255,0.3);background:#138496;color:#fff;cursor:pointer">
                         <option value="llama3">llama3</option>
                         <option value="gemma4">gemma4</option>
                     </select>
@@ -1032,20 +1032,20 @@
                 </label>
                 
                 <!-- MaiGPT model selector -->
-                <label id="maigpt-model-wrap" style="font-size:0.82em;color:#fff;white-space:nowrap;margin-right:6px;display:none;align-items:center;gap:3px"
+                <label id="maigpt-model-wrap" style="font-size:1.1em;color:#fff;white-space:nowrap;margin-right:6px;display:none;align-items:center;gap:3px"
                        title="ConnectMaiGPT model">
                     <select id="maigpt-model-sel"
-                            style="font-size:0.82em;padding:2px 3px;border-radius:3px;border:1px solid rgba(255,255,255,0.3);background:#138496;color:#fff;cursor:pointer">
+                            style="font-size:1.1em;padding:2px 3px;border-radius:3px;border:1px solid rgba(255,255,255,0.3);background:#138496;color:#fff;cursor:pointer">
                         <option value="gpt4" selected>gpt4</option>
                         <option value="claude-3-5-sonnet">claude-3-5-sonnet</option>
                     </select>
                 </label>
                 
                 <!-- Rows control -->
-                <label style="font-size:0.82em;color:#fff;white-space:nowrap;margin-right:6px;display:flex;align-items:center;gap:3px"
+                <label style="font-size:1.1em;color:#fff;white-space:nowrap;margin-right:6px;display:flex;align-items:center;gap:3px"
                        title="Number of raw data rows in chat context">
                     <span>Rows:</span>
-                    <select id="chat-sample-size" style="font-size:0.82em;padding:2px 3px;border-radius:3px;border:1px solid rgba(255,255,255,0.3);background:#138496;color:#fff;cursor:pointer"
+                    <select id="chat-sample-size" style="font-size:1.1em;padding:2px 3px;border-radius:3px;border:1px solid rgba(255,255,255,0.3);background:#138496;color:#fff;cursor:pointer"
                             onchange="_chatDataSampleSize=parseInt(this.value)">
                         <option value="0">none</option>
                         <option value="20">20</option>
@@ -1057,9 +1057,9 @@
                 </label>
                 
                 <!-- Action buttons -->
-                <button type="button" onclick="_chatInjectContext()" style="padding:2px 6px;font-size:0.8em;background:rgba(255,255,255,0.18);border:1px solid rgba(255,255,255,0.35);color:#fff;border-radius:3px;cursor:pointer;white-space:nowrap"
+                <button type="button" onclick="_chatInjectContext()" style="padding:2px 6px;font-size:1.0em;background:rgba(255,255,255,0.18);border:1px solid rgba(255,255,255,0.35);color:#fff;border-radius:3px;cursor:pointer;white-space:nowrap"
                         title="Re-send current chart statistics as context">&#8635; Inject</button>
-                <button type="button" onclick="_chatReset()" style="padding:2px 6px;font-size:0.8em;background:rgba(255,255,255,0.18);border:1px solid rgba(255,255,255,0.35);color:#fff;border-radius:3px;cursor:pointer;white-space:nowrap"
+                <button type="button" onclick="_chatReset()" style="padding:2px 6px;font-size:1.0em;background:rgba(255,255,255,0.18);border:1px solid rgba(255,255,255,0.35);color:#fff;border-radius:3px;cursor:pointer;white-space:nowrap"
                         title="Clear history and start a new session">&#128465; New</button>
             </div>
         </div>
