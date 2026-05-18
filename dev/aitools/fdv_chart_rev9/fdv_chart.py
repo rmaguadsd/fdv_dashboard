@@ -5,6 +5,19 @@ log_path = r'd:\FDV\git\fdv_dashboard\dev\aitools\fdv_chart\fdv_chart_startup.lo
 with open(log_path, 'w') as f:
     f.write("STARTUP_BEGIN\n")
 
+# Also set up a debug log file
+DEBUG_LOG = r'd:\FDV\git\fdv_dashboard\dev\aitools\fdv_chart\fdv_chart_debug.log'
+
+def debug_log(msg):
+    """Write message to debug log and stdout"""
+    try:
+        with open(DEBUG_LOG, 'a') as f:
+            f.write(msg + '\n')
+            f.flush()
+    except:
+        pass
+    print(msg, flush=True)
+
 print("PYTHON_START")
 sys.stdout.flush()
 sys.stderr.write("STDERR_START\n")
@@ -34,6 +47,7 @@ import time
 import threading
 import http.client
 import urllib.request
+import sqlite3
 from pathlib import Path
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from socketserver import ThreadingMixIn
@@ -200,6 +214,76 @@ parsed_cache = {}
 parse_jobs = {}
 parse_jobs_lock = threading.Lock()
 
+# SQLite cache for large datasets: cache_id -> {'db_path': str, 'row_count': int}
+sqlite_cache = {}
+sqlite_cache_lock = threading.Lock()
+
+# Batch size for SQLite inserts (50K rows per batch = ~150MB in memory, safe)
+SQLITE_BATCH_SIZE = 50000
+
+# Cache directory for SQLite databases
+CACHE_DIR = tempfile.gettempdir() + '/fdv_chart_cache'
+Path(CACHE_DIR).mkdir(exist_ok=True)
+
+def _get_sqlite_db(cache_id, headers):
+    """Get or create a SQLite database for row caching.
+    
+    Args:
+        cache_id: Unique ID for this parse cache
+        headers: List of column headers
+        
+    Returns:
+        sqlite3.Connection to the cache database
+    """
+    db_path = f"{CACHE_DIR}/{cache_id}.db"
+    db = sqlite3.connect(db_path, check_same_thread=False)
+    db.row_factory = sqlite3.Row
+    
+    # Create table if not exists
+    col_defs = ', '.join([f'"{h}" TEXT' for h in headers])
+    db.execute(f'CREATE TABLE IF NOT EXISTS rows (id INTEGER PRIMARY KEY, {col_defs})')
+    db.commit()
+    
+    return db
+
+def _batch_insert_rows(db, headers, batch):
+    """Insert a batch of rows into SQLite.
+    
+    Args:
+        db: sqlite3.Connection
+        headers: List of column headers
+        batch: List of row lists to insert
+    """
+    if not batch:
+        return
+    
+    placeholders = ','.join(['?' for _ in headers])
+    col_names = ','.join([f'"{h}"' for h in headers])
+    sql = f'INSERT INTO rows ({col_names}) VALUES ({placeholders})'
+    
+    # Convert rows to tuples for batch insert
+    rows_as_tuples = [tuple(row) if isinstance(row, list) else tuple(row) for row in batch]
+    db.executemany(sql, rows_as_tuples)
+    db.commit()
+
+def _get_total_rows(cache_id):
+    """Get total row count from SQLite cache."""
+    with sqlite_cache_lock:
+        cache_info = sqlite_cache.get(cache_id)
+    
+    if cache_info:
+        db_path = cache_info.get('db_path')
+        if db_path and Path(db_path).exists():
+            db = sqlite3.connect(db_path, check_same_thread=False)
+            try:
+                cursor = db.execute('SELECT COUNT(*) FROM rows')
+                count = cursor.fetchone()[0]
+                db.close()
+                return count
+            except:
+                pass
+    return 0
+
 
 class ThreadedHTTPServer(ThreadingMixIn, HTTPServer):
     """Handle each request in a separate thread so long parses don't block."""
@@ -221,6 +305,10 @@ def parse_log_file(file_path, regex_include=None, regex_exclude=None, source_nam
     Returns:
         tuple: (headers, data_rows)
     """
+    import time
+    start_parse = time.time()
+    debug_log(f"[parse_log_file] Starting parse of {file_path}, include={regex_include}, exclude={regex_exclude}")
+    
     # ── Unified headers covering both FDV OUTPUT and FDV POLL ──────────────
     HEADERS = [
         'Line#', 'Type', 'DUT',
@@ -391,7 +479,7 @@ def parse_log_file(file_path, regex_include=None, regex_exclude=None, source_nam
         row[_IDX['FDV_File']]    = _fdvfile(m.group('path'))
         return row
 
-    # ── Main parse loop ────────────────────────────────────────────────────
+    # ── Main parse loop with SQLite batching ────────────────────────────────
     try:
         compiled_include = None
         compiled_exclude = None
@@ -406,6 +494,12 @@ def parse_log_file(file_path, regex_include=None, regex_exclude=None, source_nam
             except re.error as e:
                 raise ValueError("Invalid exclude regex: " + str(e))
 
+        # Use SQLite batching for large files: accumulate in memory batch, flush to DB every 50K rows
+        cache_id = 'cache_' + uuid.uuid4().hex[:12]
+        db = _get_sqlite_db(cache_id, HEADERS)
+        batch = []
+        row_count = 0
+        
         with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
             for line in f:
                 line_num += 1
@@ -431,18 +525,42 @@ def parse_log_file(file_path, regex_include=None, regex_exclude=None, source_nam
                     continue   # not a parseable FDV line — skip
 
                 if row:
-                    rows.append(row)
+                    # Stamp row with source filename
+                    src_name = source_name if source_name else Path(file_path).name
+                    row[_IDX['SourceFile']] = src_name
+                    
+                    batch.append(row)
+                    row_count += 1
+                    
+                    # Flush batch to SQLite every 50K rows to keep memory bounded
+                    if len(batch) >= SQLITE_BATCH_SIZE:
+                        _batch_insert_rows(db, HEADERS, batch)
+                        debug_log(f"[parse_log_file] Flushed batch: {row_count} rows total")
+                        batch = []
+        
+        # Flush remaining batch
+        if batch:
+            _batch_insert_rows(db, HEADERS, batch)
+            debug_log(f"[parse_log_file] Flushed final batch: {row_count} rows total")
+        
+        db.close()
+        
+        # Register cache
+        with sqlite_cache_lock:
+            sqlite_cache[cache_id] = {
+                'db_path': f"{CACHE_DIR}/{cache_id}.db",
+                'row_count': row_count,
+                'headers': HEADERS
+            }
 
     except Exception as e:
         raise Exception("Error parsing file: " + str(e))
-
-    # Stamp every row with the source log filename
-    src_name = source_name if source_name else Path(file_path).name
-    src_idx  = _IDX['SourceFile']
-    for row in rows:
-        row[src_idx] = src_name
-
-    return HEADERS, rows
+    
+    elapsed_parse = time.time() - start_parse
+    debug_log(f"[parse_log_file] Completed: {row_count} rows in {elapsed_parse:.2f}s, cache_id={cache_id}")
+    
+    # Return HEADERS and cache_id (not full rows - they're now in SQLite)
+    return HEADERS, cache_id, row_count
 
 
 def get_html():
@@ -461,30 +579,87 @@ _DIR_EXTENSIONS = {'.txt', '.log', '.csv'}
 
 
 def _run_parse_job(job_id, file_path, regex_include, regex_exclude, temp_path=None, source_name=None):
-    """Run parse_log_file in a background thread, updating parse_jobs[job_id]."""
+    """Run parse_log_file in a background thread, updating parse_jobs[job_id].
+    
+    Includes dynamic timeout protection based on file size:
+    - 1 GB = 20 minutes
+    - 5 GB = 60 minutes
+    - Capped at 60 minutes maximum
+    """
+    import time
+    import os
+    start_time = time.time()
+    
+    # Calculate dynamic timeout based on file size
+    try:
+        file_size_gb = os.path.getsize(file_path) / (1024 ** 3)
+        # Base 10 min + 10 min per GB, capped at 60 min
+        calculated_timeout = 600 + int(file_size_gb * 600)
+        MAX_PARSE_TIME = max(600, min(calculated_timeout, 3600))
+    except:
+        MAX_PARSE_TIME = 600  # Fallback to 10 min if size check fails
+    
+    print(f"[PARSE_JOB_START] job_id={job_id}, file={file_path}", file=sys.stderr, flush=True)
+    print(f"[PARSE_JOB_START] job_id={job_id}, file={file_path}", flush=True)
+    debug_log(f"[PARSE_JOB] Timeout set to {MAX_PARSE_TIME}s for {file_size_gb:.2f}GB file")
+    
     try:
         with parse_jobs_lock:
             parse_jobs[job_id]['state'] = 'running'
+            parse_jobs[job_id]['start_time'] = start_time
 
-        headers, rows = parse_log_file(file_path, regex_include=regex_include, regex_exclude=regex_exclude, source_name=source_name)
+        print(f"[PARSE_JOB] Parsing {file_path}, include={regex_include}, exclude={regex_exclude}", flush=True)
+        headers, cache_id, row_count = parse_log_file(file_path, regex_include=regex_include, regex_exclude=regex_exclude, source_name=source_name)
+        print(f"[PARSE_JOB_SUCCESS] Got {row_count} rows from {file_path}, cache_id={cache_id}", file=sys.stderr, flush=True)
+        print(f"[PARSE_JOB_SUCCESS] Got {row_count} rows from {file_path}, cache_id={cache_id}", flush=True)
+        debug_log(f"[PARSE_JOB] Got {row_count} rows from {file_path}")
 
-        if not rows:
+        elapsed = time.time() - start_time
+        if elapsed > MAX_PARSE_TIME:
+            raise TimeoutError(f'Parse job exceeded {MAX_PARSE_TIME}s timeout')
+
+        if row_count == 0:
             raise ValueError('No matching rows found')
 
+        # Now retrieve first 500 rows for preview from SQLite
         csv_id = 'csv_' + uuid.uuid4().hex[:8]
-        parsed_cache[csv_id] = {'headers': headers, 'rows': rows}
+        db_path = f"{CACHE_DIR}/{cache_id}.db"
+        preview_rows = []
+        if Path(db_path).exists():
+            db = sqlite3.connect(db_path, check_same_thread=False)
+            db.row_factory = sqlite3.Row
+            cursor = db.execute('SELECT * FROM rows LIMIT 500')
+            preview_rows = [list(row) for row in cursor.fetchall()]
+            db.close()
+        
+        # Store reference in parsed_cache for backward compatibility
+        parsed_cache[csv_id] = {
+            'headers': headers, 
+            'cache_id': cache_id,
+            'row_count': row_count,
+            'is_sqlite': True
+        }
 
         PREVIEW = 500
         result = {
             'success': True, 'csv_id': csv_id,
-            'headers': headers, 'rows': rows[:PREVIEW],
-            'total_rows': len(rows)
+            'headers': headers, 'rows': preview_rows,
+            'total_rows': row_count,
+            'parse_time_seconds': elapsed,
+            'has_more': row_count > PREVIEW
         }
         with parse_jobs_lock:
             parse_jobs[job_id]['state'] = 'done'
             parse_jobs[job_id]['result'] = result
 
     except Exception as e:
+        error_msg = f"[PARSE_JOB] Error in {job_id}: {e}"
+        print(error_msg, file=sys.stderr, flush=True)
+        print(error_msg, flush=True)
+        try:
+            debug_log(error_msg)
+        except:
+            pass
         with parse_jobs_lock:
             parse_jobs[job_id]['state'] = 'error'
             parse_jobs[job_id]['error'] = str(e)
@@ -497,42 +672,112 @@ def _run_parse_job(job_id, file_path, regex_include, regex_exclude, temp_path=No
 
 
 def _run_parse_multi_job(job_id, file_paths, regex_include, regex_exclude, temp_paths=None, orig_names=None):
-    """Parse multiple files and concatenate results into a single dataset."""
+    """Parse multiple files and concatenate results into a single dataset.
+    
+    Includes dynamic timeout protection based on total file size:
+    - 1 GB = 20 minutes
+    - 5 GB = 60 minutes
+    - Capped at 60 minutes maximum
+    """
+    import time
+    import os
+    start_time = time.time()
+    
+    # Calculate dynamic timeout based on total file size
+    try:
+        total_size_gb = sum(os.path.getsize(fp) / (1024 ** 3) for fp in file_paths)
+        calculated_timeout = 600 + int(total_size_gb * 600)
+        MAX_PARSE_TIME = max(600, min(calculated_timeout, 3600))
+    except:
+        MAX_PARSE_TIME = 600  # Fallback to 10 min if size check fails
+    
+    debug_log(f"[PARSE_MULTI_JOB] Timeout set to {MAX_PARSE_TIME}s for {total_size_gb:.2f}GB total")
+    
     try:
         with parse_jobs_lock:
             parse_jobs[job_id]['state'] = 'running'
+            parse_jobs[job_id]['start_time'] = start_time
 
         all_rows = []
         headers  = None
         errors   = []
+        total_row_count = 0
+        primary_cache_id = None
 
         for i, fp in enumerate(file_paths):
+            elapsed = time.time() - start_time
+            if elapsed > MAX_PARSE_TIME:
+                errors.append(f'Parse job timed out after {MAX_PARSE_TIME}s')
+                break
+            
             src_name = orig_names[i] if orig_names and i < len(orig_names) else None
             try:
-                h, rows = parse_log_file(fp, regex_include=regex_include, regex_exclude=regex_exclude, source_name=src_name)
+                h, cache_id, row_count = parse_log_file(fp, regex_include=regex_include, regex_exclude=regex_exclude, source_name=src_name)
                 if headers is None:
                     headers = h
-                all_rows.extend(rows)
+                    primary_cache_id = cache_id
+                # For multi-file parse, merge rows from all files into primary cache
+                if cache_id != primary_cache_id:
+                    # Copy rows from this cache_id to primary_cache_id
+                    src_db = sqlite3.connect(f"{CACHE_DIR}/{cache_id}.db", check_same_thread=False)
+                    src_db.row_factory = sqlite3.Row
+                    cursor = src_db.execute('SELECT * FROM rows')
+                    rows_to_copy = [list(row) for row in cursor.fetchall()]
+                    src_db.close()
+                    
+                    # Insert into primary cache
+                    dst_db = sqlite3.connect(f"{CACHE_DIR}/{primary_cache_id}.db", check_same_thread=False)
+                    if rows_to_copy:
+                        _batch_insert_rows(dst_db, headers, rows_to_copy)
+                    dst_db.close()
+                    
+                    # Clean up secondary cache
+                    try:
+                        Path(f"{CACHE_DIR}/{cache_id}.db").unlink()
+                    except:
+                        pass
+                
+                total_row_count += row_count
             except Exception as e:
                 display_name = src_name or Path(fp).name
                 errors.append(f'{display_name}: {e}')
 
-        if not all_rows:
+        if total_row_count == 0:
             msg = 'No matching rows found in any file'
             if errors:
                 msg += ' — errors: ' + '; '.join(errors)
             raise ValueError(msg)
 
+        elapsed = time.time() - start_time
         csv_id = 'csv_' + uuid.uuid4().hex[:8]
-        parsed_cache[csv_id] = {'headers': headers, 'rows': all_rows}
+        
+        # Retrieve first 500 rows for preview
+        preview_rows = []
+        if primary_cache_id:
+            db_path = f"{CACHE_DIR}/{primary_cache_id}.db"
+            if Path(db_path).exists():
+                db = sqlite3.connect(db_path, check_same_thread=False)
+                db.row_factory = sqlite3.Row
+                cursor = db.execute('SELECT * FROM rows LIMIT 500')
+                preview_rows = [list(row) for row in cursor.fetchall()]
+                db.close()
+        
+        parsed_cache[csv_id] = {
+            'headers': headers, 
+            'cache_id': primary_cache_id,
+            'row_count': total_row_count,
+            'is_sqlite': True
+        }
 
         PREVIEW = 500
         result = {
             'success': True, 'csv_id': csv_id,
-            'headers': headers, 'rows': all_rows[:PREVIEW],
-            'total_rows': len(all_rows),
+            'headers': headers, 'rows': preview_rows,
+            'total_rows': total_row_count,
             'file_count': len(file_paths),
             'errors': errors,
+            'parse_time_seconds': elapsed,
+            'has_more': total_row_count > PREVIEW
         }
         with parse_jobs_lock:
             parse_jobs[job_id]['state'] = 'done'
@@ -601,43 +846,31 @@ class RequestHandler(BaseHTTPRequestHandler):
             from urllib.parse import urlparse, parse_qs
             qs = parse_qs(urlparse(self.path).query)
             job_id = qs.get('job', [''])[0]
+            debug_log(f"[parse_status] Checking job: {job_id}")
             with parse_jobs_lock:
                 job = parse_jobs.get(job_id)
             if not job:
+                debug_log(f"[parse_status] Job not found: {job_id}")
                 _send_json(self, 404, {'success': False, 'error': 'Job not found'})
                 return
             state = job['state']
+            debug_log(f"[parse_status] Job {job_id} state: {state}")
             if state == 'done':
+                debug_log(f"[parse_status] Job {job_id} returning results")
                 _send_json(self, 200, job['result'])
                 # Clean up job entry after delivery
                 with parse_jobs_lock:
                     parse_jobs.pop(job_id, None)
             elif state == 'error':
-                _send_json(self, 400, {'success': False, 'error': job['error']})
+                error_msg = job['error']
+                debug_log(f"[parse_status] Job {job_id} error: {error_msg}")
+                _send_json(self, 400, {'success': False, 'error': error_msg})
                 with parse_jobs_lock:
                     parse_jobs.pop(job_id, None)
             else:
                 # Still running — return pending status
+                debug_log(f"[parse_status] Job {job_id} still pending")
                 _send_json(self, 202, {'success': False, 'state': state, 'job_id': job_id})
-            # Download CSV
-            csv_id = self.path.split('/')[-1]
-            if csv_id not in parsed_cache:
-                self.send_error(404)
-                return
-            
-            data = parsed_cache[csv_id]
-            output = io.StringIO()
-            writer = csv.writer(output)
-            writer.writerow(data['headers'])
-            writer.writerows(data['rows'])
-            csv_content = output.getvalue().encode('utf-8')
-            
-            self.send_response(200)
-            self.send_header('Content-Type', 'text/csv; charset=utf-8')
-            self.send_header('Content-Disposition', 'attachment; filename=fdv_parse_' + csv_id + '.csv')
-            self.send_header('Content-Length', len(csv_content))
-            self.end_headers()
-            self.wfile.write(csv_content)
 
         elif self.path.startswith('/plot_data'):
             from urllib.parse import urlparse, parse_qs
@@ -663,7 +896,21 @@ class RequestHandler(BaseHTTPRequestHandler):
 
             cached = parsed_cache[csv_id]
             headers = cached['headers']
-            rows    = cached['rows']
+            
+            # Load rows from SQLite if needed
+            if cached.get('is_sqlite'):
+                cache_id = cached.get('cache_id')
+                db_path = f"{CACHE_DIR}/{cache_id}.db"
+                rows = []
+                if Path(db_path).exists():
+                    db = sqlite3.connect(db_path, check_same_thread=False)
+                    db.row_factory = sqlite3.Row
+                    cursor = db.execute('SELECT * FROM rows')
+                    rows = [list(row) for row in cursor.fetchall()]
+                    db.close()
+            else:
+                # Fallback to in-memory rows for backward compatibility
+                rows = cached.get('rows', [])
 
             def col_idx(name):
                 try: return headers.index(name)
@@ -716,6 +963,94 @@ class RequestHandler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(resp)
 
+        elif self.path.startswith('/download_csv/'):
+            # CSV download endpoint: /download_csv/csv_XXXXX
+            csv_id = self.path.split('/')[-1].split('?')[0]
+            
+            if csv_id not in parsed_cache:
+                self.send_error(404)
+                return
+            
+            cached = parsed_cache[csv_id]
+            headers = cached['headers']
+            
+            # Create CSV output
+            output = io.StringIO()
+            writer = csv.writer(output)
+            writer.writerow(headers)
+            
+            # Stream rows from SQLite in batches to manage memory
+            if cached.get('is_sqlite'):
+                cache_id = cached.get('cache_id')
+                db_path = f"{CACHE_DIR}/{cache_id}.db"
+                
+                if Path(db_path).exists():
+                    db = sqlite3.connect(db_path, check_same_thread=False)
+                    db.row_factory = sqlite3.Row
+                    
+                    # Fetch in 10K batches to manage memory
+                    offset = 0
+                    batch_size = 10000
+                    while True:
+                        cursor = db.execute(
+                            'SELECT * FROM rows LIMIT ? OFFSET ?',
+                            (batch_size, offset)
+                        )
+                        rows = cursor.fetchall()
+                        if not rows:
+                            break
+                        for row in rows:
+                            writer.writerow(row)
+                        offset += batch_size
+                    
+                    db.close()
+            else:
+                # Fallback for in-memory rows
+                all_rows = cached.get('rows', [])
+                for row in all_rows:
+                    writer.writerow(row)
+            
+            # Send as file download
+            csv_data = output.getvalue().encode('utf-8')
+            self.send_response(200)
+            self.send_header('Content-Type', 'text/csv; charset=utf-8')
+            self.send_header('Content-Disposition', 
+                           'attachment; filename="data_{0}.csv"'.format(csv_id))
+            self.send_header('Content-Length', len(csv_data))
+            self.end_headers()
+            self.wfile.write(csv_data)
+
+        elif self.path.startswith('/job_status/'):
+            # Job status endpoint: /job_status/job_XXXXX
+            job_id = self.path.split('/')[-1].split('?')[0]
+            
+            with parse_jobs_lock:
+                job = parse_jobs.get(job_id)
+            
+            if not job:
+                _send_json(self, 404, {'success': False, 'error': 'job_id not found'})
+                return
+            
+            state = job.get('state')
+            start_time = job.get('start_time')
+            elapsed = time.time() - start_time if start_time else 0
+            
+            result = {
+                'success': True,
+                'job_id': job_id,
+                'state': state,  # 'pending', 'running', 'done', 'error'
+                'elapsed_seconds': int(elapsed)
+            }
+            
+            if state == 'done':
+                result['result'] = job.get('result')
+            elif state == 'error':
+                result['error'] = job.get('error')
+            elif state == 'running':
+                result['status'] = 'Parsing file...'
+            
+            _send_json(self, 200, result)
+
         elif self.path.startswith('/rows'):
             # Paginated row fetch: /rows?csv_id=...&offset=0&limit=1000
             from urllib.parse import urlparse, parse_qs
@@ -733,14 +1068,38 @@ class RequestHandler(BaseHTTPRequestHandler):
                 self.wfile.write(resp)
                 return
 
-            all_rows = parsed_cache[csv_id]['rows']
-            chunk = all_rows[offset:offset + limit]
+            cached = parsed_cache[csv_id]
+            headers = cached['headers']
+            
+            # Load rows from SQLite
+            if cached.get('is_sqlite'):
+                cache_id = cached.get('cache_id')
+                db_path = f"{CACHE_DIR}/{cache_id}.db"
+                if Path(db_path).exists():
+                    db = sqlite3.connect(db_path, check_same_thread=False)
+                    db.row_factory = sqlite3.Row
+                    # Get total count
+                    cursor = db.execute('SELECT COUNT(*) FROM rows')
+                    total = cursor.fetchone()[0]
+                    # Get paginated chunk
+                    cursor = db.execute('SELECT * FROM rows LIMIT ? OFFSET ?', (limit, offset))
+                    chunk = [list(row) for row in cursor.fetchall()]
+                    db.close()
+                else:
+                    chunk = []
+                    total = 0
+            else:
+                # Fallback to in-memory rows
+                all_rows = cached.get('rows', [])
+                chunk = all_rows[offset:offset + limit]
+                total = len(all_rows)
+            
             resp = json.dumps({
                 'success': True,
                 'rows': chunk,
                 'offset': offset,
-                'total': len(all_rows),
-                'has_more': (offset + limit) < len(all_rows)
+                'total': total,
+                'has_more': (offset + limit) < total
             }).encode()
             self.send_response(200)
             self.send_header('Content-Type', 'application/json')
@@ -916,13 +1275,30 @@ class RequestHandler(BaseHTTPRequestHandler):
 
         elif self.path == '/parse':
             # File upload parse — save to temp, start async job
+            debug_log(f"[/parse] Received upload request")
             try:
                 content_len = int(self.headers.get('Content-Length', 0))
+                debug_log(f"[/parse] Content-Length: {content_len}")
                 if content_len > 2 * 1024 * 1024 * 1024:
                     raise ValueError('File too large (>2 GB)')
 
-                body = self.rfile.read(content_len)
+                # Stream directly to temp file to avoid loading entire upload into memory
+                temp_upload_path = Path(tempfile.gettempdir()) / ('fdv_upload_' + uuid.uuid4().hex + '.tmp')
+                bytes_written = 0
+                max_chunk = 512 * 1024  # 512 KB chunks
+                
+                with open(temp_upload_path, 'wb') as tmp:
+                    while bytes_written < content_len:
+                        chunk_size = min(max_chunk, content_len - bytes_written)
+                        chunk = self.rfile.read(chunk_size)
+                        if not chunk:
+                            break
+                        tmp.write(chunk)
+                        bytes_written += len(chunk)
 
+                # Now parse the multipart data from disk
+                body = temp_upload_path.read_bytes()
+                
                 # Parse multipart form data
                 boundary = None
                 for name, value in self.headers.items():
@@ -972,24 +1348,35 @@ class RequestHandler(BaseHTTPRequestHandler):
                 if not file_content:
                     raise ValueError('No file provided')
 
+                debug_log(f"[/parse] Extracted file_content: {len(file_content)} bytes, orig_filename={orig_filename}, regex={regex_filter}, mode={mode}")
+
                 temp_path = Path(tempfile.gettempdir()) / ('fdv_upload_' + uuid.uuid4().hex + '.log')
                 temp_path.write_bytes(file_content)
                 del body, file_content  # free RAM immediately
+                try:
+                    temp_upload_path.unlink()
+                except:
+                    pass
 
                 job_id = 'job_' + uuid.uuid4().hex[:8]
                 with parse_jobs_lock:
                     parse_jobs[job_id] = {'state': 'pending', 'result': None, 'error': None}
 
+                debug_log(f"[/parse] Created job {job_id}, file_path={temp_path}, include={regex_filter if mode == 'include' and regex_filter else None}, exclude={regex_filter if mode == 'exclude' and regex_filter else None}")
+
                 threading.Thread(
                     target=_run_parse_job,
-                    args=(job_id, str(temp_path), regex_filter if regex_filter else None,
-                          mode == 'include', str(temp_path), orig_filename or None),
+                    args=(job_id, str(temp_path), regex_filter if mode == 'include' and regex_filter else None,
+                          regex_filter if mode == 'exclude' and regex_filter else None, str(temp_path), orig_filename or None),
                     daemon=True
                 ).start()
 
                 _send_json(self, 202, {'success': False, 'state': 'pending', 'job_id': job_id})
 
             except Exception as e:
+                debug_log(f"[/parse] ERROR: {e}")
+                import traceback
+                traceback.print_exc(file=sys.stderr)
                 _send_json(self, 400, {'success': False, 'error': str(e)})
 
         elif self.path == '/parse_dir':
@@ -1041,14 +1428,30 @@ class RequestHandler(BaseHTTPRequestHandler):
                 if content_len > 4 * 1024 * 1024 * 1024:
                     raise ValueError('Upload too large (>4 GB)')
 
-                body = self.rfile.read(content_len)
+                # Stream directly to temp file first
+                temp_upload_path = Path(tempfile.gettempdir()) / ('fdv_upload_' + uuid.uuid4().hex + '.tmp')
+                bytes_written = 0
+                max_chunk = 512 * 1024  # 512 KB chunks
+                
+                with open(temp_upload_path, 'wb') as tmp:
+                    while bytes_written < content_len:
+                        chunk_size = min(max_chunk, content_len - bytes_written)
+                        chunk = self.rfile.read(chunk_size)
+                        if not chunk:
+                            break
+                        tmp.write(chunk)
+                        bytes_written += len(chunk)
 
+                # Now parse multipart from disk
+                body = temp_upload_path.read_bytes()
+                
                 boundary = None
-                for name, value in self.headers.items():
-                    if 'Content-Type' in name:
-                        parts = value.split('boundary=')
-                        if len(parts) > 1:
-                            boundary = parts[1].strip()
+                # Extract boundary from Content-Type header
+                content_type = self.headers.get('content-type', '')
+                if 'multipart/form-data' in content_type:
+                    parts = content_type.split('boundary=')
+                    if len(parts) > 1:
+                        boundary = parts[1].strip(' "')  # Remove surrounding quotes and spaces
 
                 if not boundary:
                     raise ValueError('Missing multipart boundary')
@@ -1090,6 +1493,10 @@ class RequestHandler(BaseHTTPRequestHandler):
                                 break
 
                 del body
+                try:
+                    temp_upload_path.unlink()
+                except:
+                    pass
 
                 if not file_contents:
                     raise ValueError('No files provided')
@@ -1118,7 +1525,7 @@ class RequestHandler(BaseHTTPRequestHandler):
                 ).start()
 
                 _send_json(self, 202, {
-                    'success': False, 'state': 'pending', 'job_id': job_id,
+                    'success': True, 'state': 'pending', 'job_id': job_id,
                     'file_count': len(file_paths)
                 })
 
@@ -1744,9 +2151,24 @@ class RequestHandler(BaseHTTPRequestHandler):
                 cached = parsed_cache.get(csv_id)
                 if cached is None:
                     raise ValueError('csv_id not found in cache — re-parse the file first')
+                
+                # Load rows from SQLite if needed
+                if cached.get('is_sqlite'):
+                    cache_id = cached.get('cache_id')
+                    db_path = f"{CACHE_DIR}/{cache_id}.db"
+                    rows = []
+                    if Path(db_path).exists():
+                        db = sqlite3.connect(db_path, check_same_thread=False)
+                        db.row_factory = sqlite3.Row
+                        cursor = db.execute('SELECT * FROM rows')
+                        rows = [list(row) for row in cursor.fetchall()]
+                        db.close()
+                else:
+                    rows = cached.get('rows', [])
+                
                 entry = {
                     'headers': cached['headers'],
-                    'rows':    cached['rows'],
+                    'rows':    rows,
                     'fname':   fname,
                     'snap':    snap,
                 }
@@ -1778,8 +2200,28 @@ class RequestHandler(BaseHTTPRequestHandler):
                 rows    = entry.get('rows')
                 if not headers or rows is None:
                     raise ValueError('Session file missing headers or rows')
+                
+                # Instead of storing all rows in memory, use SQLite batching
+                cache_id = 'cache_' + uuid.uuid4().hex[:12]
+                db = _get_sqlite_db(cache_id, headers)
+                _batch_insert_rows(db, headers, rows)
+                db.close()
+                
+                # Register in cache
+                with sqlite_cache_lock:
+                    sqlite_cache[cache_id] = {
+                        'db_path': f"{CACHE_DIR}/{cache_id}.db",
+                        'row_count': len(rows),
+                        'headers': headers
+                    }
+                
                 csv_id = 'csv_' + uuid.uuid4().hex[:8]
-                parsed_cache[csv_id] = {'headers': headers, 'rows': rows}
+                parsed_cache[csv_id] = {
+                    'headers': headers, 
+                    'cache_id': cache_id,
+                    'row_count': len(rows),
+                    'is_sqlite': True
+                }
                 _send_json(self, 200, {'success': True, 'csv_id': csv_id,
                                        'total_rows': len(rows), 'headers': headers,
                                        'snap': entry.get('snap'),
