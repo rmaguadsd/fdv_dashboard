@@ -4160,7 +4160,8 @@ function _buildTileChart(canvas, ct, tileData, xCol, yCol, xRx, yRx, colCol, col
             backgroundColor: bpKeys.map(function(_,i){ return PALETTE[i%PALETTE.length]+'55'; }),
             borderColor:     bpKeys.map(function(_,i){ return PALETTE[i%PALETTE.length]; }),
             borderWidth: 1.5,
-            outlierRadius: 0,  /* Hide built-in outliers — use scatter overlay instead */
+            outlierBackgroundColor: bpKeys.map(function(_,i){ return PALETTE[i%PALETTE.length]; }),
+            outlierRadius: 3,
             medianColor: '#fff',
             /* Attach scatter data for overlay plugin */
             _scatterData: scatterData,
@@ -5585,7 +5586,8 @@ function drawBoxPlot() {
             backgroundColor: keys.map(function(_,i){ return PALETTE[i % PALETTE.length] + '55'; }),
             borderColor:     keys.map(function(_,i){ return PALETTE[i % PALETTE.length]; }),
             borderWidth: 1.5,
-            outlierRadius: 0,  /* Hide built-in outliers — use scatter overlay instead */
+            outlierBackgroundColor: keys.map(function(_,i){ return PALETTE[i % PALETTE.length]; }),
+            outlierRadius: 3,
             medianColor: '#fff',
             /* Store scatter data for later rendering */
             _scatterData: scatterData,
