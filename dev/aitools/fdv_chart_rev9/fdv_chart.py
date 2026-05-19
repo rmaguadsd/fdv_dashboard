@@ -1525,7 +1525,7 @@ class RequestHandler(BaseHTTPRequestHandler):
                 ).start()
 
                 _send_json(self, 202, {
-                    'success': True, 'state': 'pending', 'job_id': job_id,
+                    'success': False, 'state': 'pending', 'job_id': job_id,
                     'file_count': len(file_paths)
                 })
 

@@ -66,3 +66,96 @@
 [parse_status] Checking job: job_1f105b4d
 [parse_status] Job job_1f105b4d state: done
 [parse_status] Job job_1f105b4d returning results
+[PARSE_MULTI_JOB] Timeout set to 1420s for 1.37GB total
+[parse_log_file] Starting parse of C:\Users\remlab\AppData\Local\Temp\fdv_upload_e49675ebb1154256acf23d2347edf95f.txt, include=FDV OUT.*::READ_RBER_PAGE_.*, exclude=None
+[parse_log_file] Flushed batch: 50000 rows total
+[parse_log_file] Flushed batch: 100000 rows total
+[parse_log_file] Flushed batch: 150000 rows total
+[parse_log_file] Flushed batch: 200000 rows total
+[parse_log_file] Flushed batch: 250000 rows total
+[parse_log_file] Flushed batch: 300000 rows total
+[parse_log_file] Flushed batch: 350000 rows total
+[parse_log_file] Flushed batch: 400000 rows total
+[parse_log_file] Flushed final batch: 414720 rows total
+[parse_log_file] Completed: 414720 rows in 12.47s, cache_id=cache_983ca3ef5fbf
+[PARSE_MULTI_JOB] Timeout set to 1420s for 1.37GB total
+[parse_log_file] Starting parse of C:\Users\remlab\AppData\Local\Temp\fdv_upload_2b703134652a4d3b93e95a99dd055c9b.txt, include=FDV OUT.*::READ_RBER_PAGE_.*, exclude=None
+[parse_log_file] Flushed batch: 50000 rows total
+[parse_log_file] Flushed batch: 100000 rows total
+[parse_log_file] Flushed batch: 150000 rows total
+[parse_log_file] Flushed batch: 200000 rows total
+[parse_log_file] Flushed batch: 250000 rows total
+[parse_log_file] Flushed batch: 300000 rows total
+[parse_log_file] Flushed batch: 350000 rows total
+[parse_log_file] Flushed batch: 400000 rows total
+[parse_log_file] Flushed final batch: 414720 rows total
+[parse_log_file] Completed: 414720 rows in 12.58s, cache_id=cache_f44435e7a177
+[PARSE_MULTI_JOB] Timeout set to 1420s for 1.37GB total
+[parse_log_file] Starting parse of C:\Users\remlab\AppData\Local\Temp\fdv_upload_8fcfa767d54748e083ce1d7bf145e6ae.txt, include=FDV OUT.*::READ_RBER_PAGE_.*, exclude=None
+[parse_log_file] Flushed batch: 50000 rows total
+[parse_log_file] Flushed batch: 100000 rows total
+[parse_log_file] Flushed batch: 150000 rows total
+[parse_log_file] Flushed batch: 200000 rows total
+[parse_log_file] Flushed batch: 250000 rows total
+[parse_log_file] Flushed batch: 300000 rows total
+[parse_log_file] Flushed batch: 350000 rows total
+[parse_log_file] Flushed batch: 400000 rows total
+[parse_log_file] Flushed final batch: 414720 rows total
+[parse_log_file] Completed: 414720 rows in 12.40s, cache_id=cache_3a6d8ec0e3a3
+[PARSE_MULTI_JOB] Timeout set to 1420s for 1.37GB total
+[parse_log_file] Starting parse of C:\Users\remlab\AppData\Local\Temp\fdv_upload_5ffcb22b39614296bd5bae07972da0f9.txt, include=FDV OUT.*::READ_RBER_PAGE_.*, exclude=None
+[parse_log_file] Flushed batch: 50000 rows total
+[parse_log_file] Flushed batch: 100000 rows total
+[parse_log_file] Flushed batch: 150000 rows total
+[parse_log_file] Flushed batch: 200000 rows total
+[parse_log_file] Flushed batch: 250000 rows total
+[parse_log_file] Flushed batch: 300000 rows total
+[parse_log_file] Flushed batch: 350000 rows total
+[parse_log_file] Flushed batch: 400000 rows total
+[parse_log_file] Flushed final batch: 414720 rows total
+[parse_log_file] Completed: 414720 rows in 12.26s, cache_id=cache_6d341a65d86d
+[PARSE_MULTI_JOB] Timeout set to 1420s for 1.37GB total
+[parse_log_file] Starting parse of C:\Users\remlab\AppData\Local\Temp\fdv_upload_9c42ae3cd150424f8746b8f31406de7d.txt, include=FDV OUT.*::READ_RBER_PAGE_.*, exclude=None
+[parse_status] Checking job: job_2b6f8b22
+[parse_status] Job job_2b6f8b22 state: running
+[parse_status] Job job_2b6f8b22 still pending
+[parse_status] Checking job: job_2b6f8b22
+[parse_status] Job job_2b6f8b22 state: running
+[parse_status] Job job_2b6f8b22 still pending
+[parse_log_file] Flushed batch: 50000 rows total
+[parse_status] Checking job: job_2b6f8b22
+[parse_status] Job job_2b6f8b22 state: running
+[parse_status] Job job_2b6f8b22 still pending
+[parse_log_file] Flushed batch: 100000 rows total
+[parse_status] Checking job: job_2b6f8b22
+[parse_status] Job job_2b6f8b22 state: running
+[parse_status] Job job_2b6f8b22 still pending
+[parse_log_file] Flushed batch: 150000 rows total
+[parse_status] Checking job: job_2b6f8b22
+[parse_status] Job job_2b6f8b22 state: running
+[parse_status] Job job_2b6f8b22 still pending
+[parse_log_file] Flushed batch: 200000 rows total
+[parse_status] Checking job: job_2b6f8b22
+[parse_status] Job job_2b6f8b22 state: running
+[parse_status] Job job_2b6f8b22 still pending
+[parse_log_file] Flushed batch: 250000 rows total
+[parse_status] Checking job: job_2b6f8b22
+[parse_status] Job job_2b6f8b22 state: running
+[parse_status] Job job_2b6f8b22 still pending
+[parse_status] Checking job: job_2b6f8b22
+[parse_status] Job job_2b6f8b22 state: running
+[parse_status] Job job_2b6f8b22 still pending
+[parse_log_file] Flushed batch: 300000 rows total
+[parse_status] Checking job: job_2b6f8b22
+[parse_status] Job job_2b6f8b22 state: running
+[parse_status] Job job_2b6f8b22 still pending
+[parse_log_file] Flushed batch: 350000 rows total
+[parse_status] Checking job: job_2b6f8b22
+[parse_status] Job job_2b6f8b22 state: running
+[parse_status] Job job_2b6f8b22 still pending
+[parse_log_file] Flushed batch: 400000 rows total
+[parse_log_file] Flushed final batch: 414720 rows total
+[parse_log_file] Completed: 414720 rows in 12.42s, cache_id=cache_93cde31ba84f
+[parse_status] Checking job: job_2b6f8b22
+[parse_status] Job job_2b6f8b22 state: done
+[parse_status] Job job_2b6f8b22 returning results

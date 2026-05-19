@@ -5,8 +5,8 @@
     <meta http-equiv="cache-control" content="no-cache, no-store, must-revalidate, max-age=0">
     <meta http-equiv="pragma" content="no-cache">
     <meta http-equiv="expires" content="0">
-    <!-- VERSION: v2.1.0-histogram-color-by -->
-    <title>FDV Chart Maker [v2.1.0]</title>
+    <!-- VERSION: v2.1.1-fix-response-format -->
+    <title>FDV Chart Maker [v2.1.1]</title>
     <style>
         * { box-sizing: border-box; }
         html, body {
@@ -1115,7 +1115,7 @@ var VS_OVERSCAN = 8;    // extra rows above/below viewport
 var vsFirstRow  = 0;    // first rendered row index (into filteredIndices)
 var colWidths   = [];   // pixel widths per column (set by resize grippers)
 
-console.log('[APP VERSION] v2.1.0 - Histogram color-by support active');
+console.log('[APP VERSION] v2.1.1 - Response format fix applied');
 
 var PALETTE = [
     '#007bff','#e83e8c','#28a745','#fd7e14','#6610f2',
@@ -1958,8 +1958,23 @@ async function parseFile() {
     try { jobResp = await resp.json(); }
     catch(e) { setStatus('Bad server response: ' + e, 'error'); return; }
 
-    if (jobResp.success) { _onParseResult(jobResp, jobFname, Date.now()); return; }
-    if (!jobResp.job_id) { setStatus('Error: ' + (jobResp.error || 'Unknown'), 'error'); return; }
+    console.log('[parseFile] Initial response:', jobResp);
+    console.log('[parseFile] jobResp.success =', jobResp.success, ', jobResp.job_id =', jobResp.job_id);
+    
+    // TEST: Display what we received in an alert so user sees it
+    if (jobResp.success === true) {
+        console.log('[parseFile] SUCCESS IS TRUE - calling _onParseResult immediately');
+        _onParseResult(jobResp, jobFname, Date.now());
+        return;
+    }
+    
+    if (!jobResp.job_id) { 
+        console.log('[parseFile] No job_id, treating as error');
+        setStatus('Error: ' + (jobResp.error || 'Unknown'), 'error'); 
+        return; 
+    }
+    
+    console.log('[parseFile] No success flag or success is false - entering polling loop with job_id:', jobResp.job_id);
 
     /* ---- async polling ---- */
     var jobId  = jobResp.job_id;
@@ -1973,15 +1988,19 @@ async function parseFile() {
         var sr;
         try { var r2 = await fetch('/parse_status?job='+jobId); sr = await r2.json(); }
         catch(e) { clearInterval(ticker); setStatus('Poll error: '+e,'error'); return; }
+        console.log('[parseFile polling] Job', jobId, 'state:', sr.state, 'success:', sr.success);
         if (sr.state==='pending'||sr.state==='running') continue;
         clearInterval(ticker);
         if (!sr.success) { setStatus('Error: '+(sr.error||'Parse failed'),'error'); return; }
+        console.log('[parseFile polling] Job complete, calling _onParseResult with:', sr);
         _onParseResult(sr, jobFname, t0);
         return;
     }
 }
 
 function _onParseResult(result, fname, t0) {
+    console.log('[_onParseResult] Called with result:', result);
+    console.log('[_onParseResult] result.rows type:', typeof result.rows, 'length:', result.rows ? result.rows.length : 'undefined');
     currentCsvId      = result.csv_id;
     currentHeaders    = result.headers;
     domFullyLoaded    = false;
