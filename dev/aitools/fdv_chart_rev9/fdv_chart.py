@@ -713,19 +713,25 @@ def _run_parse_multi_job(job_id, file_paths, regex_include, regex_exclude, temp_
             
             src_name = orig_names[i] if orig_names and i < len(orig_names) else None
             try:
+                debug_log(f"[PARSE_MULTI_JOB] Starting parse of file {i}: {src_name}")
                 h, cache_id, row_count = parse_log_file(fp, regex_include=regex_include, regex_exclude=regex_exclude, source_name=src_name)
+                debug_log(f"[PARSE_MULTI_JOB] File {i} parsed: {row_count} rows")
                 if headers is None:
                     headers = h
                     primary_cache_id = cache_id
                 # For multi-file parse, merge rows from all files into primary cache
                 if cache_id != primary_cache_id:
+                    debug_log(f"[PARSE_MULTI_JOB] Merging cache {cache_id} into primary {primary_cache_id}")
                     # Copy rows from this cache_id to primary_cache_id
                     src_db = sqlite3.connect(f"{CACHE_DIR}/{cache_id}.db", check_same_thread=False)
                     src_db.row_factory = sqlite3.Row
-                    cursor = src_db.execute('SELECT * FROM rows')
+                    # Select only the data columns, not the auto-generated id
+                    col_names = ','.join([f'"{h}"' for h in headers])
+                    cursor = src_db.execute(f'SELECT {col_names} FROM rows')
                     rows_to_copy = [list(row) for row in cursor.fetchall()]
                     src_db.close()
                     
+                    debug_log(f"[PARSE_MULTI_JOB] Copying {len(rows_to_copy)} rows from {cache_id}")
                     # Insert into primary cache
                     dst_db = sqlite3.connect(f"{CACHE_DIR}/{primary_cache_id}.db", check_same_thread=False)
                     if rows_to_copy:
@@ -737,10 +743,13 @@ def _run_parse_multi_job(job_id, file_paths, regex_include, regex_exclude, temp_
                         Path(f"{CACHE_DIR}/{cache_id}.db").unlink()
                     except:
                         pass
+                else:
+                    debug_log(f"[PARSE_MULTI_JOB] File {i} uses primary cache {cache_id}")
                 
                 total_row_count += row_count
             except Exception as e:
                 display_name = src_name or Path(fp).name
+                debug_log(f"[PARSE_MULTI_JOB] Error parsing file {i} ({display_name}): {e}")
                 errors.append(f'{display_name}: {e}')
 
         if total_row_count == 0:
@@ -1468,6 +1477,7 @@ class RequestHandler(BaseHTTPRequestHandler):
                 regex_exclude = ''
 
                 for part in parts_list:
+                    debug_log(f"[parse_multi] Processing part, size={len(part)} bytes")
                     if b'name="file"' in part and b'filename=' in part:
                         lines = part.split(b'\r\n')
                         for i, line in enumerate(lines):
@@ -1479,6 +1489,7 @@ class RequestHandler(BaseHTTPRequestHandler):
                                 m = re.search(r'filename="([^"]+)"', disp)
                                 if m:
                                     fname = m.group(1)
+                                debug_log(f"[parse_multi] Found file: {fname}, size={len(content)} bytes")
                                 file_contents.append((fname, content))
                                 break
                     elif b'name="regex_include"' in part:
@@ -1504,6 +1515,8 @@ class RequestHandler(BaseHTTPRequestHandler):
 
                 if not file_contents:
                     raise ValueError('No files provided')
+                
+                debug_log(f"[parse_multi] Total files found: {len(file_contents)}")
 
                 temp_paths = []
                 file_paths = []
