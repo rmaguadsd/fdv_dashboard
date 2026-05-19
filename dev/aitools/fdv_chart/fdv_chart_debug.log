@@ -159,3 +159,497 @@
 [parse_status] Checking job: job_2b6f8b22
 [parse_status] Job job_2b6f8b22 state: done
 [parse_status] Job job_2b6f8b22 returning results
+[PARSE_MULTI_JOB] Timeout set to 2225s for 2.71GB total
+[parse_log_file] Starting parse of C:\Users\remlab\AppData\Local\Temp\fdv_upload_2dc50f9ac05a4ce798fc6bc6695ad779.txt, include=FDV OUT.*::READ_RBER_PAGE_.*, exclude=None
+[parse_status] Checking job: job_de7aac2b
+[parse_status] Job job_de7aac2b state: running
+[parse_status] Job job_de7aac2b still pending
+[parse_status] Checking job: job_de7aac2b
+[parse_status] Job job_de7aac2b state: running
+[parse_status] Job job_de7aac2b still pending
+[parse_log_file] Flushed batch: 50000 rows total
+[parse_status] Checking job: job_de7aac2b
+[parse_status] Job job_de7aac2b state: running
+[parse_status] Job job_de7aac2b still pending
+[parse_log_file] Flushed batch: 100000 rows total
+[parse_status] Checking job: job_de7aac2b
+[parse_status] Job job_de7aac2b state: running
+[parse_status] Job job_de7aac2b still pending
+[parse_log_file] Flushed batch: 150000 rows total
+[parse_status] Checking job: job_de7aac2b
+[parse_status] Job job_de7aac2b state: running
+[parse_status] Job job_de7aac2b still pending
+[parse_log_file] Flushed batch: 200000 rows total
+[parse_status] Checking job: job_de7aac2b
+[parse_status] Job job_de7aac2b state: running
+[parse_status] Job job_de7aac2b still pending
+[parse_log_file] Flushed batch: 250000 rows total
+[parse_status] Checking job: job_de7aac2b
+[parse_status] Job job_de7aac2b state: running
+[parse_status] Job job_de7aac2b still pending
+[parse_status] Checking job: job_de7aac2b
+[parse_status] Job job_de7aac2b state: running
+[parse_status] Job job_de7aac2b still pending
+[parse_log_file] Flushed batch: 300000 rows total
+[parse_status] Checking job: job_de7aac2b
+[parse_status] Job job_de7aac2b state: running
+[parse_status] Job job_de7aac2b still pending
+[parse_log_file] Flushed batch: 350000 rows total
+[parse_status] Checking job: job_de7aac2b
+[parse_status] Job job_de7aac2b state: running
+[parse_status] Job job_de7aac2b still pending
+[parse_log_file] Flushed batch: 400000 rows total
+[parse_log_file] Flushed final batch: 414720 rows total
+[parse_log_file] Completed: 414720 rows in 12.37s, cache_id=cache_155a7c2ecb92
+[parse_log_file] Starting parse of C:\Users\remlab\AppData\Local\Temp\fdv_upload_3d5cc470fd4e4e2d8aa964fc19588e30.txt, include=FDV OUT.*::READ_RBER_PAGE_.*, exclude=None
+[parse_status] Checking job: job_de7aac2b
+[parse_status] Job job_de7aac2b state: running
+[parse_status] Job job_de7aac2b still pending
+[parse_status] Checking job: job_de7aac2b
+[parse_status] Job job_de7aac2b state: running
+[parse_status] Job job_de7aac2b still pending
+[parse_log_file] Flushed batch: 50000 rows total
+[parse_status] Checking job: job_de7aac2b
+[parse_status] Job job_de7aac2b state: running
+[parse_status] Job job_de7aac2b still pending
+[parse_log_file] Flushed batch: 100000 rows total
+[parse_status] Checking job: job_de7aac2b
+[parse_status] Job job_de7aac2b state: running
+[parse_status] Job job_de7aac2b still pending
+[parse_log_file] Flushed batch: 150000 rows total
+[parse_status] Checking job: job_de7aac2b
+[parse_status] Job job_de7aac2b state: running
+[parse_status] Job job_de7aac2b still pending
+[parse_log_file] Flushed batch: 200000 rows total
+[parse_status] Checking job: job_de7aac2b
+[parse_status] Job job_de7aac2b state: running
+[parse_status] Job job_de7aac2b still pending
+[parse_status] Checking job: job_de7aac2b
+[parse_status] Job job_de7aac2b state: running
+[parse_status] Job job_de7aac2b still pending
+[parse_log_file] Flushed batch: 250000 rows total
+[parse_status] Checking job: job_de7aac2b
+[parse_status] Job job_de7aac2b state: running
+[parse_status] Job job_de7aac2b still pending
+[parse_log_file] Flushed batch: 300000 rows total
+[parse_status] Checking job: job_de7aac2b
+[parse_status] Job job_de7aac2b state: running
+[parse_status] Job job_de7aac2b still pending
+[parse_log_file] Flushed batch: 350000 rows total
+[parse_status] Checking job: job_de7aac2b
+[parse_status] Job job_de7aac2b state: running
+[parse_status] Job job_de7aac2b still pending
+[parse_log_file] Flushed batch: 400000 rows total
+[parse_log_file] Flushed final batch: 414720 rows total
+[parse_log_file] Completed: 414720 rows in 12.33s, cache_id=cache_a1cf529a7268
+[parse_status] Checking job: job_de7aac2b
+[parse_status] Job job_de7aac2b state: running
+[parse_status] Job job_de7aac2b still pending
+[parse_status] Checking job: job_de7aac2b
+[parse_status] Job job_de7aac2b state: running
+[parse_status] Job job_de7aac2b still pending
+[parse_status] Checking job: job_de7aac2b
+[parse_status] Job job_de7aac2b state: running
+[parse_status] Job job_de7aac2b still pending
+[parse_status] Checking job: job_de7aac2b
+[parse_status] Job job_de7aac2b state: done
+[parse_status] Job job_de7aac2b returning results
+[PARSE_MULTI_JOB] Timeout set to 1420s for 1.37GB total
+[parse_log_file] Starting parse of C:\Users\remlab\AppData\Local\Temp\fdv_upload_01bc813dd7ff48688ff09c3dda2cbf47.txt, include=FDV OUT.*::READ_RBER_PAGE_.*, exclude=None
+[parse_status] Checking job: job_e75a3d31
+[parse_status] Job job_e75a3d31 state: running
+[parse_status] Job job_e75a3d31 still pending
+[parse_status] Checking job: job_e75a3d31
+[parse_status] Job job_e75a3d31 state: running
+[parse_status] Job job_e75a3d31 still pending
+[parse_log_file] Flushed batch: 50000 rows total
+[parse_log_file] Flushed batch: 100000 rows total
+[parse_status] Checking job: job_e75a3d31
+[parse_status] Job job_e75a3d31 state: running
+[parse_status] Job job_e75a3d31 still pending
+[parse_status] Checking job: job_e75a3d31
+[parse_status] Job job_e75a3d31 state: running
+[parse_status] Job job_e75a3d31 still pending
+[parse_log_file] Flushed batch: 150000 rows total
+[parse_status] Checking job: job_e75a3d31
+[parse_status] Job job_e75a3d31 state: running
+[parse_status] Job job_e75a3d31 still pending
+[parse_log_file] Flushed batch: 200000 rows total
+[parse_status] Checking job: job_e75a3d31
+[parse_status] Job job_e75a3d31 state: running
+[parse_status] Job job_e75a3d31 still pending
+[parse_log_file] Flushed batch: 250000 rows total
+[parse_status] Checking job: job_e75a3d31
+[parse_status] Job job_e75a3d31 state: running
+[parse_status] Job job_e75a3d31 still pending
+[parse_log_file] Flushed batch: 300000 rows total
+[parse_status] Checking job: job_e75a3d31
+[parse_status] Job job_e75a3d31 state: running
+[parse_status] Job job_e75a3d31 still pending
+[parse_log_file] Flushed batch: 350000 rows total
+[parse_status] Checking job: job_e75a3d31
+[parse_status] Job job_e75a3d31 state: running
+[parse_status] Job job_e75a3d31 still pending
+[parse_log_file] Flushed batch: 400000 rows total
+[parse_status] Checking job: job_e75a3d31
+[parse_status] Job job_e75a3d31 state: running
+[parse_status] Job job_e75a3d31 still pending
+[parse_log_file] Flushed final batch: 414720 rows total
+[parse_log_file] Completed: 414720 rows in 12.11s, cache_id=cache_47f0469c297c
+[parse_status] Checking job: job_e75a3d31
+[parse_status] Job job_e75a3d31 state: done
+[parse_status] Job job_e75a3d31 returning results
+[PARSE_MULTI_JOB] Timeout set to 819s for 0.37GB total
+[parse_log_file] Starting parse of C:\Users\remlab\AppData\Local\Temp\fdv_upload_bec217b1f0904c6b8376f53b7d7d40b4.txt, include=FDV OUT.*, exclude=None
+[parse_log_file] Flushed batch: 50000 rows total
+[parse_status] Checking job: job_62d54b24
+[parse_status] Job job_62d54b24 state: running
+[parse_status] Job job_62d54b24 still pending
+[parse_log_file] Flushed batch: 100000 rows total
+[parse_status] Checking job: job_62d54b24
+[parse_status] Job job_62d54b24 state: running
+[parse_status] Job job_62d54b24 still pending
+[parse_log_file] Flushed batch: 150000 rows total
+[parse_status] Checking job: job_62d54b24
+[parse_status] Job job_62d54b24 state: running
+[parse_status] Job job_62d54b24 still pending
+[parse_log_file] Flushed batch: 200000 rows total
+[parse_status] Checking job: job_62d54b24
+[parse_status] Job job_62d54b24 state: running
+[parse_status] Job job_62d54b24 still pending
+[parse_log_file] Flushed batch: 250000 rows total
+[parse_status] Checking job: job_62d54b24
+[parse_status] Job job_62d54b24 state: running
+[parse_status] Job job_62d54b24 still pending
+[parse_log_file] Flushed batch: 300000 rows total
+[parse_status] Checking job: job_62d54b24
+[parse_status] Job job_62d54b24 state: running
+[parse_status] Job job_62d54b24 still pending
+[parse_log_file] Flushed batch: 350000 rows total
+[parse_status] Checking job: job_62d54b24
+[parse_status] Job job_62d54b24 state: running
+[parse_status] Job job_62d54b24 still pending
+[parse_log_file] Flushed batch: 400000 rows total
+[parse_log_file] Flushed batch: 450000 rows total
+[parse_status] Checking job: job_62d54b24
+[parse_status] Job job_62d54b24 state: running
+[parse_status] Job job_62d54b24 still pending
+[parse_status] Checking job: job_62d54b24
+[parse_status] Job job_62d54b24 state: running
+[parse_status] Job job_62d54b24 still pending
+[parse_log_file] Flushed batch: 500000 rows total
+[parse_log_file] Flushed batch: 550000 rows total
+[parse_status] Checking job: job_62d54b24
+[parse_status] Job job_62d54b24 state: running
+[parse_status] Job job_62d54b24 still pending
+[parse_log_file] Flushed batch: 600000 rows total
+[parse_status] Checking job: job_62d54b24
+[parse_status] Job job_62d54b24 state: running
+[parse_status] Job job_62d54b24 still pending
+[parse_log_file] Flushed batch: 650000 rows total
+[parse_status] Checking job: job_62d54b24
+[parse_status] Job job_62d54b24 state: running
+[parse_status] Job job_62d54b24 still pending
+[parse_log_file] Flushed batch: 700000 rows total
+[parse_status] Checking job: job_62d54b24
+[parse_status] Job job_62d54b24 state: running
+[parse_status] Job job_62d54b24 still pending
+[parse_log_file] Flushed batch: 750000 rows total
+[parse_log_file] Flushed batch: 800000 rows total
+[parse_status] Checking job: job_62d54b24
+[parse_status] Job job_62d54b24 state: running
+[parse_status] Job job_62d54b24 still pending
+[parse_log_file] Flushed final batch: 829500 rows total
+[parse_log_file] Completed: 829500 rows in 18.43s, cache_id=cache_dbc75358e379
+[parse_status] Checking job: job_62d54b24
+[parse_status] Job job_62d54b24 state: done
+[parse_status] Job job_62d54b24 returning results
+[PARSE_MULTI_JOB] Timeout set to 2445s for 3.08GB total
+[parse_log_file] Starting parse of C:\Users\remlab\AppData\Local\Temp\fdv_upload_3a19670fa18b49d6ba1fcf7b010ee4fa.txt, include=FDV OUT.*::READ_RBER_PAGE_.*, exclude=None
+[parse_log_file] Completed: 0 rows in 0.80s, cache_id=cache_1a156ad43c7f
+[parse_log_file] Starting parse of C:\Users\remlab\AppData\Local\Temp\fdv_upload_03652fafd4514503a92afa727f24aa0d.txt, include=FDV OUT.*::READ_RBER_PAGE_.*, exclude=None
+[parse_status] Checking job: job_638abe74
+[parse_status] Job job_638abe74 state: running
+[parse_status] Job job_638abe74 still pending
+[parse_status] Checking job: job_638abe74
+[parse_status] Job job_638abe74 state: running
+[parse_status] Job job_638abe74 still pending
+[parse_log_file] Flushed batch: 50000 rows total
+[parse_status] Checking job: job_638abe74
+[parse_status] Job job_638abe74 state: running
+[parse_status] Job job_638abe74 still pending
+[parse_log_file] Flushed batch: 100000 rows total
+[parse_status] Checking job: job_638abe74
+[parse_status] Job job_638abe74 state: running
+[parse_status] Job job_638abe74 still pending
+[parse_status] Checking job: job_638abe74
+[parse_status] Job job_638abe74 state: running
+[parse_status] Job job_638abe74 still pending
+[parse_log_file] Flushed batch: 150000 rows total
+[parse_status] Checking job: job_638abe74
+[parse_status] Job job_638abe74 state: running
+[parse_status] Job job_638abe74 still pending
+[parse_log_file] Flushed batch: 200000 rows total
+[parse_status] Checking job: job_638abe74
+[parse_status] Job job_638abe74 state: running
+[parse_status] Job job_638abe74 still pending
+[parse_status] Checking job: job_638abe74
+[parse_status] Job job_638abe74 state: running
+[parse_status] Job job_638abe74 still pending
+[parse_log_file] Flushed batch: 250000 rows total
+[parse_status] Checking job: job_638abe74
+[parse_status] Job job_638abe74 state: running
+[parse_status] Job job_638abe74 still pending
+[parse_log_file] Flushed batch: 300000 rows total
+[parse_status] Checking job: job_638abe74
+[parse_status] Job job_638abe74 state: running
+[parse_status] Job job_638abe74 still pending
+[parse_log_file] Flushed batch: 350000 rows total
+[parse_status] Checking job: job_638abe74
+[parse_status] Job job_638abe74 state: running
+[parse_status] Job job_638abe74 still pending
+[parse_log_file] Flushed batch: 400000 rows total
+[parse_log_file] Flushed final batch: 414720 rows total
+[parse_log_file] Completed: 414720 rows in 13.05s, cache_id=cache_415625245e7e
+[parse_status] Checking job: job_638abe74
+[parse_status] Job job_638abe74 state: running
+[parse_status] Job job_638abe74 still pending
+[parse_status] Checking job: job_638abe74
+[parse_status] Job job_638abe74 state: running
+[parse_status] Job job_638abe74 still pending
+[parse_status] Checking job: job_638abe74
+[parse_status] Job job_638abe74 state: running
+[parse_status] Job job_638abe74 still pending
+[parse_log_file] Starting parse of C:\Users\remlab\AppData\Local\Temp\fdv_upload_3172737fd6134fd9aa0811040a79085f.txt, include=FDV OUT.*::READ_RBER_PAGE_.*, exclude=None
+[parse_status] Checking job: job_638abe74
+[parse_status] Job job_638abe74 state: running
+[parse_status] Job job_638abe74 still pending
+[parse_log_file] Flushed batch: 50000 rows total
+[parse_status] Checking job: job_638abe74
+[parse_status] Job job_638abe74 state: running
+[parse_status] Job job_638abe74 still pending
+[PARSE_MULTI_JOB] Timeout set to 2225s for 2.71GB total
+[parse_log_file] Starting parse of C:\Users\remlab\AppData\Local\Temp\fdv_upload_3db283754d7b41c2a3a4ea81c332c826.txt, include=FDV OUT.*::READ_RBER_PAGE_.*, exclude=None
+[parse_status] Checking job: job_638abe74
+[parse_status] Job job_638abe74 state: running
+[parse_status] Job job_638abe74 still pending
+[parse_status] Checking job: job_4bf991a9
+[parse_status] Job job_4bf991a9 state: running
+[parse_status] Job job_4bf991a9 still pending
+[parse_log_file] Flushed batch: 100000 rows total
+[parse_status] Checking job: job_638abe74
+[parse_status] Job job_638abe74 state: running
+[parse_status] Job job_638abe74 still pending
+[parse_status] Checking job: job_4bf991a9
+[parse_status] Job job_4bf991a9 state: running
+[parse_status] Job job_4bf991a9 still pending
+[parse_log_file] Flushed batch: 150000 rows total
+[parse_status] Checking job: job_638abe74
+[parse_status] Job job_638abe74 state: running
+[parse_status] Job job_638abe74 still pending
+[parse_status] Checking job: job_4bf991a9
+[parse_status] Job job_4bf991a9 state: running
+[parse_status] Job job_4bf991a9 still pending
+[parse_status] Checking job: job_638abe74
+[parse_status] Job job_638abe74 state: running
+[parse_status] Job job_638abe74 still pending
+[parse_log_file] Flushed batch: 200000 rows total
+[parse_status] Checking job: job_4bf991a9
+[parse_status] Job job_4bf991a9 state: running
+[parse_status] Job job_4bf991a9 still pending
+[parse_status] Checking job: job_638abe74
+[parse_status] Job job_638abe74 state: running
+[parse_status] Job job_638abe74 still pending
+[parse_status] Checking job: job_4bf991a9
+[parse_status] Job job_4bf991a9 state: running
+[parse_status] Job job_4bf991a9 still pending
+[parse_status] Checking job: job_638abe74
+[parse_status] Job job_638abe74 state: running
+[parse_status] Job job_638abe74 still pending
+[parse_status] Checking job: job_4bf991a9
+[parse_status] Job job_4bf991a9 state: running
+[parse_status] Job job_4bf991a9 still pending
+[parse_log_file] Flushed batch: 50000 rows total
+[parse_status] Checking job: job_638abe74
+[parse_status] Job job_638abe74 state: running
+[parse_status] Job job_638abe74 still pending
+[parse_status] Checking job: job_4bf991a9
+[parse_status] Job job_4bf991a9 state: running
+[parse_status] Job job_4bf991a9 still pending
+[parse_status] Checking job: job_638abe74
+[parse_status] Job job_638abe74 state: running
+[parse_status] Job job_638abe74 still pending
+[parse_status] Checking job: job_4bf991a9
+[parse_status] Job job_4bf991a9 state: running
+[parse_status] Job job_4bf991a9 still pending
+[parse_log_file] Flushed batch: 100000 rows total
+[parse_status] Checking job: job_638abe74
+[parse_status] Job job_638abe74 state: running
+[parse_status] Job job_638abe74 still pending
+[parse_status] Checking job: job_4bf991a9
+[parse_status] Job job_4bf991a9 state: running
+[parse_status] Job job_4bf991a9 still pending
+[parse_status] Checking job: job_638abe74
+[parse_status] Job job_638abe74 state: running
+[parse_status] Job job_638abe74 still pending
+[parse_log_file] Flushed batch: 250000 rows total
+[parse_status] Checking job: job_4bf991a9
+[parse_status] Job job_4bf991a9 state: running
+[parse_status] Checking job: job_638abe74
+[parse_status] Job job_4bf991a9 still pending
+[parse_status] Job job_638abe74 state: running
+[parse_status] Job job_638abe74 still pending
+[parse_log_file] Flushed batch: 150000 rows total
+[parse_status] Checking job: job_4bf991a9
+[parse_status] Job job_4bf991a9 state: running
+[parse_status] Job job_4bf991a9 still pending
+[parse_status] Checking job: job_638abe74
+[parse_status] Job job_638abe74 state: running
+[parse_status] Job job_638abe74 still pending
+[parse_log_file] Flushed batch: 300000 rows total
+[parse_status] Checking job: job_4bf991a9
+[parse_status] Job job_4bf991a9 state: running
+[parse_status] Job job_4bf991a9 still pending
+[parse_status] Checking job: job_638abe74
+[parse_status] Job job_638abe74 state: running
+[parse_status] Job job_638abe74 still pending
+[parse_log_file] Flushed batch: 200000 rows total
+[parse_log_file] Flushed batch: 350000 rows total
+[parse_status] Checking job: job_4bf991a9
+[parse_status] Job job_4bf991a9 state: running
+[parse_status] Job job_4bf991a9 still pending
+[parse_status] Checking job: job_638abe74
+[parse_status] Job job_638abe74 state: running
+[parse_status] Job job_638abe74 still pending
+[parse_status] Checking job: job_4bf991a9
+[parse_status] Job job_4bf991a9 state: running
+[parse_status] Job job_4bf991a9 still pending
+[parse_log_file] Flushed batch: 400000 rows total
+[parse_status] Checking job: job_638abe74
+[parse_status] Job job_638abe74 state: running
+[parse_status] Job job_638abe74 still pending
+[parse_status] Checking job: job_4bf991a9
+[parse_status] Job job_4bf991a9 state: running
+[parse_status] Job job_4bf991a9 still pending
+[parse_log_file] Flushed final batch: 414720 rows total
+[parse_log_file] Completed: 414720 rows in 21.53s, cache_id=cache_2dda1b5dabba
+[parse_status] Checking job: job_638abe74
+[parse_status] Job job_638abe74 state: running
+[parse_status] Job job_638abe74 still pending
+[parse_status] Checking job: job_4bf991a9
+[parse_status] Job job_4bf991a9 state: running
+[parse_status] Job job_4bf991a9 still pending
+[parse_log_file] Flushed batch: 250000 rows total
+[parse_status] Checking job: job_638abe74
+[parse_status] Job job_638abe74 state: running
+[parse_status] Job job_638abe74 still pending
+[parse_status] Checking job: job_4bf991a9
+[parse_status] Job job_4bf991a9 state: running
+[parse_status] Job job_4bf991a9 still pending
+[parse_status] Checking job: job_638abe74
+[parse_status] Job job_638abe74 state: running
+[parse_status] Job job_638abe74 still pending
+[parse_log_file] Flushed batch: 300000 rows total
+[parse_status] Checking job: job_4bf991a9
+[parse_status] Job job_4bf991a9 state: running
+[parse_status] Job job_4bf991a9 still pending
+[parse_status] Checking job: job_638abe74
+[parse_status] Job job_638abe74 state: running
+[parse_status] Job job_638abe74 still pending
+[parse_log_file] Flushed batch: 350000 rows total
+[parse_status] Checking job: job_4bf991a9
+[parse_status] Job job_4bf991a9 state: running
+[parse_status] Job job_4bf991a9 still pending
+[parse_status] Checking job: job_638abe74
+[parse_status] Job job_638abe74 state: running
+[parse_status] Job job_638abe74 still pending
+[parse_status] Checking job: job_4bf991a9
+[parse_status] Job job_4bf991a9 state: running
+[parse_status] Job job_4bf991a9 still pending
+[parse_log_file] Flushed batch: 400000 rows total
+[parse_status] Checking job: job_638abe74
+[parse_status] Job job_638abe74 state: running
+[parse_status] Job job_638abe74 still pending
+[parse_status] Checking job: job_4bf991a9
+[parse_status] Job job_4bf991a9 state: running
+[parse_status] Job job_4bf991a9 still pending
+[parse_log_file] Flushed final batch: 414720 rows total
+[parse_log_file] Completed: 414720 rows in 25.73s, cache_id=cache_7f43ace6f0d1
+[parse_log_file] Starting parse of C:\Users\remlab\AppData\Local\Temp\fdv_upload_b007a93910a446a9bd61e9d614ab3a51.txt, include=FDV OUT.*::READ_RBER_PAGE_.*, exclude=None
+[parse_status] Checking job: job_638abe74
+[parse_status] Job job_638abe74 state: running
+[parse_status] Job job_638abe74 still pending
+[parse_status] Checking job: job_4bf991a9
+[parse_status] Job job_4bf991a9 state: running
+[parse_status] Job job_4bf991a9 still pending
+[parse_status] Checking job: job_638abe74
+[parse_status] Job job_638abe74 state: running
+[parse_status] Job job_638abe74 still pending
+[parse_status] Checking job: job_4bf991a9
+[parse_status] Job job_4bf991a9 state: running
+[parse_status] Job job_4bf991a9 still pending
+[parse_status] Checking job: job_638abe74
+[parse_status] Job job_638abe74 state: running
+[parse_status] Job job_638abe74 still pending
+[parse_status] Checking job: job_4bf991a9
+[parse_status] Job job_4bf991a9 state: running
+[parse_status] Job job_4bf991a9 still pending
+[parse_log_file] Flushed batch: 50000 rows total
+[parse_status] Checking job: job_638abe74
+[parse_status] Job job_638abe74 state: running
+[parse_status] Job job_638abe74 still pending
+[parse_status] Checking job: job_4bf991a9
+[parse_status] Job job_4bf991a9 state: running
+[parse_status] Job job_4bf991a9 still pending
+[parse_log_file] Flushed batch: 100000 rows total
+[parse_status] Checking job: job_638abe74
+[parse_status] Job job_638abe74 state: running
+[parse_status] Job job_638abe74 still pending
+[parse_status] Checking job: job_4bf991a9
+[parse_status] Job job_4bf991a9 state: running
+[parse_status] Job job_4bf991a9 still pending
+[parse_status] Checking job: job_638abe74
+[parse_status] Job job_638abe74 state: running
+[parse_status] Job job_638abe74 still pending
+[parse_status] Checking job: job_4bf991a9
+[parse_status] Job job_4bf991a9 state: running
+[parse_status] Job job_4bf991a9 still pending
+[parse_log_file] Flushed batch: 150000 rows total
+[parse_status] Checking job: job_638abe74
+[parse_status] Job job_638abe74 state: running
+[parse_status] Job job_638abe74 still pending
+[parse_status] Checking job: job_4bf991a9
+[parse_status] Job job_4bf991a9 state: running
+[parse_status] Job job_4bf991a9 still pending
+[parse_status] Checking job: job_638abe74
+[parse_status] Checking job: job_4bf991a9
+[parse_status] Job job_638abe74 state: error
+[parse_status] Job job_4bf991a9 state: running
+[parse_status] Job job_638abe74 error: No matching rows found in any file — errors: Output_site111_5_15_2026_14_02_15_FDVLOG_4_tb_set_utility_PROGRAM_SUSPEND_HOTE_REL005.txt: Incorrect number of bindings supplied. The current statement uses 33, and there are 34 supplied.; Output_site111_5_16_2026_13_05_29_FDVLOG_3_tb_set_utility_PROGRAM_SUSPEND_HOTE_NOREM.txt: Incorrect number of bindings supplied. The current statement uses 33, and there are 34 supplied.
+[parse_status] Job job_4bf991a9 still pending
+[parse_log_file] Flushed batch: 200000 rows total
+[parse_status] Checking job: job_4bf991a9
+[parse_status] Job job_4bf991a9 state: running
+[parse_status] Job job_4bf991a9 still pending
+[parse_log_file] Flushed batch: 250000 rows total
+[parse_status] Checking job: job_4bf991a9
+[parse_status] Job job_4bf991a9 state: running
+[parse_status] Job job_4bf991a9 still pending
+[parse_log_file] Flushed batch: 300000 rows total
+[parse_status] Checking job: job_4bf991a9
+[parse_status] Job job_4bf991a9 state: running
+[parse_status] Job job_4bf991a9 still pending
+[parse_log_file] Flushed batch: 350000 rows total
+[parse_status] Checking job: job_4bf991a9
+[parse_status] Job job_4bf991a9 state: running
+[parse_status] Job job_4bf991a9 still pending
+[parse_log_file] Flushed batch: 400000 rows total
+[parse_status] Checking job: job_4bf991a9
+[parse_status] Job job_4bf991a9 state: running
+[parse_status] Job job_4bf991a9 still pending
+[parse_log_file] Flushed final batch: 414720 rows total
+[parse_log_file] Completed: 414720 rows in 16.49s, cache_id=cache_0810e7a6467f
+[parse_status] Checking job: job_4bf991a9
+[parse_status] Job job_4bf991a9 state: running
+[parse_status] Job job_4bf991a9 still pending
+[parse_status] Checking job: job_4bf991a9

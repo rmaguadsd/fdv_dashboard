@@ -628,7 +628,8 @@ def _run_parse_job(job_id, file_path, regex_include, regex_exclude, temp_path=No
         if Path(db_path).exists():
             db = sqlite3.connect(db_path, check_same_thread=False)
             db.row_factory = sqlite3.Row
-            cursor = db.execute('SELECT * FROM rows LIMIT 500')
+            col_names = ','.join([f'"{h}"' for h in headers])
+            cursor = db.execute(f'SELECT {col_names} FROM rows LIMIT 500')
             preview_rows = [list(row) for row in cursor.fetchall()]
             db.close()
         
@@ -758,7 +759,8 @@ def _run_parse_multi_job(job_id, file_paths, regex_include, regex_exclude, temp_
             if Path(db_path).exists():
                 db = sqlite3.connect(db_path, check_same_thread=False)
                 db.row_factory = sqlite3.Row
-                cursor = db.execute('SELECT * FROM rows LIMIT 500')
+                col_names = ','.join([f'"{h}"' for h in headers])
+                cursor = db.execute(f'SELECT {col_names} FROM rows LIMIT 500')
                 preview_rows = [list(row) for row in cursor.fetchall()]
                 db.close()
         
@@ -991,9 +993,10 @@ class RequestHandler(BaseHTTPRequestHandler):
                     # Fetch in 10K batches to manage memory
                     offset = 0
                     batch_size = 10000
+                    col_names = ','.join([f'"{h}"' for h in headers])
                     while True:
                         cursor = db.execute(
-                            'SELECT * FROM rows LIMIT ? OFFSET ?',
+                            f'SELECT {col_names} FROM rows LIMIT ? OFFSET ?',
                             (batch_size, offset)
                         )
                         rows = cursor.fetchall()
@@ -1081,8 +1084,9 @@ class RequestHandler(BaseHTTPRequestHandler):
                     # Get total count
                     cursor = db.execute('SELECT COUNT(*) FROM rows')
                     total = cursor.fetchone()[0]
-                    # Get paginated chunk
-                    cursor = db.execute('SELECT * FROM rows LIMIT ? OFFSET ?', (limit, offset))
+                    # Get paginated chunk - explicitly list columns to skip the auto-generated id column
+                    col_names = ','.join([f'"{h}"' for h in headers])
+                    cursor = db.execute(f'SELECT {col_names} FROM rows LIMIT ? OFFSET ?', (limit, offset))
                     chunk = [list(row) for row in cursor.fetchall()]
                     db.close()
                 else:
