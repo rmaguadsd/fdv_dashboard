@@ -916,7 +916,8 @@ class RequestHandler(BaseHTTPRequestHandler):
                 if Path(db_path).exists():
                     db = sqlite3.connect(db_path, check_same_thread=False)
                     db.row_factory = sqlite3.Row
-                    cursor = db.execute('SELECT * FROM rows')
+                    col_names = ','.join([f'"{h}"' for h in headers])
+                    cursor = db.execute(f'SELECT {col_names} FROM rows')
                     rows = [list(row) for row in cursor.fetchall()]
                     db.close()
             else:
@@ -2177,7 +2178,9 @@ class RequestHandler(BaseHTTPRequestHandler):
                     if Path(db_path).exists():
                         db = sqlite3.connect(db_path, check_same_thread=False)
                         db.row_factory = sqlite3.Row
-                        cursor = db.execute('SELECT * FROM rows')
+                        headers = cached.get('headers', [])
+                        col_names = ','.join([f'"{h}"' for h in headers])
+                        cursor = db.execute(f'SELECT {col_names} FROM rows')
                         rows = [list(row) for row in cursor.fetchall()]
                         db.close()
                 else:
@@ -2211,24 +2214,45 @@ class RequestHandler(BaseHTTPRequestHandler):
                 fpath = os.path.join(d, fname)
                 if not os.path.isfile(fpath):
                     raise ValueError('File not found: ' + fname)
+                
+                # Load session file
                 with open(fpath, 'r', encoding='utf-8') as f:
-                    entry = json.load(f)
-                headers = entry.get('headers')
-                rows    = entry.get('rows')
+                    data = json.load(f)
+                
+                headers = data.get('headers')
+                rows    = data.get('rows')
                 if not headers or rows is None:
                     raise ValueError('Session file missing headers or rows')
                 
-                # Instead of storing all rows in memory, use SQLite batching
+                # COMPATIBILITY FIX: Old session files may have been saved with id column included
+                # If rows have more columns than headers, assume the first column is the id and remove it
+                if rows and len(rows[0]) > len(headers):
+                    expected_extra = len(rows[0]) - len(headers)
+                    if expected_extra == 1:
+                        # Remove first column (id) from all rows
+                        rows = [row[1:] if isinstance(row, list) else row[1:] for row in rows]
+                    else:
+                        raise ValueError(f'Row has {len(rows[0])} values but headers has {len(headers)} - unexpected mismatch')
+                
+                row_count = len(rows) if rows else 0
+                
+                # Create SQLite DB and insert rows in batches
                 cache_id = 'cache_' + uuid.uuid4().hex[:12]
                 db = _get_sqlite_db(cache_id, headers)
-                _batch_insert_rows(db, headers, rows)
+                
+                # Insert rows in 50K-row batches to avoid memory/SQL issues
+                batch_size = 50000
+                for i in range(0, len(rows), batch_size):
+                    batch = rows[i:i+batch_size]
+                    _batch_insert_rows(db, headers, batch)
+                
                 db.close()
                 
                 # Register in cache
                 with sqlite_cache_lock:
                     sqlite_cache[cache_id] = {
                         'db_path': f"{CACHE_DIR}/{cache_id}.db",
-                        'row_count': len(rows),
+                        'row_count': row_count,
                         'headers': headers
                     }
                 
@@ -2236,13 +2260,13 @@ class RequestHandler(BaseHTTPRequestHandler):
                 parsed_cache[csv_id] = {
                     'headers': headers, 
                     'cache_id': cache_id,
-                    'row_count': len(rows),
+                    'row_count': row_count,
                     'is_sqlite': True
                 }
                 _send_json(self, 200, {'success': True, 'csv_id': csv_id,
-                                       'total_rows': len(rows), 'headers': headers,
-                                       'snap': entry.get('snap'),
-                                       'fname': entry.get('fname', '')})
+                                       'total_rows': row_count, 'headers': headers,
+                                       'snap': data.get('snap'),
+                                       'fname': data.get('fname', '')})
             except Exception as e:
                 _send_json(self, 200, {'success': False, 'error': str(e)})
 
