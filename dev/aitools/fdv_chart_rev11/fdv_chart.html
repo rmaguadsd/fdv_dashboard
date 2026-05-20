@@ -5032,39 +5032,49 @@ function drawScatterLine() {
 
     var groups = {};
     var useLegend = legendIdx >= 0;
+    var pointSize = _pointSize || 8;  /* Use global font control value */
     
-    /* Detect if x is categorical (many discrete values) */
+    /* Calculate x-axis width and jitter parameters */
     var uniqueXValues = {};
     plotPts.forEach(function(pt) {
         uniqueXValues[pt.x] = true;
     });
-    var numUniqueX = Object.keys(uniqueXValues).length;
-    var totalPoints = plotPts.length;
+    var sortedXValues = Object.keys(uniqueXValues)
+        .map(function(v) { return parseFloat(v); })
+        .sort(function(a, b) { return a - b; });
+    var numUniqueX = sortedXValues.length;
     
-    /* HEURISTIC: If many unique values relative to total points, use categorical axis
-       This prevents overlapping when 50+ groups exist */
-    var useCategoricalAxis = (numUniqueX > 15 && numUniqueX > totalPoints * 0.1);
-    
-    /* If using categorical axis, create mapping from x-values to indices */
-    var xValueToIndex = {};
-    var sortedXValues = [];
-    if (useCategoricalAxis) {
-        sortedXValues = Object.keys(uniqueXValues)
-            .map(function(v) { return parseFloat(v); })
-            .sort(function(a, b) { return a - b; });
-        sortedXValues.forEach(function(xVal, idx) {
-            xValueToIndex[xVal] = idx;
-        });
+    /* Calculate xwidth: distance between adjacent x-values in DATA SPACE */
+    var xwidth = 1;  /* Default for single group or sparse data */
+    if (numUniqueX > 1) {
+        var diffs = [];
+        for (var i = 1; i < sortedXValues.length; i++) {
+            diffs.push(sortedXValues[i] - sortedXValues[i-1]);
+        }
+        diffs.sort(function(a, b) { return a - b; });
+        /* Use median of differences as xwidth */
+        xwidth = diffs[Math.floor(diffs.length / 2)];
     }
     
-    /* Build data points: convert to indices if using categorical axis */
+    /* Store jitter parameters to be calculated after chart creation */
+    var jitterParams = {
+        xwidth: xwidth,
+        sortedXValues: sortedXValues,
+        shouldApplyJitter: false,
+        jitterRange: 0,
+        pointSizeInPixels: pointSize,
+        numUniqueX: numUniqueX
+    };
+    
+    /* Build data points WITHOUT jitter first - will apply after chart creation */
+    var pointIndex = 0;
     plotPts.forEach(function(pt) {
         var g = colorKey(pt);
         if (!groups[g]) groups[g] = [];
-        var xCoord = useCategoricalAxis ? xValueToIndex[pt.x] : pt.x;
-        var dp = { x: xCoord, y: pt.y };
+        var dp = { x: pt.x, y: pt.y };
         if (useLegend) dp._lbl = legendKey(pt);
         groups[g].push(dp);
+        pointIndex++;
     });
 
     /* FIXED: Add empty datasets for all discovered colors that have no plotted points
@@ -5075,7 +5085,6 @@ function drawScatterLine() {
         }
     });
 
-    var pointSize = _pointSize || 8;  /* Use global font control value */
     var datasets = Object.keys(groups).sort().map(function(g, i) {
         return {
             label: g + ' (n=' + groups[g].length + ')',
@@ -5098,31 +5107,19 @@ function drawScatterLine() {
     /* Feed the global fdvPointLabels plugin: array-of-arrays, one per dataset */
     if (chartInst) chartInst.destroy();
     
-    /* Configure x-axis: use category axis for many groups, linear for true numeric data */
-    var xAxisConfig;
-    if (useCategoricalAxis) {
-        xAxisConfig = {
-            type: 'category',
-            labels: sortedXValues,
-            title: { display: true, text: _axisXTitle(xCol + (xRx ? ' [' + xRx + ']' : '')) },
-            ticks: { maxRotation: 45, autoSkip: false },
-            offset: true,
-            grid: { drawBorder: true }
+    /* Use continuous linear or logarithmic axis */
+    var xAxisConfig = Object.assign(getAxisScale('x-min', 'x-max', 'x-step'), {
+        type: xLog ? 'logarithmic' : 'linear',
+        title: { display: true,
+                 text: _axisXTitle(xCol + (xRx ? ' [' + xRx + ']' : '') + (xLog ? ' (log)' : '') + (xHierCol ? ' by ' + xHierCol : '')) }
+    });
+    
+    /* If hierarchical labels exist, add callback for label rendering */
+    if (hierLabels) {
+        xAxisConfig.ticks = xAxisConfig.ticks || {};
+        xAxisConfig.ticks.callback = function(value) {
+            return hierLabels[value] || value;
         };
-    } else {
-        xAxisConfig = Object.assign(getAxisScale('x-min', 'x-max', 'x-step'), {
-            type: xLog ? 'logarithmic' : 'linear',
-            title: { display: true,
-                     text: _axisXTitle(xCol + (xRx ? ' [' + xRx + ']' : '') + (xLog ? ' (log)' : '') + (xHierCol ? ' by ' + xHierCol : '')) }
-        });
-        
-        /* If hierarchical labels exist, add callback for label rendering */
-        if (hierLabels) {
-            xAxisConfig.ticks = xAxisConfig.ticks || {};
-            xAxisConfig.ticks.callback = function(value) {
-                return hierLabels[value] || value;
-            };
-        }
     }
     
     chartInst = new Chart(document.getElementById('plot-canvas').getContext('2d'), {
@@ -5167,6 +5164,56 @@ function drawScatterLine() {
     _setPointLabels(chartInst, useLegend
         ? datasets.map(function(ds){ return ds.data.map(function(dp){ return dp._lbl || ''; }); })
         : null);
+
+    /* NOW apply jitter using actual Chart.js pixel-to-data conversions */
+    if (ct === 'scatter' && jitterParams.numUniqueX > 1) {
+        /* Get canvas width to calculate pixel-to-data scaling */
+        var canvasWidth = document.getElementById('plot-canvas').width;
+        var xScale = chartInst.scales.x;
+        
+        /* Calculate pixel width per data unit */
+        if (xScale && xScale.width) {
+            /* Get min/max in data space */
+            var xMin = xScale.min;
+            var xMax = xScale.max;
+            var xRangeData = xMax - xMin;
+            var xRangePixels = xScale.width;
+            
+            /* Pixels per data unit */
+            var pixelsPerDataUnit = xRangePixels / xRangeData;
+            
+            /* Convert point radius (pixels) to data space */
+            var pointSizeInDataUnits = (jitterParams.pointSizeInPixels / pixelsPerDataUnit);
+            
+            /* Decide: if point size >= 0.5 * xwidth, don't apply jitter */
+            var shouldApplyJitter = pointSizeInDataUnits < (0.5 * jitterParams.xwidth);
+            
+            if (shouldApplyJitter) {
+                var jitterRange = 0.5 * jitterParams.xwidth;
+                
+                /* Apply jitter to all datasets */
+                datasets.forEach(function(dataset, dsIdx) {
+                    dataset.data.forEach(function(dp, ptIdx) {
+                        /* Deterministic pseudo-random jitter */
+                        var seed = ptIdx + dsIdx * 1000;
+                        var random = Math.sin(seed * 12.9898) * 43758.5453;
+                        random = random - Math.floor(random);
+                        var jitterAmount = (random - 0.5) * 2 * jitterRange;
+                        
+                        /* Apply jitter and clamp to ±0.5*xwidth */
+                        var jitteredX = dp.x + jitterAmount;
+                        var minX = dp.x - 0.5 * jitterParams.xwidth;
+                        var maxX = dp.x + 0.5 * jitterParams.xwidth;
+                        dp.x = Math.max(minX, Math.min(maxX, jitteredX));
+                    });
+                });
+                
+                /* Update chart to show jittered points */
+                chartInst.data.datasets = datasets;
+                chartInst.update('none');  /* Update without animation */
+            }
+        }
+    }
 
     _syncMainTitle(xCol + ' vs ' + yCol + (colCol ? '  │  ' + colCol : ''));
     var filtNote = hasActiveFilters() ? ' — filtered' : '';
