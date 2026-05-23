@@ -782,6 +782,14 @@
             <span id="color-dims-wrap" class="gdim-wrap"><!-- rows injected by _gdimInit --></span>
             <button class="gdim-add" onclick="_gdimAdd('color')" title="Add another color-by dimension">+</button>
         </span>
+        <!-- Z-Order control — specify rendering order for color-by groups -->
+        <label id="z-order-label" style="margin-left:8px;display:flex;align-items:center;gap:4px">
+            <span style="font-size:0.82em;color:#6c757d;font-weight:bold;white-space:nowrap">Z-Order:</span>
+            <input type="text" id="z-order-input" placeholder="e.g. red, blue, green" autocomplete="off"
+                   style="width:180px;font-size:0.85em"
+                   title="Specify rendering order (last = on top). Comma-separated color-by values. Groups not listed render first (bottom)">
+            <span style="font-size:0.75em;color:#999;white-space:nowrap">(last = top)</span>
+        </label>
         <!-- Split-chart controls — same mechanism as Color-by -->
         <span id="split-col-label" style="margin-left:8px;display:inline-flex;align-items:flex-start;gap:4px;border-left:1px dashed #ced4da;padding-left:8px">
             <span style="font-size:0.82em;color:#17a2b8;font-weight:bold;white-space:nowrap;padding-top:3px">&#9707;&nbsp;Split-chart:</span>
@@ -4207,8 +4215,30 @@ function _buildTileChart(canvas, ct, tileData, xCol, yCol, xRx, yRx, colCol, col
             }
             bpGroups[g].push(pt.y);
         });
+        
+        /* Apply z-order sorting if z-order input exists */
+        var zOrderElem = document.getElementById('z-order-input');
+        var zOrderInput = (zOrderElem && zOrderElem.value) ? zOrderElem.value.trim() : '';
+        var zOrderList = [];
+        if (zOrderInput) {
+            zOrderList = zOrderInput.split(',').map(function(s) { return s.trim(); });
+        }
+        
         var bpKeys = bpOrder.slice()
-                            .sort(function(a,b){ return a.localeCompare(b,undefined,{numeric:true}); });
+                            .sort(function(a,b){ 
+                                var aIdx = zOrderList.indexOf(a);
+                                var bIdx = zOrderList.indexOf(b);
+                                
+                                /* Both not in z-order list: keep alphabetical */
+                                if (aIdx === -1 && bIdx === -1) return a.localeCompare(b,undefined,{numeric:true});
+                                
+                                /* One not in z-order: unlisted comes first */
+                                if (aIdx === -1) return -1;
+                                if (bIdx === -1) return 1;
+                                
+                                /* Both in z-order: sort by position (earlier = lower rendering order) */
+                                return aIdx - bIdx;
+                            });
         if (!bpKeys.length) return null;
         
         /* Generate scatter data with ADAPTIVE jitter based on density (or no jitter if disabled) */
@@ -4271,9 +4301,31 @@ function _buildTileChart(canvas, ct, tileData, xCol, yCol, xRx, yRx, colCol, col
             if (!histGroups[g]) { histGroups[g] = []; histOrder.push(g); }
             histGroups[g].push(pt.x);
         });
-        /* deduplicate + sort group keys naturally */
-        var histKeys = histOrder.filter(function(k,i){ return histOrder.indexOf(k)===i; })
-                                .sort(function(a,b){ return a.localeCompare(b, undefined, {numeric:true}); });
+        /* deduplicate + apply z-order sorting if available */
+        var histOrder_dedup = histOrder.filter(function(k,i){ return histOrder.indexOf(k)===i; });
+        
+        /* Apply z-order sorting if z-order input exists (for main charts) */
+        var zOrderElem = document.getElementById('z-order-input');
+        var zOrderInput = (zOrderElem && zOrderElem.value) ? zOrderElem.value.trim() : '';
+        var zOrderList = [];
+        if (zOrderInput) {
+            zOrderList = zOrderInput.split(',').map(function(s) { return s.trim(); });
+        }
+        
+        var histKeys = histOrder_dedup.sort(function(a, b) {
+            var aIdx = zOrderList.indexOf(a);
+            var bIdx = zOrderList.indexOf(b);
+            
+            /* Both not in z-order list: keep alphabetical */
+            if (aIdx === -1 && bIdx === -1) return a.localeCompare(b, undefined, {numeric:true});
+            
+            /* One not in z-order: unlisted comes first */
+            if (aIdx === -1) return -1;
+            if (bIdx === -1) return 1;
+            
+            /* Both in z-order: sort by position (earlier = lower rendering order) */
+            return aIdx - bIdx;
+        });
         if (!histKeys.length) return null;
         
         var userBins = parseInt(document.getElementById('hist-bins').value);
@@ -4354,9 +4406,31 @@ function _buildTileChart(canvas, ct, tileData, xCol, yCol, xRx, yRx, colCol, col
             if (!cpGroups[g]) { cpGroups[g] = []; cpOrder.push(g); }
             cpGroups[g].push(pt.x);
         });
-        /* deduplicate + sort group keys naturally */
-        var cpKeys = cpOrder.filter(function(k,i){ return cpOrder.indexOf(k)===i; })
-                            .sort(function(a,b){ return a.localeCompare(b, undefined, {numeric:true}); });
+        /* deduplicate + apply z-order sorting */
+        var cpOrder_dedup = cpOrder.filter(function(k,i){ return cpOrder.indexOf(k)===i; });
+        
+        /* Apply z-order sorting if z-order input exists */
+        var zOrderElem = document.getElementById('z-order-input');
+        var zOrderInput = (zOrderElem && zOrderElem.value) ? zOrderElem.value.trim() : '';
+        var zOrderList = [];
+        if (zOrderInput) {
+            zOrderList = zOrderInput.split(',').map(function(s) { return s.trim(); });
+        }
+        
+        var cpKeys = cpOrder_dedup.sort(function(a,b){ 
+            var aIdx = zOrderList.indexOf(a);
+            var bIdx = zOrderList.indexOf(b);
+            
+            /* Both not in z-order list: keep alphabetical */
+            if (aIdx === -1 && bIdx === -1) return a.localeCompare(b, undefined, {numeric:true});
+            
+            /* One not in z-order: unlisted comes first */
+            if (aIdx === -1) return -1;
+            if (bIdx === -1) return 1;
+            
+            /* Both in z-order: sort by position (earlier = lower rendering order) */
+            return aIdx - bIdx;
+        });
         if (!cpKeys.length) return null;
         var cpDatasets = cpKeys.map(function(g, i) {
             var vals = cpGroups[g].slice().sort(function(a,b){ return a-b; });
@@ -4472,16 +4546,87 @@ function _buildTileChart(canvas, ct, tileData, xCol, yCol, xRx, yRx, colCol, col
             groups[colorVal] = [];
         }
     });
-    var datasets = Object.keys(groups).sort().map(function(g, i) {
+    
+    /* Create persistent group-to-color mapping for tiles (based on ALL groups alphabetically) */
+    /* This ensures colors stay the same regardless of z-order sorting */
+    if (!window._tileGroupColorMap) window._tileGroupColorMap = {};
+    var allGroupsSortedTile = Object.keys(groups).sort();
+    allGroupsSortedTile.forEach(function(g, idx) {
+        if (!window._tileGroupColorMap[g]) {
+            window._tileGroupColorMap[g] = PALETTE[idx % PALETTE.length];
+        }
+    });
+    
+    /* Parse z-order input and convert indices to group names if needed */
+    var zOrderElem = document.getElementById('z-order-input');
+    var zOrderInput = (zOrderElem && zOrderElem.value) ? zOrderElem.value.trim() : '';
+    var zOrderList = [];
+    if (zOrderInput) {
+        zOrderList = zOrderInput.split(',').map(function(s) { return s.trim(); });
+    }
+    
+    /* Convert numeric indices to group names */
+    var convertedZOrderList = [];
+    zOrderList.forEach(function(item) {
+        var trimmed = item.trim();
+        var idx = parseInt(trimmed, 10);
+        
+        /* Check if it's a valid numeric index (1-based) */
+        if (!isNaN(idx) && idx >= 1 && idx <= allGroupsSortedTile.length) {
+            /* Convert 1-based index to 0-based and get the group name */
+            var groupName = allGroupsSortedTile[idx - 1];
+            convertedZOrderList.push(groupName);
+        } else if (!isNaN(idx)) {
+            /* Index out of range - skip it */
+        } else {
+            /* Not a number, treat as group name */
+            convertedZOrderList.push(trimmed);
+        }
+    });
+    
+    /* Sort datasets based on z-order */
+    var groupKeys = Object.keys(groups);
+    var sortedGroupKeys;
+    
+    if (convertedZOrderList.length > 0) {
+        /* Use z-order list as the primary ordering */
+        var inZOrder = [];
+        var notInZOrder = [];
+        
+        groupKeys.forEach(function(g) {
+            if (convertedZOrderList.indexOf(g) >= 0) {
+                inZOrder.push(g);
+            } else {
+                notInZOrder.push(g);
+            }
+        });
+        
+        /* Sort items in z-order by their position in convertedZOrderList */
+        inZOrder.sort(function(a, b) {
+            return convertedZOrderList.indexOf(a) - convertedZOrderList.indexOf(b);
+        });
+        
+        /* Sort unlisted items alphabetically */
+        notInZOrder.sort();
+        
+        /* Combine: z-order items first, then unlisted items */
+        sortedGroupKeys = inZOrder.concat(notInZOrder);
+    } else {
+        /* No z-order: use alphabetical */
+        sortedGroupKeys = groupKeys.sort();
+    }
+    
+    var datasets = sortedGroupKeys.map(function(g) {
+        var color = window._tileGroupColorMap[g] || PALETTE[0];
         return { label: g + ' (n=' + groups[g].length + ')',
                  data: groups[g],
-            backgroundColor: PALETTE[i % PALETTE.length] + '99',
-            borderColor:     PALETTE[i % PALETTE.length],
+            backgroundColor: color + '99',
+            borderColor:     color,
             borderWidth: ct === 'line' ? 1.5 : 0,
             pointRadius: ct === 'line' ? Math.max(pointSize, 2) : Math.max(pointSize, 1), 
             pointHoverRadius: ct === 'line' ? Math.max(pointSize + 2, 4) : Math.max(pointSize + 2, 2),
-            pointBackgroundColor: PALETTE[i % PALETTE.length] + '99',
-            pointBorderColor: PALETTE[i % PALETTE.length],
+            pointBackgroundColor: color + '99',
+            pointBorderColor: color,
             pointBorderWidth: 1,
             showLine: ct === 'line' };
     });
@@ -5085,17 +5230,105 @@ function drawScatterLine() {
         }
     });
 
-    var datasets = Object.keys(groups).sort().map(function(g, i) {
+    /* Parse z-order input to determine rendering order */
+    var zOrderInput = '';
+    var zOrderElem = document.getElementById('z-order-input');
+    if (zOrderElem && zOrderElem.value) {
+        zOrderInput = zOrderElem.value.trim();
+    }
+    var zOrderList = [];
+    if (zOrderInput) {
+        zOrderList = zOrderInput.split(',').map(function(s) { return s.trim(); });
+    }
+    console.log('[drawScatterLine] z-order input:', zOrderInput);
+    console.log('[drawScatterLine] z-order list (raw):', zOrderList);
+    
+    /* Create persistent group-to-color mapping (based on ALL groups alphabetically) */
+    /* This ensures colors stay the same regardless of z-order sorting */
+    if (!window._groupColorMap) window._groupColorMap = {};
+    var allGroupsSorted = Object.keys(groups).sort();
+    allGroupsSorted.forEach(function(g, idx) {
+        if (!window._groupColorMap[g]) {
+            window._groupColorMap[g] = PALETTE[idx % PALETTE.length];
+        }
+    });
+    console.log('[drawScatterLine] group color map:', window._groupColorMap);
+    console.log('[drawScatterLine] alphabetically sorted groups:', allGroupsSorted);
+    
+    /* Convert z-order indices to group names if numeric indices are provided */
+    /* Legend indices: 1, 2, 3, ... correspond to alphabetically sorted groups */
+    var convertedZOrderList = [];
+    zOrderList.forEach(function(item) {
+        var trimmed = item.trim();
+        var idx = parseInt(trimmed, 10);
+        
+        /* Check if it's a valid numeric index (1-based) */
+        if (!isNaN(idx) && idx >= 1 && idx <= allGroupsSorted.length) {
+            /* Convert 1-based index to 0-based and get the group name */
+            var groupName = allGroupsSorted[idx - 1];
+            convertedZOrderList.push(groupName);
+            console.log('[drawScatterLine] index ' + idx + ' → group "' + groupName + '"');
+        } else if (!isNaN(idx)) {
+            /* Index out of range - skip it */
+            console.log('[drawScatterLine] index ' + idx + ' out of range (1-' + allGroupsSorted.length + '), skipping');
+        } else {
+            /* Not a number, treat as group name */
+            convertedZOrderList.push(trimmed);
+        }
+    });
+    console.log('[drawScatterLine] converted z-order list:', convertedZOrderList);
+    
+    /* Sort datasets based on z-order:
+       - If z-order is provided: use EXACTLY that order (first item = bottom, last = top)
+       - If z-order is empty: use alphabetical order (default)
+       Items not listed in z-order go at the END (on top) in alphabetical order */
+    var groupKeys = Object.keys(groups);
+    var sortedGroupKeys;
+    
+    if (convertedZOrderList.length > 0) {
+        /* Use z-order list as the primary ordering */
+        /* Items in z-order: appear in that exact sequence (first=bottom, last=top) */
+        /* Items NOT in z-order: appear at the END in alphabetical order */
+        var inZOrder = [];
+        var notInZOrder = [];
+        
+        groupKeys.forEach(function(g) {
+            if (convertedZOrderList.indexOf(g) >= 0) {
+                inZOrder.push(g);
+            } else {
+                notInZOrder.push(g);
+            }
+        });
+        
+        /* Sort items in z-order by their position in convertedZOrderList */
+        inZOrder.sort(function(a, b) {
+            return convertedZOrderList.indexOf(a) - convertedZOrderList.indexOf(b);
+        });
+        
+        /* Sort unlisted items alphabetically */
+        notInZOrder.sort();
+        
+        /* Combine: z-order items first, then unlisted items (unlisted render on top) */
+        sortedGroupKeys = inZOrder.concat(notInZOrder);
+    } else {
+        /* No z-order: use alphabetical */
+        sortedGroupKeys = groupKeys.sort();
+    }
+    
+    console.log('[drawScatterLine] final sorted group keys:', sortedGroupKeys);
+
+    var datasets = sortedGroupKeys.map(function(g) {
+        var color = window._groupColorMap[g] || PALETTE[0];
         return {
             label: g + ' (n=' + groups[g].length + ')',
             data: groups[g],
-            backgroundColor: PALETTE[i % PALETTE.length] + '99',
-            borderColor:     PALETTE[i % PALETTE.length],
+            backgroundColor: color + '99',
+            borderColor:     color,
             borderWidth: ct === 'line' ? 1.5 : 0,
             pointRadius: ct === 'scatter' ? Math.max(pointSize, 1) : pointSize,  /* Use point-size control */
             pointHoverRadius: ct === 'scatter' ? Math.max(pointSize + 2, 1) : pointSize + 2,
-            pointBackgroundColor: PALETTE[i % PALETTE.length] + '99',
-            pointBorderColor: PALETTE[i % PALETTE.length],
+            pointBackgroundColor: color + '99',
+            pointBorderColor: color,
             pointBorderWidth: 1,
             showLine: ct === 'line'
         };
@@ -5699,8 +5932,29 @@ function drawBoxPlot() {
         groups[g].push(yv);
     }
 
+    /* Apply z-order sorting if z-order input exists */
+    var zOrderElem = document.getElementById('z-order-input');
+    var zOrderInput = (zOrderElem && zOrderElem.value) ? zOrderElem.value.trim() : '';
+    var zOrderList = [];
+    if (zOrderInput) {
+        zOrderList = zOrderInput.split(',').map(function(s) { return s.trim(); });
+    }
+
     var keys = order.slice()
-                    .sort(function(a,b){ return a.localeCompare(b, undefined, {numeric:true}); });
+                    .sort(function(a,b){ 
+                        var aIdx = zOrderList.indexOf(a);
+                        var bIdx = zOrderList.indexOf(b);
+                        
+                        /* Both not in z-order list: keep alphabetical */
+                        if (aIdx === -1 && bIdx === -1) return a.localeCompare(b, undefined, {numeric:true});
+                        
+                        /* One not in z-order: unlisted comes first */
+                        if (aIdx === -1) return -1;
+                        if (bIdx === -1) return 1;
+                        
+                        /* Both in z-order: sort by position (earlier = lower rendering order) */
+                        return aIdx - bIdx;
+                    });
 
     if (!keys.length) { status.textContent = 'No numeric values in column ' + yCol; _spinStop(); return; }
 
