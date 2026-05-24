@@ -3854,8 +3854,8 @@ function _gdimAdd(type) {
     row.className = 'gdim-row';
     var rowId = 'gdim-' + type + '-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
     row.innerHTML = '<select id="' + rowId + '-col" onchange="_gdimChanged(\'' + type + '\')">' + opts + '</select>'
-        + '<input type="text" id="' + rowId + '-rx" class="gdim-rx" placeholder="regex\u2026"'
-        + ' title="Optional regex \u2014 capture group = extracted key, no group = full match"'
+        + '<input type="text" id="' + rowId + '-rx" class="gdim-rx" placeholder="regex or regex |> formula"'
+        + ' title="Optional: regex only | formula only | regex |> formula. Formula variables: x (extracted value), g1/g2/etc (capture groups)"'
         + ' oninput="_gdimChanged(\'' + type + '\')">'
         + '<button class="gdim-del" onclick="_gdimDel(this,\'' + type + '\')"'
         + ' title="Remove this dimension">\u00d7</button>';
@@ -4032,29 +4032,88 @@ function _gdimInit() {
 
 /** Old version kept for compatibility - now delegates to new direct restore */
 
-/* Extracts a single color/group key from a raw string value using a regex.
-   Like _splitChartKeys but returns ONE compound key string (not an array).
-   Multiple capture groups are joined with ", " — e.g. PGTYPE_(..)_.*_BL_(\d)
+/* Extracts a single color/group key from a raw string value using regex + optional formula.
+   
+   Format: [regex] |> [formula]
+   - regex only: e.g. "DUT(\d+)" extracts capture groups
+   - formula only: e.g. "x > 100 ? 'HIGH' : 'LOW'" transforms raw value
+   - both: e.g. "(\d+) |> parseInt(x) > 100 ? 'HIGH' : 'LOW'" extracts then transforms
+   
+   Variables in formula:
+   - x: extracted value (after regex, or raw if no regex)
+   - g1, g2, g3...: numbered capture groups from regex
+   
+   Multiple capture groups joined with ", " — e.g. PGTYPE_(..)_.*_BL_(\d)
    on "BLAH_PGTYPE_UP_BLAH_BL_3" → "UP, 3".
    No regex: returns raw value.
    No capture groups: returns full match. */
 function _extractGroupKey(raw, rxStr) {
     if (!rxStr) return raw || '(blank)';
+    
     try {
-        /* No 'g' flag — first match only, one stable key per cell value.
-           Key strategy:
-             • No capture groups  → full match (m[0])        e.g. "DUT\d+"   on "DUT3" → "DUT3"
-             • Capture group(s)   → joined capture groups    e.g. "DUT(\d+)" on "DUT3" → "3"
-           Fall back to raw value when nothing matches so rows are never silently lost. */
-        var rx = new RegExp(rxStr);
-        var m  = rx.exec(raw);
-        if (!m) return '(no match)';
-        var groups = [];
-        for (var g = 1; g < m.length; g++) {
-            if (m[g] !== undefined) groups.push(m[g]);
+        /* Parse separator to split regex and formula */
+        var parts = rxStr.split(/\s*\|>\s*/);
+        var regexPart = parts[0] ? parts[0].trim() : '';
+        var formulaPart = parts[1] ? parts[1].trim() : '';
+        
+        /* Step 1: Apply regex if provided */
+        var extractedValue = raw;
+        var captureGroups = {};
+        
+        if (regexPart) {
+            var rx = new RegExp(regexPart);
+            var m = rx.exec(raw);
+            if (!m) return '(no match)';
+            
+            /* Extract capture groups */
+            var groups = [];
+            for (var g = 1; g < m.length; g++) {
+                if (m[g] !== undefined) {
+                    groups.push(m[g]);
+                    captureGroups['g' + g] = m[g];
+                }
+            }
+            
+            /* Set extracted value based on capture groups */
+            if (groups.length > 0) {
+                extractedValue = groups.join(', ');
+            } else {
+                extractedValue = m[0];  /* Full match if no groups */
+            }
         }
-        return groups.length > 0 ? groups.join(', ') : m[0];
-    } catch(e) { return raw || '(blank)'; }
+        
+        /* Step 2: Apply formula if provided */
+        if (formulaPart) {
+            /* Prepare variables for formula execution */
+            var x = extractedValue;
+            
+            /* Build safe eval context with formula variables */
+            var evalCode = '(function() { ' +
+                'var x = ' + JSON.stringify(x) + '; ';
+            
+            /* Add capture groups as variables (g1, g2, etc.) */
+            Object.keys(captureGroups).forEach(function(key) {
+                evalCode += 'var ' + key + ' = ' + JSON.stringify(captureGroups[key]) + '; ';
+            });
+            
+            evalCode += 'return (' + formulaPart + '); })()';
+            
+            try {
+                var result = eval(evalCode);
+                extractedValue = result != null ? String(result) : '(undefined)';
+            } catch(formulaErr) {
+                /* Formula execution error — log and return error indicator */
+                console.error('[Formula Error] ' + formulaPart + ' | Error: ' + formulaErr.message);
+                return '(formula error)';
+            }
+        }
+        
+        return extractedValue || '(blank)';
+    } catch(e) {
+        /* Fallback for regex parsing errors */
+        console.error('[extractGroupKey Error] ' + e.message + ' | Input: ' + rxStr);
+        return raw || '(blank)';
+    }
 }
 
 function _applySplitLayout() {
