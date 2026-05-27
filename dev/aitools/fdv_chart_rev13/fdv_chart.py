@@ -225,6 +225,91 @@ SQLITE_BATCH_SIZE = 50000
 CACHE_DIR = tempfile.gettempdir() + '/fdv_chart_cache'
 Path(CACHE_DIR).mkdir(exist_ok=True)
 
+def _save_cache_metadata(cache_id, csv_id, headers):
+    """Save metadata about a cache to a .meta.json file for recovery after restart."""
+    try:
+        meta_path = Path(CACHE_DIR) / f"{cache_id}.meta.json"
+        meta = {'csv_id': csv_id, 'headers': headers, 'timestamp': time.time()}
+        with open(meta_path, 'w') as f:
+            json.dump(meta, f)
+    except Exception as e:
+        print(f"[WARNING] Failed to save cache metadata: {e}", file=sys.stderr, flush=True)
+
+def _recover_sessions_from_cache():
+    """Scan CACHE_DIR for orphaned SQLite databases and rebuild parsed_cache entries.
+    
+    This allows browser sessions to be restored even after server restarts,
+    as long as the SQLite cache files still exist in the temp directory.
+    Each database file should have a corresponding .meta.json file containing csv_id and headers.
+    """
+    global parsed_cache, sqlite_cache
+    
+    try:
+        cache_dir = Path(CACHE_DIR)
+        if not cache_dir.exists():
+            return
+        
+        # Look for .db files
+        for db_file in cache_dir.glob('*.db'):
+            cache_id = db_file.stem  # filename without .db extension
+            db_path = str(db_file)
+            meta_path = db_file.with_suffix('.meta.json')
+            
+            try:
+                # Check for metadata file
+                csv_id = None
+                headers = None
+                
+                if meta_path.exists():
+                    try:
+                        with open(meta_path, 'r') as f:
+                            meta = json.load(f)
+                            csv_id = meta.get('csv_id')
+                            headers = meta.get('headers', [])
+                    except:
+                        pass
+                
+                # Try to open the database and check if it's valid
+                db = sqlite3.connect(db_path, check_same_thread=False)
+                cursor = db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='rows'")
+                has_rows_table = cursor.fetchone() is not None
+                
+                if has_rows_table:
+                    # If we didn't get headers from metadata, extract from database
+                    if not headers:
+                        cursor = db.execute("PRAGMA table_info(rows)")
+                        cols = cursor.fetchall()
+                        headers = [col[1] for col in cols if col[1] != 'id']  # Skip auto id column
+                    
+                    # Get row count
+                    cursor = db.execute('SELECT COUNT(*) FROM rows')
+                    row_count = cursor.fetchone()[0]
+                    
+                    # If we don't have csv_id from metadata, generate one (fallback)
+                    if not csv_id:
+                        csv_id = 'csv_' + uuid.uuid4().hex[:8]
+                    
+                    # Register in sqlite_cache
+                    with sqlite_cache_lock:
+                        sqlite_cache[cache_id] = {'db_path': db_path, 'row_count': row_count}
+                    
+                    # Create parsed_cache entry with csv_id as key
+                    parsed_cache[csv_id] = {
+                        'headers': headers,
+                        'total': row_count,
+                        'cache_id': cache_id,
+                        'is_sqlite': True,
+                        'rows': []  # Empty in-memory rows since we use SQLite
+                    }
+                    
+                    print(f"[RECOVERY] Restored session csv_id={csv_id}, rows={row_count}, headers={len(headers)}", file=sys.stderr, flush=True)
+                
+                db.close()
+            except Exception as e:
+                print(f"[RECOVERY] Error recovering {db_file}: {e}", file=sys.stderr, flush=True)
+    except Exception as e:
+        print(f"[RECOVERY] Error scanning cache directory: {e}", file=sys.stderr, flush=True)
+
 def _get_sqlite_db(cache_id, headers):
     """Get or create a SQLite database for row caching.
     
@@ -640,6 +725,9 @@ def _run_parse_job(job_id, file_path, regex_include, regex_exclude, temp_path=No
             'row_count': row_count,
             'is_sqlite': True
         }
+        
+        # Save metadata for session recovery after restart
+        _save_cache_metadata(cache_id, csv_id, headers)
 
         PREVIEW = 500
         result = {
@@ -779,6 +867,9 @@ def _run_parse_multi_job(job_id, file_paths, regex_include, regex_exclude, temp_
             'row_count': total_row_count,
             'is_sqlite': True
         }
+        
+        # Save metadata for session recovery after restart
+        _save_cache_metadata(primary_cache_id, csv_id, headers)
 
         PREVIEW = 500
         result = {
@@ -2331,6 +2422,11 @@ def main():
     print("Starting FDV Chart Parser...", file=sys.stderr, flush=True)
     print("Port      : " + str(_SERVER_PORT), file=sys.stderr, flush=True)
     print("Store dir : " + (_SERVER_STORE_DIR or '(none)'), file=sys.stderr, flush=True)
+    
+    # Recover any orphaned sessions from previous server runs
+    print("Recovering sessions from cache...", file=sys.stderr, flush=True)
+    _recover_sessions_from_cache()
+    
     try:
         server = ThreadedHTTPServer(('0.0.0.0', _SERVER_PORT), RequestHandler)
         server.socket.settimeout(None)   # no accept() timeout; threads handle per-request I/O

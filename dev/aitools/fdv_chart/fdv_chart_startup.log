@@ -1,2 +1,8 @@
 STARTUP_BEGIN
 IMPORTS_OK
+[CHAT_STREAM] csv_id=csv_8918791f context_bytes=19622 message_len=35 model=llama3:latest
+[OLLAMA_SEND] system=2 user=1 assistant=0 has_chart_context=True
+[CHAT_STREAM] csv_id=csv_8918791f context_bytes=19622 message_len=141 model=llama3:latest
+[OLLAMA_SEND] system=2 user=2 assistant=1 has_chart_context=True
+[CHAT_STREAM] csv_id=csv_8918791f context_bytes=21647 message_len=71 model=llama3:latest
+[OLLAMA_SEND] system=2 user=3 assistant=2 has_chart_context=True

@@ -425,6 +425,21 @@
             box-sizing: border-box;
         }
         #chat-drawer.active { display: flex; }
+        
+        /* Unified content area styling */
+        #drawer-content {
+            background: #fff;
+        }
+        
+        #unified-content {
+            background: #fff;
+            border-radius: 0;
+        }
+        
+        #content-output {
+            word-wrap: break-word;
+        }
+        
         #chat-grip {
             cursor: move;
             background: linear-gradient(90deg, #17a2b8, #17a2b8);
@@ -855,23 +870,6 @@
             <!-- Save / AI buttons -->
             <button id="save-png-btn" class="btn sec" style="padding:4px 10px" onclick="_savePlotPng()"
                     title="Save the current chart as a PNG image">&#128247; Save PNG</button>
-            <button id="analyze-btn" type="button" onclick="_analyzeChart()"
-                    title="Ask the selected Ollama model to summarise the current chart">
-                &#129504; Analyze
-            </button>
-            <button id="summary-btn" type="button" onclick="_showSummary()"
-                    title="Show instant statistical summary table for each group in the current chart">
-                &#128202; Summary
-            </button>
-            <select id="summary-font-size" title="Summary table font size"
-                    style="font-size:0.8em;padding:2px 4px;border-radius:3px;border:1px solid #20c997;
-                           color:#0a6b52;cursor:pointer;margin-left:0">
-                <option value="0.72em">XS</option>
-                <option value="0.82em">S</option>
-                <option value="0.92em" selected>M</option>
-                <option value="1.05em">L</option>
-                <option value="1.2em">XL</option>
-            </select>
             <button id="chat-toggle-btn" type="button" onclick="_toggleChat()"
                     title="Open a multi-turn chat with the selected model">
                 &#128172; Chat
@@ -975,27 +973,15 @@
                  pointer-events:none;display:none;z-index:5;padding:2px 6px">1</div>
     </div>
     <div id="plot-grid"></div>
-    <div id="analysis-panel">
-        <div id="analysis-grip" title="Drag up/down to resize &#x2022; Double-click to snap height"></div>
-        <div id="analysis-panel-body">
-        <div class="an-header">
-            <strong id="analysis-panel-title">&#129504; AI Summary &mdash; llama3 (Ollama)</strong>
-            <button class="an-close"
-                    onclick="document.getElementById('analysis-panel').style.display='none'"
-                    title="Close">&#10006;</button>
-        </div>
-        <div id="analysis-text"></div>
-        </div>
-    </div>
-    <!-- CHAT DRAWER -->
+    <!-- UNIFIED CHAT, ANALYSIS & SUMMARY DRAWER -->
     <div id="chat-drawer">
         <div id="chat-grip" title="Drag to move window"></div>
         <div id="chat-resize-topleft" title="Drag to resize from top-left corner"></div>
         <div id="chat-drawer-hdr">
             <div style="display:flex;justify-content:space-between;align-items:center;width:100%">
-                <span id="chat-drawer-title">&#128172; Chat &mdash; ask about your data</span>
+                <span id="chat-drawer-title">&#128172; Analysis & Chat</span>
                 <button type="button" onclick="_toggleChat()" style="padding:2px 6px;font-size:0.8em;background:rgba(255,255,255,0.18);border:1px solid rgba(255,255,255,0.35);color:#fff;border-radius:3px;cursor:pointer;white-space:nowrap;flex-shrink:0"
-                        title="Close chat">&#10006;</button>
+                        title="Close">&#10006;</button>
             </div>
             <div class="ch-btns">
                 <!-- Font size control -->
@@ -1067,17 +1053,34 @@
                 <!-- Action buttons -->
                 <button type="button" onclick="_chatInjectContext()" style="padding:2px 6px;font-size:1.0em;background:rgba(255,255,255,0.18);border:1px solid rgba(255,255,255,0.35);color:#fff;border-radius:3px;cursor:pointer;white-space:nowrap"
                         title="Re-send current chart statistics as context">&#8635; Inject</button>
+                <button type="button" onclick="_analyzeChart()" style="padding:2px 6px;font-size:1.0em;background:rgba(255,255,255,0.18);border:1px solid rgba(255,255,255,0.35);color:#fff;border-radius:3px;cursor:pointer;white-space:nowrap"
+                        title="Generate AI summary analysis of the chart">📊 Analyze</button>
+                <button type="button" onclick="_showSummary()" style="padding:2px 6px;font-size:1.0em;background:rgba(255,255,255,0.18);border:1px solid rgba(255,255,255,0.35);color:#fff;border-radius:3px;cursor:pointer;white-space:nowrap"
+                        title="Show statistical summary table">&#128202; Summary</button>
                 <button type="button" onclick="_chatReset()" style="padding:2px 6px;font-size:1.0em;background:rgba(255,255,255,0.18);border:1px solid rgba(255,255,255,0.35);color:#fff;border-radius:3px;cursor:pointer;white-space:nowrap"
                         title="Clear history and start a new session">&#128465; New</button>
             </div>
         </div>
-        <div id="chat-messages"></div>
-        <div id="chat-input-row">
-            <textarea id="chat-input" autocomplete="off"
-                      placeholder="Ask a question, request analysis, or say e.g. &#8220;mark the mean&#8221; or &#8220;add a line at x=1000&#8221;&#8230;"
-                      onkeydown="_chatKeydown(event)"></textarea>
-            <button id="chat-send-btn" type="button" onclick="_chatSend()">Send &#9658;</button>
+        
+        <!-- Unified Content Area (Single panel for all: Chat, Analysis & Summary) -->
+        <div id="drawer-content" style="flex:1 1 0;min-height:0;display:flex;flex-direction:column;overflow:hidden">
+            <!-- Single unified content area -->
+            <div id="unified-content" style="flex:1 1 0;min-height:0;overflow-y:auto;padding:10px;background:#fff;display:flex;flex-direction:column">
+                <!-- Messages/Content Output Area — Single continuous stream -->
+                <div id="content-output" style="flex:1 1 0;min-height:0;overflow-y:auto;margin-bottom:10px">
+                    <div id="chat-messages" style="width:100%;display:flex;flex-direction:column;gap:8px"></div>
+                </div>
+                
+                <!-- Chat Input Area (always at bottom) -->
+                <div id="chat-input-row" style="border-top:1px solid #dee2e6;padding-top:8px">
+                    <textarea id="chat-input" autocomplete="off"
+                              placeholder="Ask a question, request analysis, or say e.g. &#8220;mark the mean&#8221; or &#8220;add a line at x=1000&#8221;&#8230;"
+                              onkeydown="_chatKeydown(event)"></textarea>
+                    <button id="chat-send-btn" type="button" onclick="_chatSend()">Send &#9658;</button>
+                </div>
+            </div>
         </div>
+        
         <div id="chat-resize" title="Drag to resize"></div>
     </div>
     <div id="drag-handle" title="Drag to resize plot"></div>
@@ -6340,62 +6343,94 @@ function _buildCrossPrompt(ct, xCol, yCol, xRx, yRx, scCol, colorCol, crossStats
 
 /* Render a plain-text summary (single chart or comparative) */
 function _renderAnalysisSingle(text, headerNote) {
-    var el = document.getElementById('analysis-text');
-    el.innerHTML = '';
-    
     // Parse and execute marker commands
     var markerResult = _chatExecMarkerCmds(text);
     var displayText = markerResult.text;
+    
+    // Store analysis text for chat context
+    _lastAnalysisText = displayText;
+    
+    // Append to unified message stream
+    var msgs = document.getElementById('chat-messages');
+    var msgDiv = document.createElement('div');
+    msgDiv.style.cssText = 'padding:8px 12px;background:#f0e6ff;border-left:3px solid #6610f2;border-radius:4px;white-space:pre-wrap;word-wrap:break-word';
     
     if (headerNote) {
         var h = document.createElement('div');
         h.style.cssText = 'font-size:0.78em;color:#6610f2;font-weight:bold;margin-bottom:4px';
         h.textContent   = headerNote;
-        el.appendChild(h);
+        msgDiv.appendChild(h);
     }
     var body = document.createElement('div');
     body.textContent = displayText;
-    el.appendChild(body);
+    msgDiv.appendChild(body);
     
     // Show marker actions if any
     if (markerResult.actions && markerResult.actions.length) {
         var actDiv = document.createElement('div');
-        actDiv.style.cssText = 'font-size:0.75em;color:#6c757d;margin-top:4px;border-top:1px solid #e9ecef;padding-top:4px';
+        actDiv.style.cssText = 'font-size:0.75em;color:#6c757d;margin-top:4px;border-top:1px solid #ddd;padding-top:4px';
         actDiv.innerHTML = '<strong>Actions:</strong> ' + markerResult.actions.join(', ');
-        el.appendChild(actDiv);
+        msgDiv.appendChild(actDiv);
     }
+    
+    msgs.appendChild(msgDiv);
+    _scrollChatToBottom();
 }
 
 /* Render one labelled block per tile */
 function _renderAnalysisTiles(results) {
-    var el = document.getElementById('analysis-text');
-    el.innerHTML = '';
+    // Collect all text for context
+    var allText = [];
+    
+    // Append to unified message stream
+    var msgs = document.getElementById('chat-messages');
+    
     results.forEach(function(r) {
-        var block = document.createElement('div');
-        block.className = 'an-tile-block';
+        var msgDiv = document.createElement('div');
+        msgDiv.style.cssText = 'padding:8px 12px;background:#f0e6ff;border-left:3px solid #6610f2;border-radius:4px;margin-bottom:4px';
+        
         var lbl  = document.createElement('div');
-        lbl.className   = 'an-tile-label';
+        lbl.style.cssText = 'font-weight:bold;color:#6610f2;font-size:0.9em;margin-bottom:4px';
         lbl.textContent = r.label;
+        
         var body = document.createElement('div');
+        body.style.cssText = 'white-space:pre-wrap;word-wrap:break-word';
         body.textContent = r.text;
-        block.appendChild(lbl);
-        block.appendChild(body);
-        el.appendChild(block);
+        
+        msgDiv.appendChild(lbl);
+        msgDiv.appendChild(body);
+        msgs.appendChild(msgDiv);
+        
+        // Store for context
+        allText.push(r.label + '\n' + r.text);
     });
+    
+    // Store combined analysis text for chat context
+    _lastAnalysisText = allText.join('\n\n');
+    _scrollChatToBottom();
 }
 
 /* ── Summary table ──────────────────────────────────────────────────── */
 var _summaryRows = null, _summaryIsXOnly = false;
 var _summaryXLabel = '', _summaryYLabel = '', _summaryGroupDim = '';
 var _lastSummaryText = '';   /* plain-text snapshot — included in chat context */
+var _lastAnalysisText = '';  /* plain-text snapshot of AI analysis — included in chat context */
 
 function _showSummary() {
-    var panel  = document.getElementById('analysis-panel');
-    var textEl = document.getElementById('analysis-text');
-    panel.style.display = 'flex';
+    var drawer = document.getElementById('chat-drawer');
+    
+    // Open chat drawer
+    if (!drawer.classList.contains('active')) {
+        _toggleChat();
+    }
 
     if (!currentCsvId || !filteredIndices.length) {
-        textEl.innerHTML = '<span style="color:#e67e00">&#9888; No data — parse a file first.</span>';
+        var msgs = document.getElementById('chat-messages');
+        var errorDiv = document.createElement('div');
+        errorDiv.style.cssText = 'padding:8px 12px;background:#fff3cd;border-left:3px solid #e67e00;border-radius:4px;color:#e67e00';
+        errorDiv.textContent = '⚠ No data — parse a file first.';
+        msgs.appendChild(errorDiv);
+        _scrollChatToBottom();
         return;
     }
     var ct       = document.getElementById('chart-type').value;
@@ -6530,11 +6565,19 @@ function _showSummary() {
           + '</div>'
           + '</div>';
 
-    textEl.innerHTML = html;
-    /* capture plain-text version for chat context */
+    /* Append to unified message stream instead of separate panel */
+    var msgs = document.getElementById('chat-messages');
+    var msgDiv = document.createElement('div');
+    msgDiv.style.cssText = 'padding:8px 12px;background:#e6f3ff;border-left:3px solid #17a2b8;border-radius:4px';
+    msgDiv.innerHTML = html;
+    msgs.appendChild(msgDiv);
+    
+    /* Capture plain-text version for chat context */
     var _tmp = document.createElement('div');
     _tmp.innerHTML = html;
     _lastSummaryText = (_tmp.textContent || _tmp.innerText || '').trim();
+    _scrollChatToBottom();
+    
     _summaryRows = rows; _summaryIsXOnly = isXOnly;
     _summaryXLabel = xLabel; _summaryYLabel = yLabel; _summaryGroupDim = groupDim;
 }
@@ -6597,26 +6640,24 @@ async function _fetchSummary(prompt) {
 /* Entry point — wired to the Analyze button.
    ONE LLM call per chart always. Split-by → comparative prompt, not per-tile calls. */
 function _analyzeChart() {
-    var btn    = document.getElementById('analyze-btn');
-    var panel  = document.getElementById('analysis-panel');
-    var textEl = document.getElementById('analysis-text');
+    var drawer = document.getElementById('chat-drawer');
+    var msgs = document.getElementById('chat-messages');
 
-    panel.style.display = 'flex';
+    // Open drawer
+    if (!drawer.classList.contains('active')) {
+        _toggleChat();
+    }
 
     if (!currentCsvId) {
-        textEl.innerHTML = '<span style="color:#e67e00">&#9888; No data loaded &mdash; '
-            + 'parse a file first, then draw a plot.</span>';
+        _chatAddNote('⚠ No data loaded — parse a file first, then draw a plot.');
         return;
     }
     if (!document.getElementById('x-col').value) {
-        textEl.innerHTML = '<span style="color:#e67e00">&#9888; Select an X column and '
-            + 'draw a plot first.</span>';
+        _chatAddNote('⚠ Select an X column and draw a plot first.');
         return;
     }
 
-    btn.disabled     = true;
-    btn.textContent  = '\u23f3 Analyzing\u2026';
-    textEl.innerHTML = '<em style="color:#888">Contacting Ollama (' + _selectedModel() + ')\u2026</em>';
+    _chatAddNote('📊 Contacting ' + _selectedModel() + '…');
 
     var ct      = document.getElementById('chart-type').value;
     var xCol    = document.getElementById('x-col').value;
@@ -6751,15 +6792,12 @@ function _analyzeChart() {
                         });
 
                     if (!crossStats.length) {
-                        textEl.innerHTML = '<span style="color:#e67e00">&#9888; '
-                            + 'No data found.</span>';
+                        _chatAddNote('⚠ No data found.');
                         return;
                     }
                     var colorLabel = inChartGroupCol
                         + (inChartGroupRx ? ' [' + inChartGroupRx + ']' : '');
-                    textEl.innerHTML = '<em style="color:#888">Cross-dimensional analysis: '
-                        + tileKeys2.length + ' tiles \u00d7 '
-                        + colorKeys2.length + ' color groups\u2026</em>';
+                    _chatAddNote('📊 Cross-dimensional analysis: ' + tileKeys2.length + ' tiles × ' + colorKeys2.length + ' color groups…');
                     prompt     = _buildCrossPrompt(ct, xCol, yCol, xRx, yRx,
                                                    scCol, colorLabel,
                                                    crossStats, tileKeys2, colorKeys2);
@@ -6773,13 +6811,11 @@ function _analyzeChart() {
                         return _splitChartKey(row, scIdx, scRx);
                     });
                     if (!b1d.keys.length) {
-                        textEl.innerHTML = '<span style="color:#e67e00">&#9888; '
-                            + 'No data found for split column.</span>';
+                        _chatAddNote('⚠ No data found for split column.');
                         return;
                     }
                     var tileStats = toTileStats(b1d);
-                    textEl.innerHTML = '<em style="color:#888">Comparing '
-                        + tileStats.length + ' split-chart tiles\u2026</em>';
+                    _chatAddNote('📊 Comparing ' + tileStats.length + ' split-chart tiles…');
                     prompt     = _buildSplitPrompt(ct, xCol, yCol, xRx, yRx,
                                                    scCol, tileStats);
                     headerNote = 'Comparative analysis \u2014 ' + tileStats.length
@@ -6798,8 +6834,7 @@ function _analyzeChart() {
                     return inChartKey(row[gcIdx]);
                 });
                 if (!b2.keys.length) {
-                    textEl.innerHTML = '<span style="color:#e67e00">&#9888; '
-                        + 'No numeric data in selected column.</span>';
+                    _chatAddNote('⚠ No numeric data in selected column.');
                     return;
                 }
                 var colorStats = toTileStats(b2);
@@ -6808,8 +6843,7 @@ function _analyzeChart() {
 
                 if (colorStats.length > 1) {
                     /* Multiple color/split groups → full comparative analysis */
-                    textEl.innerHTML = '<em style="color:#888">Comparing '
-                        + colorStats.length + ' color groups\u2026</em>';
+                    _chatAddNote('📊 Comparing ' + colorStats.length + ' color groups…');
                     prompt     = _buildSplitPrompt(ct, xCol, yCol, xRx, yRx,
                                                    groupLabel, colorStats);
                     headerNote = 'Comparative analysis \u2014 '
@@ -6818,9 +6852,9 @@ function _analyzeChart() {
                 } else {
                     /* Only one group resolved — plain single-chart analysis */
                     var allPts2 = b2.buckets[b2.keys[0]] || [];
-                    textEl.innerHTML = '<em style="color:#888">Analyzing chart\u2026</em>';
+                    _chatAddNote('📊 Analyzing chart…');
                     prompt     = _buildChartPrompt(ct, xCol, yCol, xRx, yRx, allPts2, null);
-                    headerNote = 'Analysis \u2014 ' + xCol
+                    headerNote = 'Analysis — ' + xCol
                         + (ct !== 'histogram' && ct !== 'cumproba' && ct !== 'rcdf' ? ' vs ' + yCol : '');
                 }
 
@@ -6833,13 +6867,12 @@ function _analyzeChart() {
                     xCol, isXOnly ? null : yCol, null, xRx, isXOnly ? null : yRx,
                     iv3.xLo, iv3.xHi, isXOnly ? '' : iv3.yLo, isXOnly ? '' : iv3.yHi);
                 if (!res.points.length) {
-                    textEl.innerHTML = '<span style="color:#e67e00">&#9888; '
-                        + 'No numeric data — draw a plot first.</span>';
+                    _chatAddNote('⚠ No numeric data — draw a plot first.');
                     return;
                 }
-                textEl.innerHTML = '<em style="color:#888">Analyzing chart\u2026</em>';
+                _chatAddNote('📊 Analyzing chart…');
                 prompt     = _buildChartPrompt(ct, xCol, yCol, xRx, yRx, res.points, null);
-                headerNote = 'Analysis \u2014 ' + xCol
+                headerNote = 'Analysis — ' + xCol
                     + (ct !== 'histogram' && ct !== 'cumproba' && ct !== 'rcdf' ? ' vs ' + yCol : '');
             }
 
@@ -6847,13 +6880,8 @@ function _analyzeChart() {
             _renderAnalysisSingle(summary, headerNote);
 
         } catch(e) {
-            textEl.innerHTML =
-                '<span style="color:#dc3545">&#9888; ' + escHtml(e.message) + '</span>'
-                + '<br><small style="color:#888">Check: Ollama is running on port 11434 '
-                + 'and the selected model is pulled (use the \u2193 button to pull).</small>';
-        } finally {
-            btn.disabled    = false;
-            btn.textContent = '\uD83E\uDDE0 Analyze';
+            _chatAddNote('❌ Error: ' + (e.message || 'Unknown error'));
+            _chatAddNote('💡 Tip: Make sure Ollama is running on port 11434 and the selected model is pulled (use the ⬇ button to pull).');
         }
     })();
 }
@@ -6862,22 +6890,16 @@ function _analyzeChart() {
    Uses wrapper pattern — drawPlot body is NOT modified. */
 var _ai_drawPlot_orig = drawPlot;
 drawPlot = function() {
-    var p = document.getElementById('analysis-panel');
-    if (p) p.style.display = 'none';
+    // No need to hide analysis panel — it's now part of unified chat stream
     return _ai_drawPlot_orig.apply(this, arguments);
 };
 
-/* Hide + reset analysis panel on full reset.
+/* Reset analysis state on full reset.
    Uses wrapper pattern — resetAll body is NOT modified. */
 var _ai_resetAll_orig = resetAll;
 resetAll = function() {
     _ai_resetAll_orig.apply(this, arguments);
-    var p  = document.getElementById('analysis-panel');
-    var t  = document.getElementById('analysis-text');
-    var b  = document.getElementById('analyze-btn');
-    if (p) p.style.display = 'none';
-    if (t) t.innerHTML     = '';
-    if (b) { b.disabled = false; b.textContent = '\uD83E\uDDE0 Analyze'; }
+    // No need to reset analysis divs — unified chat stream cleared by _chatReset
 };
 
 /* ── Model selector ─────────────────────────────────────────────────── */
@@ -6916,9 +6938,7 @@ function _updateChatBanner() {
     var prov    = _chatProvider();
     var label   = prov === 'connectmaigpt' ? 'ConnectMaiGPT' : model + ' (Ollama)';
     var chat    = document.getElementById('chat-drawer-title');
-    var analyse = document.getElementById('analysis-panel-title');
-    if (chat)    chat.textContent    = '\uD83D\uDCAC Chat with ' + label + ' \u2014 ask about your data';
-    if (analyse) analyse.textContent = '\uD83E\uDDE0 AI Summary \u2014 ' + label;
+    if (chat)    chat.textContent    = '💬 Chat with ' + label + ' — ask about your data';
 }
 
 /* Populate dropdown from /models (GET — Ollama's pulled model list) */
@@ -7050,6 +7070,7 @@ function _toggleChat() {
     }
 }
 
+
 function _applyChatFontSize(fontSize) {
     var msgs = document.getElementById('chat-messages');
     var input = document.getElementById('chat-input');
@@ -7059,8 +7080,16 @@ function _applyChatFontSize(fontSize) {
 }
 
 function _chatScrollBottom() {
-    var msgs = document.getElementById('chat-messages');
-    msgs.scrollTop = msgs.scrollHeight;
+    var container = document.getElementById('content-output');
+    if (container) {
+        setTimeout(function() {
+            container.scrollTop = container.scrollHeight;
+        }, 0);
+    }
+}
+
+function _scrollChatToBottom() {
+    _chatScrollBottom();
 }
 
 function _chatAddMsg(role, text) {
@@ -7290,6 +7319,13 @@ function _buildChatContext() {
     lines.push('  agg    — aggregation: mean (default), count, min, max, std, all (full stats)');
     lines.push('Example: [QUERY: col=RBER, filter=>0.001, group=DUT, agg=mean]');
     lines.push('Results will be injected as context before your next reply.');
+
+    /* ── Append last Analysis output if available ── */
+    if (typeof _lastAnalysisText === 'string' && _lastAnalysisText.trim()) {
+        lines.push('');
+        lines.push('--- AI Analysis (from Analyze button) ---');
+        lines.push(_lastAnalysisText.trim());
+    }
 
     /* ── Append last Summary output if available ── */
     if (typeof _lastSummaryText === 'string' && _lastSummaryText.trim()) {
