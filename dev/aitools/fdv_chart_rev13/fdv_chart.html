@@ -659,8 +659,22 @@
                    title="Maximum number of points to render (100-100,000)">
         </label>
         <span id="sampling-status" style="font-size:0.8em;color:#6c757d;white-space:nowrap"></span>
+        
+        <!-- Store directory controls -->
+        <span class="ctrl-label" style="color:#6c757d;font-weight:bold;white-space:nowrap;margin-left:20px">&#128193;&nbsp;Store&nbsp;dir:</span>
+        <input type="text" id="store-dir-input-visible" autocomplete="off"
+               placeholder="e.g. D:\FDV\recipes"
+               style="flex:1 1 150px;min-width:120px;max-width:280px;padding:3px 7px;font-size:0.85em;border:1px solid #adb5bd;border-radius:3px"
+               title="Directory where recipes and sessions are saved as files on disk"
+               onkeydown="if(event.key==='Enter')_storeDirSet()">
+        <button class="btn" style="padding:4px 10px;font-size:0.85em" onclick="_storeDirSet()"
+                title="Validate and activate this directory">&#10003;&nbsp;Set</button>
+        <span id="store-dir-status" style="font-size:0.8em;color:#6c757d;white-space:nowrap"></span>
+        
         <button id="panel-toggle-btn" onclick="toggleTopPanel()">▼ Hide</button>
     </div>
+
+    <!-- Store directory controls row - REMOVED, now inline with Performance -->
 
     <!-- Source mode tabs -->
     <div id="input-source-tabs">
@@ -756,14 +770,21 @@
 
         <!-- Session group -->
         <span class="ctrl-label" style="color:#6c757d;font-weight:bold;white-space:nowrap">&#128190;&nbsp;Session:</span>
-        <select id="session-sel" style="padding:3px 6px;font-size:0.85em;border:1px solid #adb5bd;border-radius:3px;min-width:140px"
-                title="Select a saved session">
-            <option value="">-- saved sessions --</option>
-        </select>
+        <div style="position:relative;display:inline-block;min-width:140px;flex:1 1 300px;max-width:500px">
+            <input type="text" id="session-filter-input" autocomplete="off" placeholder="filter…"
+                   style="width:100%;padding:3px 6px;font-size:0.85em;border:1px solid #adb5bd;border-radius:3px;box-sizing:border-box;word-wrap:break-word;overflow-wrap:break-word"
+                   title="Type to filter sessions, click to open dropdown"
+                   onfocus="_openSessionDropdown()"
+                   oninput="_filterSessionOptions()">
+            <div id="session-dropdown" style="position:fixed;background:#fff;border:1px solid #adb5bd;border-radius:3px;max-height:300px;overflow-y:auto;display:none;z-index:10000;width:300px;word-wrap:break-word;overflow-wrap:break-word;box-shadow:0 4px 12px rgba(0,0,0,0.25);top:0;left:0"
+                 title="Saved sessions">
+                <div id="session-options" style="padding:0;word-wrap:break-word;overflow-wrap:break-word"></div>
+            </div>
+        </div>
         <button class="btn" style="padding:4px 12px;font-size:0.85em" onclick="_sessionLoad()"
                 title="Restore all rows + settings from the selected session (no re-parse needed)">&#8635;&nbsp;Load</button>
-        <input type="text" id="session-name" autocomplete="off" placeholder="session name&hellip;"
-               style="width:120px;padding:3px 7px;font-size:0.85em;border:1px solid #adb5bd;border-radius:3px"
+        <input type="text" id="session-name" autocomplete="off" placeholder="session name…"
+               style="width:200px;padding:3px 7px;font-size:0.85em;border:1px solid #adb5bd;border-radius:3px"
                title="Name to use when saving">
         <button class="btn grn" style="padding:4px 12px;font-size:0.85em" onclick="_sessionSave()"
                 title="Save all rows + current settings under this name (stored in browser localStorage)">&#10003;&nbsp;Save</button>
@@ -1475,12 +1496,12 @@ document.addEventListener('DOMContentLoaded', function() {
     if (scroller) {
         scroller.addEventListener('scroll', function() { _vtRender(); }, { passive: true });
     }
+    /* Restore saved store directory FIRST (may re-populate both dropdowns from disk) */
+    _storeDirInit();
     /* Populate saved recipes in the dropdown */
     _recipeRebuildSel();
     /* Populate saved sessions in the dropdown */
     _sessionRebuildSel();
-    /* Restore saved store directory (may re-populate both dropdowns from disk) */
-    _storeDirInit();
     /* Populate Ollama model dropdown from live /models endpoint */
     _loadModelList();
     /* Init multi-dim group builders */
@@ -2950,11 +2971,14 @@ var _storeDir = '';    /* active store directory — empty means localStorage mo
 var _STORE_DIR_KEY = 'fdv_store_dir';
 
 function _storeDirSet() {
-    var val = (document.getElementById('store-dir-input').value || '').trim();
+    var visibleInput = document.getElementById('store-dir-input-visible');
+    var hiddenInput = document.getElementById('store-dir-input');
+    var val = (visibleInput.value || '').trim();
     if (!val) {
         /* Clear — revert to localStorage mode */
         _storeDir = '';
         try { localStorage.removeItem(_STORE_DIR_KEY); } catch(e) {}
+        if (hiddenInput) hiddenInput.value = '';
         _storeDirStatusOk('localStorage mode (no directory set)');
         _recipeRebuildSel();
         _sessionRebuildSel();
@@ -2967,6 +2991,9 @@ function _storeDirSet() {
             if (d.success) {
                 _storeDir = val;
                 try { localStorage.setItem(_STORE_DIR_KEY, val); } catch(e) {}
+                /* Update both input fields */
+                visibleInput.value = val;
+                if (hiddenInput) hiddenInput.value = val;
                 _storeDirStatusOk('\u2713 ' + val);
                 /* Rebuild both dropdowns from disk */
                 _recipeRebuildSel();
@@ -2980,9 +3007,10 @@ function _storeDirSet() {
 
 function _storeDirStatus(msg, color) {
     var el = document.getElementById('store-dir-status');
-    if (!el) return;
-    el.textContent = msg;
-    el.style.color = color || '#6c757d';
+    if (el) {
+        el.textContent = msg;
+        el.style.color = color || '#6c757d';
+    }
 }
 function _storeDirStatusOk(msg) { _storeDirStatus(msg, '#28a745'); }
 
@@ -3004,7 +3032,10 @@ function _storeDirInit() {
     var saved;
     try { saved = localStorage.getItem(_STORE_DIR_KEY) || ''; } catch(e) { saved = ''; }
     if (saved) {
-        document.getElementById('store-dir-input').value = saved;
+        var visibleInput = document.getElementById('store-dir-input-visible');
+        var hiddenInput = document.getElementById('store-dir-input');
+        if (visibleInput) visibleInput.value = saved;
+        if (hiddenInput) hiddenInput.value = saved;
         fetch('/store/check?dir=' + encodeURIComponent(saved))
             .then(function(r){ return r.json(); })
             .then(function(d) {
@@ -3025,7 +3056,10 @@ function _storeDirInit() {
         .then(function(r){ return r.json(); })
         .then(function(d) {
             if (d.success && d.dir) {
-                document.getElementById('store-dir-input').value = d.dir;
+                var visibleInput = document.getElementById('store-dir-input-visible');
+                var hiddenInput = document.getElementById('store-dir-input');
+                if (visibleInput) visibleInput.value = d.dir;
+                if (hiddenInput) hiddenInput.value = d.dir;
                 _storeDir = d.dir;
                 try { localStorage.setItem(_STORE_DIR_KEY, d.dir); } catch(e) {}
                 _storeDirStatusOk('\u2713 ' + d.dir + ' (server default)');
@@ -3057,31 +3091,55 @@ function _saveSessionIndex(idx) {
 }
 
 function _sessionRebuildSel() {
-    var sel = document.getElementById('session-sel');
-    var cur = sel.value;
+    var optionsDiv = document.getElementById('session-options');
+    var filterInput = document.getElementById('session-filter-input');
+    if (!optionsDiv || !filterInput) {
+        console.error('Session dropdown elements not found');
+        return;
+    }
+    var cur = filterInput.value;
+    
     if (_storeDir) {
         _storeListFiles().then(function(lists) {
-            sel.innerHTML = '<option value="">-- saved sessions --</option>';
+            console.log('[SESSION] Store dir sessions:', lists.sessions.length);
+            optionsDiv.innerHTML = '';
+            if (!lists.sessions || lists.sessions.length === 0) {
+                return;
+            }
             lists.sessions.forEach(function(f) {
                 var name = f.name.replace(/\.fdv_session$/, '');
                 var kb   = Math.round(f.size / 1024);
-                var o    = document.createElement('option');
-                o.value = name; o.textContent = name + (kb ? ' (' + kb + ' KB)' : '');
-                sel.appendChild(o);
+                var div  = document.createElement('div');
+                div.style.cssText = 'padding:6px 8px;cursor:pointer;border-bottom:1px solid #f0f0f0;font-size:0.85em;word-wrap:break-word;overflow-wrap:break-word;white-space:normal;line-height:1.4';
+                div.textContent = name + (kb ? ' (' + kb + ' KB)' : '');
+                div.title = name;
+                div.onclick = function() { _selectSession(name); };
+                div.onmouseover = function() { div.style.backgroundColor = '#f5f5f5'; };
+                div.onmouseout = function() { div.style.backgroundColor = ''; };
+                optionsDiv.appendChild(div);
             });
-            if (cur) sel.value = cur;
+            if (cur) filterInput.value = cur;
+        }).catch(function(err) {
+            console.error('[SESSION] Error loading sessions:', err);
+            optionsDiv.innerHTML = '<div style="padding:6px 8px;color:#dc3545">Error loading sessions</div>';
         });
     } else {
         var idx   = _loadSessionIndex();
         var names = Object.keys(idx).sort();
-        sel.innerHTML = '<option value="">-- saved sessions --</option>';
+        console.log('[SESSION] localStorage sessions:', names.length);
+        optionsDiv.innerHTML = '';
         names.forEach(function(n) {
             var kb = Math.round((idx[n] || 0) / 1024);
-            var o  = document.createElement('option');
-            o.value = n; o.textContent = n + (kb ? ' (' + kb + ' KB)' : '');
-            sel.appendChild(o);
+            var div = document.createElement('div');
+            div.style.cssText = 'padding:6px 8px;cursor:pointer;border-bottom:1px solid #f0f0f0;font-size:0.85em;word-wrap:break-word;overflow-wrap:break-word;white-space:normal;line-height:1.4';
+            div.textContent = n + (kb ? ' (' + kb + ' KB)' : '');
+            div.title = n;
+            div.onclick = function() { _selectSession(n); };
+            div.onmouseover = function() { div.style.backgroundColor = '#f5f5f5'; };
+            div.onmouseout = function() { div.style.backgroundColor = ''; };
+            optionsDiv.appendChild(div);
         });
-        if (cur && idx[cur]) sel.value = cur;
+        if (cur && idx[cur]) filterInput.value = cur;
     }
 }
 
@@ -3208,6 +3266,64 @@ function _migrateSessionSnapshot(snap) {
     return snap;
 }
 
+/* Session dropdown functions - filterable dropdown */
+function _openSessionDropdown() {
+    var dropdown = document.getElementById('session-dropdown');
+    var filterInput = document.getElementById('session-filter-input');
+    if (!dropdown || !filterInput) return;
+    
+    // Get position of input field
+    var rect = filterInput.getBoundingClientRect();
+    dropdown.style.position = 'fixed';
+    dropdown.style.top = (rect.bottom) + 'px';
+    dropdown.style.left = rect.left + 'px';
+    dropdown.style.width = rect.width + 'px';
+    dropdown.style.display = 'block';
+    document.addEventListener('click', _sessionDropdownClickHandler);
+}
+
+function _closeSessionDropdown() {
+    var dropdown = document.getElementById('session-dropdown');
+    if (!dropdown) return;
+    dropdown.style.display = 'none';
+    document.removeEventListener('click', _sessionDropdownClickHandler);
+}
+
+function _sessionDropdownClickHandler(e) {
+    var dropdown = document.getElementById('session-dropdown');
+    var filterInput = document.getElementById('session-filter-input');
+    var container = filterInput.parentElement;
+    
+    if (container && container.contains(e.target)) {
+        return;
+    }
+    _closeSessionDropdown();
+}
+
+/* Filter session options based on search input */
+function _filterSessionOptions() {
+    var filterInput = document.getElementById('session-filter-input');
+    var filterValue = (filterInput.value || '').toLowerCase().trim();
+    var optionsDiv = document.getElementById('session-options');
+    var options = optionsDiv.getElementsByTagName('div');
+    
+    for (var i = 0; i < options.length; i++) {
+        var opt = options[i];
+        var optText = (opt.textContent || '').toLowerCase();
+        if (filterValue === '' || optText.includes(filterValue)) {
+            opt.style.display = '';
+        } else {
+            opt.style.display = 'none';
+        }
+    }
+}
+
+/* Select a session from dropdown */
+function _selectSession(name) {
+    document.getElementById('session-filter-input').value = name;
+    _closeSessionDropdown();
+}
+
 function _sessionSave() {
     if (!currentCsvId || !allRows.length) {
         _sessionStatus('Parse a file first before saving a session.', 'error'); return;
@@ -3246,7 +3362,7 @@ function _sessionSave() {
             }).then(function(r){ return r.json(); }).then(function(d) {
                 if (d.success) {
                     _sessionRebuildSel();
-                    document.getElementById('session-sel').value = name;
+                    document.getElementById('session-filter-input').value = name;
                     _sessionStatus('\u2713 Saved \u201c' + name + '\u201d \u2014 ' +
                                    Math.round((d.size||0)/1024) + ' KB', 'ok');
                 } else { _sessionStatus('\u26a0 ' + d.error, 'error'); }
@@ -3265,15 +3381,15 @@ function _sessionSave() {
             idx[name] = bytes;
             _saveSessionIndex(idx);
             _sessionRebuildSel();
-            document.getElementById('session-sel').value = name;
+            document.getElementById('session-filter-input').value = name;
             _sessionStatus('\u2713 Saved \u201c' + name + '\u201d \u2014 ' + Math.round(bytes/1024) + ' KB', 'ok');
         }
     }, 20);
 }
 
 function _sessionLoad() {
-    var sel  = document.getElementById('session-sel');
-    var name = sel.value;
+    var filterInput = document.getElementById('session-filter-input');
+    var name = filterInput.value.trim();
     if (!name) { _sessionStatus('Select a session to load.', 'error'); return; }
     _sessionStatus('Loading\u2026', 'ok');
     if (_storeDir) {
@@ -3350,8 +3466,8 @@ function _sessionLoad() {
 }
 
 function _sessionDelete() {
-    var sel  = document.getElementById('session-sel');
-    var name = sel.value || (document.getElementById('session-name').value || '').trim();
+    var filterInput = document.getElementById('session-filter-input');
+    var name = filterInput.value.trim() || (document.getElementById('session-name').value || '').trim();
     if (!name) { _sessionStatus('Select or type a session name to delete.', 'error'); return; }
     if (_storeDir) {
         fetch('/store/delete', { method: 'POST',
