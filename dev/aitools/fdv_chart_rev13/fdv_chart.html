@@ -1150,8 +1150,8 @@ var colWidths   = [];   // pixel widths per column (set by resize grippers)
 console.log('[APP VERSION] v2.1.1 - Response format fix applied');
 
 var PALETTE = [
-    '#007bff','#e83e8c','#28a745','#fd7e14','#6610f2',
-    '#17a2b8','#dc3545','#20c997','#ffc107','#6f42c1'
+    '#007bff','#dc3545','#28a745','#fd7e14','#6f42c1',
+    '#e83e8c','#17a2b8','#20c997','#ffc107','#007bff'
 ];
 
 /* ================================================================
@@ -4731,33 +4731,18 @@ function _buildTileChart(canvas, ct, tileData, xCol, yCol, xRx, yRx, colCol, col
     if (!window._tileGroupColorMap) window._tileGroupColorMap = {};
     var allGroupsSortedTile = Object.keys(groups).sort();
     
-    /* First, assign colors to any new groups that don't have one yet */
+    /* Use pre-assigned colors from the map */
     var usedColorIndices = {};
-    Object.keys(window._tileGroupColorMap).forEach(function(g) {
-        for (var i = 0; i < PALETTE.length; i++) {
-            if (PALETTE[i] === window._tileGroupColorMap[g]) {
-                usedColorIndices[i] = true;
-                break;
-            }
-        }
-    });
-    
-    var nextColorIdx = 0;
     allGroupsSortedTile.forEach(function(g) {
         if (!window._tileGroupColorMap[g]) {
-            /* Find the next unused color */
-            while (nextColorIdx < PALETTE.length && usedColorIndices[nextColorIdx]) {
-                nextColorIdx++;
+            /* Find next unused color index */
+            for (var i = 0; i < PALETTE.length; i++) {
+                if (!usedColorIndices[i]) {
+                    window._tileGroupColorMap[g] = PALETTE[i];
+                    usedColorIndices[i] = true;
+                    break;
+                }
             }
-            
-            /* If all colors are used, wrap around (but this shouldn't happen with only 4 groups and 10 colors) */
-            if (nextColorIdx >= PALETTE.length) {
-                nextColorIdx = nextColorIdx % PALETTE.length;
-            }
-            
-            window._tileGroupColorMap[g] = PALETTE[nextColorIdx];
-            usedColorIndices[nextColorIdx] = true;
-            nextColorIdx++;
         }
     });
     
@@ -4873,6 +4858,9 @@ function _buildTileChart(canvas, ct, tileData, xCol, yCol, xRx, yRx, colCol, col
 function _drawSplitCharts() {
     _destroySplitCharts();
     
+    /* RESET the color map for this rendering to ensure unique colors per group */
+    window._tileGroupColorMap = {};
+    
     /* Ensure the boxplot scatter overlay plugin is registered globally */
     if (document.getElementById('chart-type').value === 'boxplot') {
         _ensureBoxplotPluginRegistered();
@@ -4968,6 +4956,14 @@ function _drawSplitCharts() {
     grid.style.maxHeight = gridH + 'px';
     grid.style.display   = 'flex';
 
+    /* PRE-ASSIGN COLORS TO ALL KEYS IN ORDER (before loop) to ensure first group gets first color */
+    if (!window._tileGroupColorMap) window._tileGroupColorMap = {};
+    keys.forEach(function(key, idx) {
+        if (!window._tileGroupColorMap[key]) {
+            window._tileGroupColorMap[key] = PALETTE[idx % PALETTE.length];
+        }
+    });
+
     keys.forEach(function(key, ki) {
         var tile  = document.createElement('div');
         tile.className   = 'split-tile';
@@ -4978,33 +4974,8 @@ function _drawSplitCharts() {
         var titleEl = document.createElement('div');
         titleEl.className   = 'split-tile-title';
         
-        /* Assign a persistent color to this key using the group color map */
-        /* ENFORCE: No color is used for more than one group unless absolutely necessary */
-        if (!window._tileGroupColorMap) window._tileGroupColorMap = {};
-        if (!window._tileGroupColorMap[key]) {
-            /* Find the next unused color instead of using modulo directly */
-            var usedColors = {};
-            Object.keys(window._tileGroupColorMap).forEach(function(k) {
-                usedColors[window._tileGroupColorMap[k]] = true;
-            });
-            
-            var assignedColor = null;
-            for (var i = 0; i < PALETTE.length; i++) {
-                if (!usedColors[PALETTE[i]]) {
-                    assignedColor = PALETTE[i];
-                    break;
-                }
-            }
-            
-            /* If all colors are used, fall back to modulo (shouldn't happen with 10 colors and 4 groups) */
-            if (!assignedColor) {
-                var idx = Object.keys(window._tileGroupColorMap).length;
-                assignedColor = PALETTE[idx % PALETTE.length];
-            }
-            
-            window._tileGroupColorMap[key] = assignedColor;
-        }
-        var tileColor = window._tileGroupColorMap[key];
+        /* Get pre-assigned color from the map */
+        var tileColor = window._tileGroupColorMap[key] || PALETTE[0];
         
         /* Apply the color as a background for the title */
         titleEl.style.backgroundColor = tileColor + '33';  /* Light background */
