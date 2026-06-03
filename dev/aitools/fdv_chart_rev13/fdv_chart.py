@@ -221,9 +221,9 @@ sqlite_cache_lock = threading.Lock()
 # Batch size for SQLite inserts (50K rows per batch = ~150MB in memory, safe)
 SQLITE_BATCH_SIZE = 50000
 
-# Cache directory for SQLite databases
-CACHE_DIR = tempfile.gettempdir() + '/fdv_chart_cache'
-Path(CACHE_DIR).mkdir(exist_ok=True)
+# Cache directory for SQLite databases (moved to D:\FDV\ to avoid temp folder issues)
+CACHE_DIR = r'd:\FDV\fdv_chart_cache'
+Path(CACHE_DIR).mkdir(exist_ok=True, parents=True)
 
 def _save_cache_metadata(cache_id, csv_id, headers):
     """Save metadata about a cache to a .meta.json file for recovery after restart."""
