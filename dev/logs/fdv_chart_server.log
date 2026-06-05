@@ -48,3 +48,52 @@ PYTHON_START
 [DEBUG] Sending headers
 [DEBUG] Headers done, writing body
 [DEBUG] Body written, done
+[DEBUG] GET /
+[DEBUG] Serving root path
+[DEBUG] Got HTML body: 289894 bytes
+[DEBUG] Sent response code
+[DEBUG] Sending headers
+[DEBUG] Headers done, writing body
+[DEBUG] Body written, done
+[DEBUG] GET /
+[DEBUG] GET /
+[DEBUG] Serving root path
+[DEBUG] Serving root path
+[DEBUG] Got HTML body: 289894 bytes
+[DEBUG] Sent response code
+[DEBUG] Got HTML body: 289894 bytes
+[DEBUG] Sent response code
+[DEBUG] Sending headers
+[DEBUG] Sending headers
+[DEBUG] Headers done, writing body
+[DEBUG] Headers done, writing body
+[DEBUG] Body written, done
+[DEBUG] Body written, done
+[DEBUG] GET /
+[DEBUG] Serving root path
+[DEBUG] Got HTML body: 289894 bytes
+[DEBUG] Sent response code
+[DEBUG] Sending headers
+[DEBUG] Headers done, writing body
+[DEBUG] Body written, done
+[DEBUG] GET /
+[DEBUG] Serving root path
+[DEBUG] Got HTML body: 289894 bytes
+[DEBUG] Sent response code
+[DEBUG] Sending headers
+[DEBUG] Headers done, writing body
+[DEBUG] Body written, done
+[DEBUG] GET /
+[DEBUG] GET /
+[DEBUG] Serving root path
+[DEBUG] Serving root path
+[DEBUG] Got HTML body: 289894 bytes
+[DEBUG] Got HTML body: 289894 bytes
+[DEBUG] Sent response code
+[DEBUG] Sent response code
+[DEBUG] Sending headers
+[DEBUG] Sending headers
+[DEBUG] Headers done, writing body
+[DEBUG] Headers done, writing body
+[DEBUG] Body written, done
+[DEBUG] Body written, done

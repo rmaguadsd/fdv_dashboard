@@ -854,6 +854,7 @@
                 <option value="line">Line</option>
                 <option value="histogram">Histogram</option>
                 <option value="cumproba">Cum Proba</option>
+                <option value="cum_sigma">Cum Sigma</option>
                 <option value="rcdf">RCDF</option>
                 <option value="boxplot">Box &amp; Whisker</option>
             </select>
@@ -2378,12 +2379,19 @@ function readFilteredFromMemory(xCol, yCol, groupCol, xRx, yRx, ivXlo, ivXhi, iv
 function onChartTypeChange() {
     var ct      = document.getElementById('chart-type').value;
     console.log('[onChartTypeChange] Chart type changed to:', ct);
-    var isXOnly = ct === 'histogram' || ct === 'cumproba' || ct === 'rcdf';
-    var isCum   = ct === 'cumproba' || ct === 'rcdf';
+    var isXOnly = ct === 'histogram' || ct === 'cumproba' || ct === 'rcdf' || ct === 'cum_sigma';
+    var isCum   = ct === 'cumproba' || ct === 'rcdf' || ct === 'cum_sigma';
     var isHist  = ct === 'histogram';
     var isBox   = ct === 'boxplot';
     var isScatter = ct === 'scatter';
     console.log('[onChartTypeChange] isBox:', isBox, 'isScatter:', isScatter);
+    
+    /* Markers persist by sourceChart - they remain in the array but only show on matching charts */
+    console.log('[onChartTypeChange] Markers in array:', _markers.length, '- will filter by sourceChart when rendering');
+    
+    /* AUTO-REDRAW: Immediately redraw chart when type changes */
+    setTimeout(function() { if (currentCsvId) drawPlot(); }, 100);
+    
     function show(id, vis) { var el=document.getElementById(id); if(el) el.style.display=vis?'':'none'; }
     /* boxplot: X = category col (label), Y = numeric value col — both shown */
     show('y-col-label',    !isXOnly);
@@ -2396,11 +2404,17 @@ function onChartTypeChange() {
     show('bp-jitter-label',    true);  /* Always show jitter checkbox */
     show('split-label',     false);               /* cumproba now uses color-col for grouping */
     show('split-rx-label',  false);
-    show('y-min-label',    !isXOnly);
-    show('y-max-label',    !isXOnly);
+    show('y-min-label',    !isXOnly || isCum);  /* Show for 2D charts and cumulative charts */
+    show('y-max-label',    !isXOnly || isCum);  /* Show for 2D charts and cumulative charts */
     show('y-ivlo-label',   !isXOnly);
     show('y-ivhi-label',   !isXOnly);
     show('y-step-label',   !isXOnly || isBox);
+    
+    /* Auto-redraw the plot when chart type changes to show filtered markers */
+    console.log('[onChartTypeChange] Auto-redrawing plot with new chart type');
+    if (currentCsvId) {
+        drawPlot();
+    }
 }
 
 function populatePlotSelectors(headers) {
@@ -2681,7 +2695,25 @@ function _recipeApply(snap) {
     }
     /* Restore markers */
     if (snap['__markers']) {
-        try { _markers = JSON.parse(snap['__markers']); } catch(e) { _markers = []; }
+        try { 
+            _markers = JSON.parse(snap['__markers']);
+            /* Migrate old markers that don't have sourceChart field */
+            _markers = _markers.map(function(mk) {
+                if (!mk.sourceChart) {
+                    /* Infer source chart from marker axis */
+                    /* Y-axis markers belong to cum probability or cum sigma */
+                    if (mk.axis === 'y') {
+                        /* Default to cum_prob for Y-axis markers in legacy sessions */
+                        mk.sourceChart = 'cumproba';
+                    } else {
+                        /* Other axes: infer from context or default to source chart type */
+                        mk.sourceChart = 'cumproba';  /* Default fallback */
+                    }
+                    console.log('[Marker Migration] Inferred sourceChart=' + mk.sourceChart + ' for legacy marker: axis=' + mk.axis + ' val=' + mk.value);
+                }
+                return mk;
+            });
+        } catch(e) { _markers = []; }
         _rebuildMarkerTags();
     }
     /* Restore filter row visibility (actual filter values deferred until headers are loaded) */
@@ -3513,6 +3545,22 @@ function _markerColorCycle(idx) {
     return _MARKER_COLORS[idx % _MARKER_COLORS.length];
 }
 
+/* Conversion functions for percentile <-> sigma */
+function _percentileToSigma(percentile) {
+    /* Convert cumulative probability (0-1) to sigma using inverse normal */
+    if (percentile <= 0 || percentile >= 1) return null;
+    var pct = percentile < 0.5 ? percentile : (1 - percentile);
+    var sigma = -Math.sqrt(-2 * Math.log(2 * pct));
+    return percentile < 0.5 ? sigma : -sigma;
+}
+
+function _sigmaToPercentile(sigma) {
+    /* Convert sigma to cumulative probability using normal CDF */
+    var absS = Math.abs(sigma);
+    var pct = Math.exp(-0.5 * absS * absS);
+    return sigma < 0 ? pct / 2 : 1 - (pct / 2);
+}
+
 function _parseMarkerExpr(raw) {
     /* Format: x=VALUE[:MARKER_LABEL[:CHART_ITEM]]  or  y=VALUE[:MARKER_LABEL[:CHART_ITEM]]
        MARKER_LABEL - optional label for the marker
@@ -3538,7 +3586,9 @@ function _parseMarkerExpr(raw) {
         value:       v,
         markerLabel: markerLabel,        /* Label to display on the marker */
         chartItem:   chartItem,          /* Chart target; empty = apply to all */
-        color:       null                /* Auto-color from palette */
+        color:       null,               /* Auto-color from palette */
+        sourceChart: null,               /* Track origin: 'cumproba', 'cum_sigma', etc. */
+        convertedValue: null             /* Store original value for reversible conversion */
     };
 }
 
@@ -3555,6 +3605,7 @@ function _rebuildMarkerTags() {
         var desc = mk.axis.toUpperCase() + '=' + mk.value;
         if (mk.markerLabel) desc += ' (' + mk.markerLabel + ')';
         if (mk.chartItem) desc += ' [#' + mk.chartItem + ']';  /* Show as #ID */
+        if (mk.sourceChart) desc += ' {' + mk.sourceChart + '}';  /* Show source chart */
         tag.innerHTML = escHtml(desc) +
             ' <span class="mk-rm" data-idx="' + i + '" title="Remove">&times;</span>';
         list.appendChild(tag);
@@ -3572,10 +3623,25 @@ function _addMarkerFromInput() {
     var inp = document.getElementById('marker-input');
     var raw = inp.value.trim();
     if (!raw) return;
+    /* Get current chart type to set as sourceChart */
+    var currentChartType = document.getElementById('chart-type').value;
+    console.log('[_addMarkerFromInput] ========== ADDING MARKER ==========');
+    console.log('[_addMarkerFromInput] Chart type: ' + currentChartType);
+    console.log('[_addMarkerFromInput] Input: ' + raw);
     /* allow comma-separated list */
     raw.split(',').forEach(function(part) {
         var mk = _parseMarkerExpr(part);
-        if (mk) _markers.push(mk);
+        if (mk) {
+            /* ALWAYS set sourceChart to the current chart type to track which plot type created it */
+            mk.sourceChart = currentChartType;
+            
+            if (mk.chartItem) {
+                console.log('[_addMarkerFromInput] Created tile-specific marker: axis=' + mk.axis + ' val=' + mk.value + ' chartItem=' + mk.chartItem + ' sourceChart=' + mk.sourceChart);
+            } else {
+                console.log('[_addMarkerFromInput] Created global marker: axis=' + mk.axis + ' val=' + mk.value + ' sourceChart=' + mk.sourceChart);
+            }
+            _markers.push(mk);
+        }
     });
     inp.value = '';
     _rebuildMarkerTags();
@@ -3588,10 +3654,117 @@ function _clearMarkers() {
     if (currentCsvId) drawPlot();
 }
 
+/* Error function approximation for normal CDF (Abramowitz and Stegun) */
+function _errorFunction(x) {
+    var a1 =  0.254829592;
+    var a2 = -0.284496736;
+    var a3 =  1.421413741;
+    var a4 = -1.453152027;
+    var a5 =  1.061405429;
+    var p  =  0.3275911;
+    
+    var sign = x < 0 ? -1 : 1;
+    x = Math.abs(x);
+    
+    var t = 1.0 / (1.0 + p * x);
+    var y = 1.0 - (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t * Math.exp(-x * x);
+    
+    return sign * y;
+}
+
+/* Auto-convert marker values between cum_prob and cum_sigma coordinate systems */
+function _convertMarkersBetweenCharts(fromChart, toChart) {
+    if (!_markers || _markers.length === 0) return;
+    
+    var markersTouched = 0;
+    _markers.forEach(function(mk) {
+        /* Skip markers not from the source chart type */
+        if (mk.sourceChart && mk.sourceChart !== fromChart) return;
+        
+        /* Skip markers on non-Y axes */
+        if (!mk.axis || mk.axis !== 'y') return;
+        
+        var oldValue = mk.value;
+        
+        if (fromChart === 'cumproba' && toChart === 'cum_sigma') {
+            /* Convert percentile (0-1) to sigma */
+            if (oldValue >= 0 && oldValue <= 1) {
+                var pct = oldValue;
+                var sigma;
+                if (pct < 0.5) {
+                    sigma = -Math.sqrt(-2 * Math.log(2 * pct));
+                } else {
+                    sigma = Math.sqrt(-2 * Math.log(2 * (1 - pct)));
+                }
+                mk.value = sigma;
+                mk.sourceChart = 'cum_sigma';
+                /* Update label to show sigma value */
+                if (mk.markerLabel && mk.markerLabel.indexOf('P=') === 0) {
+                    mk.markerLabel = 'σ=' + sigma.toFixed(3);
+                }
+                markersTouched++;
+                console.log('[Marker Convert] Percentile ' + oldValue.toFixed(4) + ' → Sigma ' + sigma.toFixed(4));
+            }
+        } else if (fromChart === 'cum_sigma' && toChart === 'cumproba') {
+            /* Convert sigma to percentile using normal CDF approximation */
+            var sigma = oldValue;
+            var pct;
+            if (sigma < 0) {
+                pct = 0.5 - 0.5 * _errorFunction(-sigma / Math.sqrt(2));
+            } else {
+                pct = 0.5 + 0.5 * _errorFunction(sigma / Math.sqrt(2));
+            }
+            /* Clamp to valid range */
+            pct = Math.max(0.001, Math.min(0.999, pct));
+            mk.value = pct;
+            mk.sourceChart = 'cumproba';
+            /* Update label to show percentile value */
+            if (mk.markerLabel && mk.markerLabel.indexOf('σ=') === 0) {
+                mk.markerLabel = 'P=' + (pct * 100).toFixed(1) + '%';
+            }
+            markersTouched++;
+            console.log('[Marker Convert] Sigma ' + sigma.toFixed(4) + ' → Percentile ' + pct.toFixed(4));
+        }
+    });
+    
+    if (markersTouched > 0) {
+        console.log('[Marker Convert] Converted ' + markersTouched + ' marker(s) from ' + fromChart + ' to ' + toChart);
+    }
+}
+
 /* Build the chartjs-plugin-annotation `annotations` object from _markers[] */
 function _buildAnnotations() {
-    /* Used for non-split charts: pass all markers (no chartId filtering) */
-    return _buildAnnotationsForChart(_markers);
+    /* Filter markers to only show those that belong to the current chart type */
+    var currentChartType = document.getElementById('chart-type').value;
+    console.log('[_buildAnnotations] ========== BUILDING ANNOTATIONS ==========');
+    console.log('[_buildAnnotations] Current chart:', currentChartType);
+    console.log('[_buildAnnotations] Total markers in array:', _markers.length);
+    _markers.forEach(function(mk, idx) {
+        console.log('[_buildAnnotations]   Marker ' + idx + ': axis=' + mk.axis + ' value=' + mk.value + ' sourceChart=' + mk.sourceChart);
+    });
+    
+    /* Filter: only show markers where sourceChart matches current chart type */
+    var filteredMarkers = _markers.filter(function(mk) {
+        /* Reject split-mode markers on single charts */
+        if (mk.sourceChart === 'split-mode') {
+            console.log('[_buildAnnotations]   → Marker is for split-mode, FILTER OUT on single chart');
+            return false;
+        }
+        
+        /* For single-chart mode, legacy markers (sourceChart=null) should NOT show 
+           They are only meant for split-chart tiles for backward compatibility. */
+        if (!mk.sourceChart) {
+            console.log('[_buildAnnotations]   → Marker has no sourceChart (legacy), FILTER OUT on single chart');
+            return false;
+        }
+        
+        /* For cum charts, match the sourceChart value exactly */
+        var matches = mk.sourceChart === currentChartType;
+        console.log('[_buildAnnotations]   → Marker sourceChart=' + mk.sourceChart + ' vs current=' + currentChartType + ' → ' + (matches ? 'SHOW' : 'FILTER OUT'));
+        return matches;
+    });
+    console.log('[_buildAnnotations] Filtered result: showing ' + filteredMarkers.length + ' of ' + _markers.length + ' markers');
+    return _buildAnnotationsForChart(filteredMarkers);
 }
 
 function _buildAnnotationsForChart(filteredMarkers) {
@@ -4359,11 +4532,49 @@ function _buildTileChart(canvas, ct, tileData, xCol, yCol, xRx, yRx, colCol, col
         } catch(e) { return raw; }
     }
 
-    /* Filter markers: only include markers that apply to all charts or to this specific chart */
+    /* Filter markers: only include markers that apply to this chart type and tile */
+    console.log('[_buildTileChart ' + ct + '] ========== FILTERING MARKERS FOR TILE ==========');
+    console.log('[_buildTileChart ' + ct + '] chartId=' + chartId + ', Chart type=' + ct + ', Total markers=' + _markers.length);
     var filteredMarkers = _markers.filter(function(mk) {
-        if (!mk.chartItem) return true;  /* Empty = applies to all charts */
-        return String(mk.chartItem) === String(chartId);  /* Match chart ID */
+        /* PRIORITY 1: If marker has a specific chartItem target, check BOTH tile AND chart type */
+        if (mk.chartItem) {
+            var targetTile = parseInt(mk.chartItem);
+            if (!isNaN(targetTile)) {
+                /* Only show if BOTH tile matches AND sourceChart matches current chart type */
+                var tileMatches = targetTile === chartId;
+                var chartTypeMatches = mk.sourceChart === ct;
+                
+                if (tileMatches && chartTypeMatches) {
+                    console.log('[_buildTileChart ' + ct + ']   Marker: chartItem=' + mk.chartItem + ' tile matches ' + chartId + ', sourceChart=' + mk.sourceChart + ' matches ' + ct + ' → SHOW');
+                    return true;
+                } else {
+                    if (!tileMatches) {
+                        console.log('[_buildTileChart ' + ct + ']   Marker: chartItem=' + mk.chartItem + ' tile does NOT match ' + chartId + ' → HIDE');
+                    } else {
+                        console.log('[_buildTileChart ' + ct + ']   Marker: chartItem=' + mk.chartItem + ' tile matches but sourceChart=' + mk.sourceChart + ' does NOT match ' + ct + ' → HIDE');
+                    }
+                    return false;
+                }
+            }
+        }
+        
+        /* PRIORITY 2: If NO specific chartItem, show marker if chart type matches */
+        if (mk.sourceChart === ct) {
+            console.log('[_buildTileChart ' + ct + ']   Marker: no chartItem, sourceChart=' + mk.sourceChart + ' matches chart type ' + ct + ' → SHOW on all tiles');
+            return true;
+        }
+        
+        /* PRIORITY 3: Show legacy markers (sourceChart=null) on all split tiles for backward compatibility */
+        if (!mk.sourceChart) {
+            console.log('[_buildTileChart ' + ct + ']   Marker: sourceChart=null (legacy, no chartItem) → SHOW on all tiles');
+            return true;
+        }
+        
+        /* Filter out markers for different chart types */
+        console.log('[_buildTileChart ' + ct + ']   Marker: sourceChart=' + mk.sourceChart + ' does NOT match chart type ' + ct + ' → HIDE');
+        return false;
     });
+    console.log('[_buildTileChart ' + ct + '] Filtered result: showing ' + filteredMarkers.length + ' markers for tile');
     
     /* Build annotations from filtered markers */
     var ann = { annotations: _buildAnnotationsForChart(filteredMarkers) };
@@ -4623,8 +4834,8 @@ function _buildTileChart(canvas, ct, tileData, xCol, yCol, xRx, yRx, colCol, col
                 borderColor:     PALETTE[i % PALETTE.length],
                 backgroundColor: 'transparent',
                 borderWidth: 1.8,
-                pointRadius: n <= 1000 ? Math.max(pointSize, 2) : 0,
-                pointHoverRadius: n <= 1000 ? Math.max(pointSize + 2, 4) : 0,
+                pointRadius: n <= 2000 ? 2 : 0,
+                pointHoverRadius: n <= 2000 ? 4 : 0,
                 pointBackgroundColor: PALETTE[i % PALETTE.length],
                 pointBorderColor: PALETTE[i % PALETTE.length],
                 pointBorderWidth: 1,
@@ -4658,8 +4869,184 @@ function _buildTileChart(canvas, ct, tileData, xCol, yCol, xRx, yRx, colCol, col
                 scales: {
                     x: Object.assign({ type: xLog ? 'logarithmic' : 'linear',
                         title: { display: true, text: _axisXTitle(xCol + (xRx ? ' ['+xRx+']' : '')) } }, xScale),
-                    y: { title: { display: true, text: _axisYTitle(ct === 'rcdf' ? 'Reverse Cum. Proba' : 'Cum. Proba') }, min: 0, max: 1,
-                         ticks: { callback: function(v){ return (v*100).toFixed(0)+'%'; } } }
+                    y: Object.assign({ title: { display: true, text: _axisYTitle(ct === 'rcdf' ? 'Reverse Cum. Proba' : 'Cum. Proba') }, min: 0, max: 1,
+                         ticks: { callback: function(v){ return (v*100).toFixed(0)+'%'; } } }, yScale)
+                }
+            }
+        });
+    }
+
+    /* ── Cum Sigma tile ── */
+    if (ct === 'cum_sigma') {
+        var csGroups = {}, csOrder = [];
+        
+        console.log('[_buildTileChart cum_sigma] tileData.length=' + tileData.length);
+        
+        /* First: Get all values with their indices and group info */
+        var indexedTileData = tileData.map(function(pt, idx) {
+            var g = innerSplitCol ? innerSplitKey(pt) : colorKey(pt);
+            return { v: pt.x, idx: idx, group: g };
+        });
+        
+        /* Group the data by color/split FIRST */
+        var csGroups = {};
+        indexedTileData.forEach(function(item) {
+            var g = item.group;
+            if (!csGroups[g]) csGroups[g] = [];
+            csGroups[g].push(item);
+        });
+        
+        /* Calculate theoretical quantiles PER GROUP based on each group's own ranking */
+        var rankToSigmaTile = {};  /* Maps original index -> theoretical sigma */
+        Object.keys(csGroups).forEach(function(groupName) {
+            var groupItems = csGroups[groupName];
+            
+            /* Sort this group's items by value to get ranks within the group */
+            var sortedGroupByValue = groupItems.slice().sort(function(a,b){ return a.v - b.v; });
+            var groupN = sortedGroupByValue.length;
+            
+            /* Calculate sigma for each item in this group based on its rank within the group */
+            sortedGroupByValue.forEach(function(item, sortIdx) {
+                /* Percentile position (0 to 1) within this group */
+                var pct = (sortIdx + 0.5) / groupN;  /* Use midpoint for better estimation */
+                
+                /* Simple inverse normal using approximation */
+                var sigma;
+                if (pct < 0.5) {
+                    sigma = -Math.sqrt(-2 * Math.log(2 * pct));
+                } else {
+                    sigma = Math.sqrt(-2 * Math.log(2 * (1 - pct)));
+                }
+                rankToSigmaTile[item.idx] = sigma;
+            });
+        });
+        
+        /* Read z-order from UI */
+        var zOrderElem = document.getElementById('z-order-input');
+        var zOrderInput = (zOrderElem && zOrderElem.value) ? zOrderElem.value.trim() : '';
+        var zOrderList = [];
+        if (zOrderInput) {
+            zOrderList = zOrderInput.split(',').map(function(s) { return s.trim(); });
+        }
+        
+        /* Sort groups based on z-order */
+        var csOrder_dedup = Object.keys(csGroups);
+        var csKeys;
+        
+        if (zOrderList.length > 0) {
+            /* Parse z-order list (can be group names or 1-based indices) */
+            var convertedZOrderList = [];
+            zOrderList.forEach(function(item) {
+                var trimmed = item.trim();
+                var idx = parseInt(trimmed, 10);
+                
+                /* Check if it's a valid numeric index (1-based) */
+                if (!isNaN(idx) && idx >= 1 && idx <= csOrder_dedup.length) {
+                    /* Convert 1-based index to 0-based and get the group name */
+                    var groupName = csOrder_dedup[idx - 1];
+                    convertedZOrderList.push(groupName);
+                } else if (!isNaN(idx)) {
+                    /* Index out of range - skip it */
+                } else {
+                    /* Not a number, treat as group name */
+                    convertedZOrderList.push(trimmed);
+                }
+            });
+            
+            /* Sort groups based on z-order */
+            var inZOrder = [];
+            var notInZOrder = [];
+            
+            csOrder_dedup.forEach(function(g) {
+                if (convertedZOrderList.indexOf(g) >= 0) {
+                    inZOrder.push(g);
+                } else {
+                    notInZOrder.push(g);
+                }
+            });
+            
+            /* Sort items in z-order by their position in convertedZOrderList */
+            inZOrder.sort(function(a, b) {
+                return convertedZOrderList.indexOf(a) - convertedZOrderList.indexOf(b);
+            });
+            
+            /* Sort unlisted items alphabetically */
+            notInZOrder.sort(function(a,b){ return a.localeCompare(b, undefined, {numeric:true}); });
+            
+            /* Combine: z-order items first, then unlisted items */
+            csKeys = inZOrder.concat(notInZOrder);
+        } else {
+            /* No z-order: use alphabetical */
+            csKeys = csOrder_dedup.sort(function(a,b){ return a.localeCompare(b, undefined, {numeric:true}); });
+        }
+        
+        console.log('[_buildTileChart cum_sigma] csKeys=' + csKeys.join(','));
+        csKeys.forEach(function(k) {
+            console.log('[_buildTileChart cum_sigma]   ' + k + ': ' + csGroups[k].length + ' values');
+        });
+        
+        if (!csKeys.length) return null;
+        var csDatasets = csKeys.map(function(g) {
+            var groupItems = csGroups[g];
+            var n = groupItems.length;
+            
+            /* For each item in this group, use its per-group theoretical sigma rank */
+            var cumulativeData = [];
+            groupItems.forEach(function(item) {
+                var sigma = rankToSigmaTile[item.idx];
+                cumulativeData.push({ x: item.v, y: sigma });
+            });
+            
+            /* Sort by X for smooth line rendering */
+            cumulativeData.sort(function(a, b) { return a.x - b.x; });
+            
+            /* Use consistent color based on group's position in original sorted list */
+            var colorIdx = csOrder_dedup.indexOf(g);
+            
+            return {
+                label: g + ' (n=' + n + ')',
+                data: cumulativeData,
+                borderColor:     PALETTE[colorIdx % PALETTE.length],
+                backgroundColor: 'transparent',
+                borderWidth: 0.5,
+                pointRadius: n <= 2000 ? 2 : 0,
+                pointHoverRadius: n <= 2000 ? 4 : 0,
+                pointBackgroundColor: PALETTE[colorIdx % PALETTE.length],
+                pointBorderColor: PALETTE[colorIdx % PALETTE.length],
+                pointBorderWidth: 1,
+                showLine: true,
+                tension: 0
+            };
+        });
+        return new Chart(ctx, {
+            type: 'scatter',
+            data: { datasets: csDatasets },
+            options: {
+                animation: false, responsive: true, maintainAspectRatio: false,
+                parsing: { xAxisKey: 'x', yAxisKey: 'y' },
+                plugins: {
+                    legend: { display: csDatasets.length > 1, position: 'bottom',
+                              labels: { boxWidth: 10, font: { size: _legendFontSize || 9 } } },
+                    annotation: ann,
+                    tooltip: { enabled: false, external: _htmlTooltip, callbacks: { label: function(i){
+                        var sigma = i.parsed.y;
+                        return i.dataset.label + ':  ' + xCol + '=' + i.parsed.x.toFixed(6) +
+                               '  σ=' + sigma.toFixed(6);
+                    }}}
+                },
+                elements: {
+                    point: {
+                        radius: function(context) {
+                            var n = context.dataset.data.length;
+                            return n <= 1000 ? Math.max(_pointSize || 2, 2) : 0;
+                        }
+                    }
+                },
+                scales: {
+                    x: Object.assign({ type: 'linear',
+                        title: { display: true, text: _axisXTitle('Observed ' + xCol + (xRx ? ' ['+xRx+']' : '')) } }, xScale),
+                    y: Object.assign({ title: { display: true, text: _axisYTitle('Theoretical Quantiles (Sigma / σ)') },
+                         grace: 0 }, yScale)
                 }
             }
         });
@@ -4887,7 +5274,7 @@ function _drawSplitCharts() {
     if (scIdx < 0 && scCol) { status.textContent = 'Split-chart column not found.'; _spinStop(); return; }
 
     /* Collect all points, bucket by split key */
-    var isXOnly = ct === 'histogram' || ct === 'cumproba' || ct === 'rcdf';
+    var isXOnly = ct === 'histogram' || ct === 'cumproba' || ct === 'rcdf' || ct === 'cum_sigma';
     var iv      = _getIntervals();
     var res     = readFilteredFromMemory(xCol, isXOnly ? null : yCol,
                     colCol || null, xRx, isXOnly ? null : yRx,
@@ -5285,6 +5672,7 @@ function drawPlot() {
             console.log('[drawPlot] Chart type selected:', ct);
             if (ct === 'histogram') { drawHistogram(); return; }
             if (ct === 'cumproba')  { drawCumProba();  return; }
+            if (ct === 'cum_sigma') { drawCumSigma();  return; }
             if (ct === 'rcdf')      { drawRcdf();      return; }
             if (ct === 'boxplot')   { console.log('[drawPlot] Calling drawBoxPlot()'); drawBoxPlot();   return; }
             drawScatterLine();
@@ -5315,6 +5703,9 @@ function drawScatterLine() {
     var yLog    = document.getElementById('y-log').checked;
     var status  = document.getElementById('plot-status');
 
+    console.log('[drawScatterLine] X column:', xCol, 'Y column:', yCol, 'Chart type:', ct);
+    console.log('[drawScatterLine] X regex:', xRx, 'Y regex:', yRx);
+
     if (!currentCsvId) { status.textContent = 'Session expired \u2014 re-parse file.'; _spinStop(); return; }
     status.textContent = 'Computing\u2026';
 
@@ -5322,6 +5713,14 @@ function drawScatterLine() {
     var res     = readFilteredFromMemory(xCol, yCol, null, xRx, yRx, iv.xLo, iv.xHi, iv.yLo, iv.yHi);
     var points  = res.points;
     var skipped = res.skipped;
+    
+    console.log('[drawScatterLine] Points loaded:', points.length, 'Skipped:', skipped);
+    if (points.length > 0) {
+        console.log('[drawScatterLine] First 5 points:');
+        for (var i = 0; i < Math.min(5, points.length); i++) {
+            console.log('  Point', i, ':', 'x=' + points[i].x, 'y=' + points[i].y);
+        }
+    }
 
     /* CRITICAL: Discover color values ONLY from points that pass interval filtering
        This ensures dataset remains unchanged when color-by is added (dataset must be determined
@@ -5667,6 +6066,67 @@ function drawScatterLine() {
     _spinStop();
 }
 
+/* ── Normal Distribution Inverse (Quantile) Function ─────────────────── */
+/* Approximates the inverse of the standard normal CDF (phi^-1)
+   Given a probability p (0 < p < 1), returns the sigma value where P(Z <= sigma) = p */
+function normalInverse(p) {
+    /* Handle boundary cases */
+    if (p <= 0) return -8;
+    if (p >= 1) return 8;
+    
+    /* Wichura algorithm - highly accurate approximation */
+    var a = [2.506628277459, -3.581828160585, 3.031024505473, -0.5427737969],
+        b = [2.506628277459, -42.03055361615, 51.43900626504, -15.12253672951],
+        c = [0.3209377589139, 0.1193995014137, 0.02957603869393, 0.0002992609529],
+        d = [0.009964713784, 0.0783869912633];
+    
+    var q = p < 0.5 ? p : 1 - p;
+    var r = Math.sqrt(-2 * Math.log(q));
+    var val;
+    
+    if (r <= 5) {
+        r -= 1.6;
+        val = (((a[3] * r + a[2]) * r + a[1]) * r + a[0]) / 
+              (((b[3] * r + b[2]) * r + b[1]) * r + b[0]);
+    } else {
+        r -= 5;
+        val = (((c[3] * r + c[2]) * r + c[1]) * r + c[0]) / 
+              ((d[1] * r + d[0]) * r + 1);
+    }
+    
+    return (p < 0.5) ? -val : val;
+}
+
+/* ── Inverse Normal CDF (Percent Point Function) ─────────────────────── */
+/* Converts a Z-score back to its cumulative probability (0-1) */
+function normalInverseCDF(z) {
+    /* Use Abramowitz and Stegun approximation for error function inverse */
+    if (z < -5) return 0;
+    if (z > 5) return 1;
+    
+    /* Approximate CDF using error function approximation */
+    var a1 = 0.254829592;
+    var a2 = -0.284496736;
+    var a3 = 1.421413741;
+    var a4 = -1.453152027;
+    var a5 = 1.061405429;
+    var p = 0.3275911;
+    
+    var sign = z < 0 ? -1 : 1;
+    var absZ = Math.abs(z);
+    
+    var t = 1.0 / (1.0 + p * absZ);
+    var t2 = t * t;
+    var t3 = t2 * t;
+    var t4 = t3 * t;
+    var t5 = t4 * t;
+    
+    var errorFunc = 1.0 - (a5 * t5 + a4 * t4 + a3 * t3 + a2 * t2 + a1 * t) * Math.exp(-absZ * absZ);
+    
+    var cdf = 0.5 * (1.0 + sign * errorFunc);
+    return Math.max(0, Math.min(1, cdf));
+}
+
 /* ── Histogram ───────────────────────────────────────────────────────── */
 function autoBins(n) { 
     /* Rice Rule: 2 * n^(1/3) — gives better granularity than Sturges */
@@ -5955,6 +6415,230 @@ function drawCumProba() {
     status.textContent = points.length.toLocaleString() + ' values' + splitDesc +
         (nGroups > 1 ? ', ' + nGroups + ' groups' : '') +
         (skipped > 0 ? ', ' + skipped + ' skipped' : '') + filtNote + lblNote + _intervalNote();
+    _showChartIdBadge();  /* Show badge for single chart */
+    _spinStop();
+}
+
+/* ── Cumulative Probability (Sigma Scale) ──────────────────────────── */
+function drawCumSigma() {
+    _resetTitleBar();
+    var xCol     = document.getElementById('x-col').value;
+    var xRx      = document.getElementById('x-regex').value.trim();
+    var xLog     = document.getElementById('x-log').checked;
+    var status   = document.getElementById('plot-status');
+
+    if (!currentCsvId) { status.textContent = 'Session expired \u2014 re-parse file.'; _spinStop(); return; }
+    status.textContent = 'Computing\u2026';
+
+    /* Re-read color dims from UI at draw time */
+    var colorDims = _gdimRead('color');
+    var hasColorDims = colorDims.length > 0 && colorDims.some(function(d){ return d.colIdx >= 0; });
+
+    var iv      = _getIntervals();
+    var res     = readFilteredFromMemory(xCol, null, null, xRx, null, iv.xLo, iv.xHi, '', '');
+    var points  = res.points;
+    var skipped = res.skipped;
+
+    if (!points.length) { status.textContent = 'No numeric values in column ' + xCol; _spinStop(); return; }
+
+    function groupKey(pt) {
+        if (hasColorDims && pt._ri != null && allRows[pt._ri] != null) {
+            var key = _compoundKey(allRows[pt._ri], colorDims) || '(all)';
+            return key;
+        }
+        return '(all)';
+    }
+
+    /* First: Get all values with their original indices and row info */
+    var indexedPoints = [];
+    points.forEach(function(pt, idx) {
+        indexedPoints.push({ v: pt.x, idx: idx, _ri: pt._ri, origGroup: groupKey(pt) });
+    });
+    
+    /* Group the data by color/split FIRST */
+    var groups = {};
+    indexedPoints.forEach(function(item) {
+        var g = item.origGroup;
+        if (!groups[g]) groups[g] = [];
+        groups[g].push(item);
+    });
+    
+    /* Calculate theoretical quantiles PER GROUP based on each group's own ranking */
+    var rankToSigma = {};  /* Maps original index -> theoretical sigma */
+    Object.keys(groups).forEach(function(groupName) {
+        var groupItems = groups[groupName];
+        
+        /* Sort this group's items by value to get ranks within the group */
+        var sortedGroupByValue = groupItems.slice().sort(function(a,b){ return a.v - b.v; });
+        var groupN = sortedGroupByValue.length;
+        
+        /* Calculate sigma for each item in this group based on its rank within the group */
+        sortedGroupByValue.forEach(function(item, sortIdx) {
+            /* Percentile position (0 to 1) within this group */
+            var pct = (sortIdx + 0.5) / groupN;  /* Use midpoint for better estimation */
+            
+            /* Simple inverse normal using approximation */
+            var sigma;
+            if (pct < 0.5) {
+                sigma = -Math.sqrt(-2 * Math.log(2 * pct));
+            } else {
+                sigma = Math.sqrt(-2 * Math.log(2 * (1 - pct)));
+            }
+            rankToSigma[item.idx] = sigma;
+        });
+    });
+
+    /* Read z-order from UI */
+    var zOrderElem = document.getElementById('z-order-input');
+    var zOrderInput = (zOrderElem && zOrderElem.value) ? zOrderElem.value.trim() : '';
+    var zOrderList = [];
+    if (zOrderInput) {
+        zOrderList = zOrderInput.split(',').map(function(s) { return s.trim(); });
+    }
+    
+    /* Sort datasets based on z-order */
+    var groupKeys = Object.keys(groups);
+    var sortedGroupKeys;
+    
+    if (zOrderList.length > 0) {
+        /* Parse z-order list (can be group names or 1-based indices) */
+        var convertedZOrderList = [];
+        zOrderList.forEach(function(item) {
+            var trimmed = item.trim();
+            var idx = parseInt(trimmed, 10);
+            
+            /* Check if it's a valid numeric index (1-based) */
+            if (!isNaN(idx) && idx >= 1 && idx <= groupKeys.length) {
+                /* Convert 1-based index to 0-based and get the group name */
+                var groupName = groupKeys[idx - 1];
+                convertedZOrderList.push(groupName);
+            } else if (!isNaN(idx)) {
+                /* Index out of range - skip it */
+            } else {
+                /* Not a number, treat as group name */
+                convertedZOrderList.push(trimmed);
+            }
+        });
+        
+        /* Sort groups based on z-order */
+        var inZOrder = [];
+        var notInZOrder = [];
+        
+        groupKeys.forEach(function(g) {
+            if (convertedZOrderList.indexOf(g) >= 0) {
+                inZOrder.push(g);
+            } else {
+                notInZOrder.push(g);
+            }
+        });
+        
+        /* Sort items in z-order by their position in convertedZOrderList */
+        inZOrder.sort(function(a, b) {
+            return convertedZOrderList.indexOf(a) - convertedZOrderList.indexOf(b);
+        });
+        
+        /* Sort unlisted items alphabetically */
+        notInZOrder.sort();
+        
+        /* Combine: z-order items first, then unlisted items */
+        sortedGroupKeys = inZOrder.concat(notInZOrder);
+    } else {
+        /* No z-order: use alphabetical */
+        sortedGroupKeys = groupKeys.sort();
+    }
+
+    /* Now create datasets for each group using the PER-GROUP theoretical quantiles */
+    var datasets = sortedGroupKeys.map(function(g) {
+        var groupItems = groups[g];
+        var n = groupItems.length;
+        
+        /* For each item in this group, use its per-group theoretical sigma rank */
+        var cumulativeData = [];
+        groupItems.forEach(function(item) {
+            var sigma = rankToSigma[item.idx];
+            cumulativeData.push({ x: item.v, y: sigma });
+        });
+        
+        /* Sort by X for smooth line rendering */
+        cumulativeData.sort(function(a, b) { return a.x - b.x; });
+        
+        /* Use consistent color based on group's position in original sorted list */
+        var colorIdx = groupKeys.indexOf(g);
+        
+        return {
+            label: g + ' (n=' + n.toLocaleString() + ')',
+            data: cumulativeData,
+            borderColor:     PALETTE[colorIdx % PALETTE.length],
+            backgroundColor: 'transparent',
+            borderWidth: 0.5,
+            pointRadius: n <= 2000 ? 2 : 0,
+            pointHoverRadius: n <= 2000 ? 4 : 0,
+            showLine: true,
+            tension: 0
+        };
+    });
+
+    if (chartInst) chartInst.destroy();
+    console.log('[Cum Sigma] Creating chart with datasets:', datasets.length, 'groups');
+    if (datasets.length > 0) {
+        console.log('[Cum Sigma] First dataset first 5 points:');
+        for (var idx = 0; idx < Math.min(5, datasets[0].data.length); idx++) {
+            console.log('  Point', idx, ':', JSON.stringify(datasets[0].data[idx]));
+        }
+        console.log('[Cum Sigma] Full first dataset:', JSON.stringify(datasets[0].data.slice(0, 5)));
+    }
+    try {
+    chartInst = new Chart(document.getElementById('plot-canvas').getContext('2d'), {
+        type: 'scatter',
+        data: { datasets: datasets },
+        options: {
+            parsing: {
+                xAxisKey: 'x',
+                yAxisKey: 'y'
+            },
+            animation: false,
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { display: true, position: 'bottom',
+                          labels: { boxWidth: 12, font: { size: _legendFontSize || 10 } } },
+                tooltip: { enabled: false, external: _htmlTooltip, callbacks: {
+                    label: function(item) {
+                        var sigma = item.parsed.y;
+                        return item.dataset.label + ':  ' + xCol + '=' + item.parsed.x.toFixed(6) +
+                               '  σ=' + sigma.toFixed(6);
+                    }
+                }},
+                annotation: { annotations: _buildAnnotations() }
+            },
+            scales: {
+                x: Object.assign({
+                    type: 'linear',
+                    title: { display: true,
+                             text: _axisXTitle(xCol + (xRx ? ' [' + xRx + ']' : '')) }
+                }, getAxisScale('x-min', 'x-max', 'x-step')),
+                y: Object.assign({
+                    type: 'linear',
+                    position: 'left',
+                    title: { display: true, text: _axisYTitle('Theoretical Quantiles (Sigma / σ)') },
+                    grace: 0
+                }, getAxisScale('y-min', 'y-max', 'y-step'))
+            }
+        }
+    });
+    } catch(e) { status.textContent = 'Chart error: ' + e.message; _spinStop(); return; }
+
+    console.log('[Cum Sigma] Chart created. Y-axis min:', chartInst.scales.y.min, 'max:', chartInst.scales.y.max);
+    console.log('[Cum Sigma] Chart options.scales.y:', JSON.stringify(chartInst.options.scales.y));
+    _setPointLabels(chartInst, null);
+    _syncMainTitle('Cum Sigma │ ' + xCol + (hasColorDims ? '  │  ' + colorDims.map(function(d){ return d.col; }).join(', ') : ''));
+    var filtNote  = hasActiveFilters() ? ' — filtered' : '';
+    var nGroups   = Object.keys(groups).length;
+    var splitDesc = hasColorDims
+        ? (' grouped by ' + colorDims.map(function(d){ return d.col + (d.rx ? ' [' + d.rx + ']' : ''); }).join(', ')) : '';
+    status.textContent = points.length.toLocaleString() + ' values' + splitDesc +
+        (nGroups > 1 ? ', ' + nGroups + ' groups' : '') +
+        (skipped > 0 ? ', ' + skipped + ' skipped' : '') + filtNote + _intervalNote();
     _showChartIdBadge();  /* Show badge for single chart */
     _spinStop();
 }
