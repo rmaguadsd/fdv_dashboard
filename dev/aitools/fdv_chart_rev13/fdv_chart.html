@@ -872,6 +872,10 @@
                title="Add random horizontal jitter to data points to reduce overlap">
             <input type="checkbox" id="bp-jitter" style="cursor:pointer"> Jitter
         </label>
+        <label id="scatter-jitter-label" style="margin-left:4px;display:none;align-items:center;gap:4px;cursor:pointer"
+               title="Add random horizontal jitter to scatter plot points to reduce overlap">
+            <input type="checkbox" id="scatter-jitter" style="cursor:pointer"> Jitter
+        </label>
         <button id="plot-btn" class="btn" style="padding:4px 12px" onclick="drawPlot()">&#9654; Plot</button>
         <!-- Font sizing controls - inline with Plot button -->
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
@@ -1271,7 +1275,7 @@ Chart.register({
         var ctx = chart.ctx;
         ctx.save();
         
-        var pointRadius = 2.5;  /* Small by default */
+        var pointRadius = 2;  /* Small by default */
         var pointColor = 'rgba(128, 128, 128, 0.6)';  /* Gray, semi-transparent */
         var hoveredColor = 'rgba(255, 100, 0, 0.9)';  /* Orange when hovered */
         var state = window._scatterResizeState;
@@ -1775,6 +1779,15 @@ document.addEventListener('DOMContentLoaded', function() {
         drawPlot();
     });
 
+    /* Scatter plot jitter toggle - regenerates scatter data with/without jitter */
+    document.getElementById('scatter-jitter').addEventListener('change', function() {
+        var useJitter = this.checked;
+        window._useScatterJitter = useJitter;
+        console.log('[scatter jitter toggle] Jitter is now', useJitter ? 'enabled' : 'disabled');
+        /* Redraw the current plot to apply jitter setting */
+        drawPlot();
+    });
+
     /* Handle window resize - redraw all split charts to maintain overlay */
     var _resizeTimeout = null;
     window.addEventListener('resize', function() {
@@ -2041,6 +2054,19 @@ async function parseFile() {
 function _onParseResult(result, fname, t0) {
     console.log('[_onParseResult] Called with result:', result);
     console.log('[_onParseResult] result.rows type:', typeof result.rows, 'length:', result.rows ? result.rows.length : 'undefined');
+    
+    /* CAPTURE current filters before replacing headers (so we can restore them after) */
+    var prevFilters = {};
+    document.querySelectorAll('#filter-row input').forEach(function(inp) {
+        var val = inp.value.trim();
+        if (!val) return;
+        var idx = parseInt(inp.dataset.colidx);
+        var header = (currentHeaders && currentHeaders[idx]) || ('col' + idx);
+        prevFilters[header] = val;
+    });
+    var hadFilters = Object.keys(prevFilters).length > 0;
+    console.log('[_onParseResult] Captured previous filters:', prevFilters);
+    
     currentCsvId      = result.csv_id;
     currentHeaders    = result.headers;
     domFullyLoaded    = false;
@@ -2058,8 +2084,36 @@ function _onParseResult(result, fname, t0) {
               result.headers.length + ' columns \u2022 ' + tSecs + 's' + extra);
 
     _buildTableHeader(result.headers);
-    recomputeFilteredIndices();   /* no active filters yet -- filteredIndices = all */
+    
+    /* RESTORE captured filters to new table headers (matching by header name) */
+    if (hadFilters) {
+        console.log('[_onParseResult] Restoring filters to new headers...');
+        var restoredCount = 0;
+        document.querySelectorAll('#filter-row input').forEach(function(inp) {
+            var idx = parseInt(inp.dataset.colidx);
+            var header = result.headers[idx];
+            if (header && prevFilters[header]) {
+                inp.value = prevFilters[header];
+                restoredCount++;
+                console.log('[_onParseResult] Restored filter for column "' + header + '": ' + prevFilters[header]);
+            }
+        });
+        if (restoredCount > 0) {
+            /* Show filter row if it has filters and is currently hidden */
+            var filterRow = document.getElementById('filter-row');
+            if (filterRow && filterRow.style.display === 'none') {
+                console.log('[_onParseResult] Making filter row visible');
+                filtersVisible = false;  /* toggleFilters will set to true */
+                toggleFilters();
+            }
+        }
+    }
+    
+    recomputeFilteredIndices();
     vsFirstRow = 0;
+    
+    /* Apply filters to get correct display counts */
+    _doApplyFilters();
 
     document.getElementById('empty-state').style.display       = 'none';
     document.getElementById('table-scroller').style.display    = '';
@@ -2401,7 +2455,8 @@ function onChartTypeChange() {
     show('bins-label',      isHist);
     show('bp-maxgroups-label', isBox);
     show('bp-overlay-label',   isBox);
-    show('bp-jitter-label',    true);  /* Always show jitter checkbox */
+    show('bp-jitter-label',    isBox);            /* Show jitter checkbox only for boxplot */
+    show('scatter-jitter-label', isScatter);      /* Show jitter checkbox only for scatter */
     show('split-label',     false);               /* cumproba now uses color-col for grouping */
     show('split-rx-label',  false);
     show('y-min-label',    !isXOnly || isCum);  /* Show for 2D charts and cumulative charts */
@@ -3837,8 +3892,8 @@ function _onFontItemSelect() {
     var currentVal = '';
     
     if (_selectedFontItem === 'point') {
-        // Point size: 1.5-20px (including 1.5 as explicit option)
-        var pointSizes = [1.5, 4, 6, 8, 10, 12, 14, 16, 18, 20];
+        // Point size: 1.5-20px (including 1.5 and 2 as explicit options)
+        var pointSizes = [1.5, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20];
         for (var j = 0; j < pointSizes.length; j++) {
             var size = pointSizes[j];
             var selected = (size === _pointSize) ? ' selected' : '';
@@ -4470,6 +4525,9 @@ function _ensureBoxplotPluginRegistered() {
                 console.warn('[plugin] Scatter data truncated from', scatterData.length, 'to', MAX_RENDER_POINTS, 'points for rendering');
             }
             
+            /* Use global point size setting for boxplot scatter overlay */
+            var pointRadius = _pointSize || 2;
+            
             try {
                 pointsToRender.forEach(function(p) {
                     try {
@@ -4481,7 +4539,7 @@ function _ensureBoxplotPluginRegistered() {
                         var color = palette[p.gIdx % palette.length];
                         
                         ctx.beginPath();
-                        ctx.arc(xPixel, yPixel, 1.5, 0, 2 * Math.PI);
+                        ctx.arc(xPixel, yPixel, pointRadius, 0, 2 * Math.PI);
                         ctx.fillStyle = color + 'FF';
                         ctx.fill();
                         ctx.strokeStyle = color;
@@ -6006,7 +6064,8 @@ function drawScatterLine() {
         : null);
 
     /* NOW apply jitter using actual Chart.js pixel-to-data conversions */
-    if (ct === 'scatter' && jitterParams.numUniqueX > 1) {
+    /* Only apply jitter if explicitly enabled via checkbox */
+    if (ct === 'scatter' && window._useScatterJitter && jitterParams.numUniqueX > 1 && plotPts.length > 0) {
         /* Get canvas width to calculate pixel-to-data scaling */
         var canvasWidth = document.getElementById('plot-canvas').width;
         var xScale = chartInst.scales.x;
