@@ -6672,7 +6672,7 @@ function drawCumSigma() {
             },
             scales: {
                 x: Object.assign({
-                    type: 'linear',
+                    type: xLog ? 'logarithmic' : 'linear',
                     title: { display: true,
                              text: _axisXTitle(xCol + (xRx ? ' [' + xRx + ']' : '')) }
                 }, getAxisScale('x-min', 'x-max', 'x-step')),
