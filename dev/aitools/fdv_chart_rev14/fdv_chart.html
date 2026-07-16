@@ -4893,6 +4893,15 @@ function _buildTileChart(canvas, ct, tileData, xCol, yCol, xRx, yRx, colCol, col
         if (!cpKeys.length) return null;
         var cpDatasets = cpKeys.map(function(g, i) {
             var vals = cpGroups[g].slice().sort(function(a,b){ return a-b; });
+            /* Filter out non-positive values if log scale is enabled */
+            var filteredCount = 0;
+            if (xLog) {
+                filteredCount = vals.filter(function(v) { return v <= 0; }).length;
+                vals = vals.filter(function(v) { return v > 0; });
+            }
+            if (xLog && filteredCount > 0) {
+                console.log('[_buildTileChart cumproba/rcdf] Group ' + g + ': Filtered out ' + filteredCount + ' non-positive values, kept ' + vals.length);
+            }
             var n    = vals.length;
             return {
                 label: g + ' (n=' + n + ')',
@@ -5062,10 +5071,19 @@ function _buildTileChart(canvas, ct, tileData, xCol, yCol, xRx, yRx, colCol, col
             
             /* For each item in this group, use its per-group theoretical sigma rank */
             var cumulativeData = [];
+            var filteredCount = 0;
             groupItems.forEach(function(item) {
+                /* Filter out non-positive values if log scale is enabled */
+                if (xLog && item.v <= 0) {
+                    filteredCount++;
+                    return;  /* Skip this point */
+                }
                 var sigma = rankToSigmaTile[item.idx];
                 cumulativeData.push({ x: item.v, y: sigma });
             });
+            if (xLog && filteredCount > 0) {
+                console.log('[_buildTileChart cum_sigma] Group ' + g + ': Filtered out ' + filteredCount + ' non-positive values, kept ' + cumulativeData.length);
+            }
             
             /* Sort by X for smooth line rendering */
             cumulativeData.sort(function(a, b) { return a.x - b.x; });
@@ -5113,7 +5131,7 @@ function _buildTileChart(canvas, ct, tileData, xCol, yCol, xRx, yRx, colCol, col
                     }
                 },
                 scales: {
-                    x: Object.assign({ type: 'linear',
+                    x: Object.assign({ type: xLog ? 'logarithmic' : 'linear',
                         title: { display: true, text: _axisXTitle('Observed ' + xCol + (xRx ? ' ['+xRx+']' : '')) } }, xScale),
                     y: Object.assign({ title: { display: true, text: _axisYTitle('Theoretical Quantiles (Sigma / σ)') },
                          grace: 0 }, yScale)
