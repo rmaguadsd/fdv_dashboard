@@ -905,6 +905,41 @@ def _run_parse_multi_job(job_id, file_paths, regex_include, regex_exclude, temp_
                 pass
 
 
+def _parse_multipart_part_multi(part, file_contents, regex_include_ref, regex_exclude_ref):
+    """Parse a single multipart part for multi-file upload (streaming-safe)"""
+    if not part.strip():
+        return
+    
+    if b'name="file"' in part and b'filename=' in part:
+        lines = part.split(b'\r\n')
+        for i, line in enumerate(lines):
+            if i == 0:
+                continue
+            if line == b'':
+                content = b'\r\n'.join(lines[i+1:-1])
+                fname = ''
+                disp = lines[1].decode('utf-8', errors='ignore') if len(lines) > 1 else ''
+                m = re.search(r'filename="([^"]+)"', disp)
+                if m:
+                    fname = m.group(1)
+                file_contents.append((fname, content))
+                return
+    elif b'name="regex_include"' in part:
+        lines = part.split(b'\r\n')
+        for i, line in enumerate(lines):
+            if i == 0:
+                continue
+            if line == b'':
+                return b'\r\n'.join(lines[i+1:-1]).decode('utf-8', errors='ignore').strip()
+    elif b'name="regex_exclude"' in part:
+        lines = part.split(b'\r\n')
+        for i, line in enumerate(lines):
+            if i == 0:
+                continue
+            if line == b'':
+                return b'\r\n'.join(lines[i+1:-1]).decode('utf-8', errors='ignore').strip()
+
+
 def _send_json(handler, status, obj):
     body = json.dumps(obj).encode('utf-8')
     handler.send_response(status)
@@ -1541,13 +1576,14 @@ class RequestHandler(BaseHTTPRequestHandler):
             # Multi-file upload — save each to temp, parse all, concatenate
             try:
                 content_len = int(self.headers.get('Content-Length', 0))
-                if content_len > 4 * 1024 * 1024 * 1024:
-                    raise ValueError('Upload too large (>4 GB)')
+                MAX_UPLOAD_SIZE = 10 * 1024 * 1024 * 1024  # 10 GB
+                if content_len > MAX_UPLOAD_SIZE:
+                    raise ValueError(f'Upload too large (>{MAX_UPLOAD_SIZE / (1024**3):.0f} GB)')
 
                 # Stream directly to temp file first
                 temp_upload_path = Path(tempfile.gettempdir()) / ('fdv_upload_' + uuid.uuid4().hex + '.tmp')
                 bytes_written = 0
-                max_chunk = 512 * 1024  # 512 KB chunks
+                max_chunk = 2 * 1024 * 1024  # 2 MB chunks (4x faster)
                 
                 with open(temp_upload_path, 'wb') as tmp:
                     while bytes_written < content_len:
@@ -1557,60 +1593,58 @@ class RequestHandler(BaseHTTPRequestHandler):
                             break
                         tmp.write(chunk)
                         bytes_written += len(chunk)
+                        if bytes_written % (100 * 1024 * 1024) == 0:  # Log every 100MB
+                            debug_log(f"[UPLOAD] {bytes_written / (1024**3):.2f} GB written...")
 
-                # Now parse multipart from disk
-                body = temp_upload_path.read_bytes()
-                
+                # Parse multipart from disk using streaming (memory-safe)
                 boundary = None
-                # Extract boundary from Content-Type header
                 content_type = self.headers.get('content-type', '')
                 if 'multipart/form-data' in content_type:
                     parts = content_type.split('boundary=')
                     if len(parts) > 1:
-                        boundary = parts[1].strip(' "')  # Remove surrounding quotes and spaces
+                        boundary = parts[1].strip(' "')
 
                 if not boundary:
                     raise ValueError('Missing multipart boundary')
-
-                boundary_bytes = ('--' + boundary).encode()
-                parts_list = body.split(boundary_bytes)
 
                 file_contents = []   # list of (filename, bytes)
                 regex_include = ''
                 regex_exclude = ''
 
-                for part in parts_list:
-                    debug_log(f"[parse_multi] Processing part, size={len(part)} bytes")
-                    if b'name="file"' in part and b'filename=' in part:
-                        lines = part.split(b'\r\n')
-                        for i, line in enumerate(lines):
-                            if i == 0: continue
-                            if line == b'':
-                                content = b'\r\n'.join(lines[i+1:-1])
-                                fname = ''
-                                disp = lines[1].decode('utf-8', errors='ignore') if len(lines) > 1 else ''
-                                m = re.search(r'filename="([^"]+)"', disp)
-                                if m:
-                                    fname = m.group(1)
-                                debug_log(f"[parse_multi] Found file: {fname}, size={len(content)} bytes")
-                                file_contents.append((fname, content))
+                # Stream multipart file with 8MB buffer (memory-efficient)
+                boundary_bytes = ('--' + boundary).encode()
+                buffer_size = 8 * 1024 * 1024  # 8MB buffer
+                current_part = b''
+                
+                with open(temp_upload_path, 'rb') as f:
+                    while True:
+                        chunk = f.read(buffer_size)
+                        if not chunk:
+                            # Process final part
+                            if current_part.strip():
+                                _parse_multipart_part_multi(current_part, file_contents, regex_include, regex_exclude)
+                            break
+                        
+                        current_part += chunk
+                        
+                        # Find boundaries in buffer
+                        while True:
+                            idx = current_part.find(boundary_bytes)
+                            if idx == -1:
                                 break
-                    elif b'name="regex_include"' in part:
-                        lines = part.split(b'\r\n')
-                        for i, line in enumerate(lines):
-                            if i == 0: continue
-                            if line == b'':
-                                regex_include = b'\r\n'.join(lines[i+1:-1]).decode('utf-8', errors='ignore').strip()
-                                break
-                    elif b'name="regex_exclude"' in part:
-                        lines = part.split(b'\r\n')
-                        for i, line in enumerate(lines):
-                            if i == 0: continue
-                            if line == b'':
-                                regex_exclude = b'\r\n'.join(lines[i+1:-1]).decode('utf-8', errors='ignore').strip()
-                                break
-
-                del body
+                            
+                            # Process part before boundary
+                            part = current_part[:idx]
+                            if part.strip():
+                                _parse_multipart_part_multi(part, file_contents, regex_include, regex_exclude)
+                            
+                            # Move past boundary
+                            current_part = current_part[idx + len(boundary_bytes):]
+                
+                # Extract final values from parsed parts
+                for fname, content in file_contents:
+                    debug_log(f"[parse_multi] Found file: {fname}, size={len(content)} bytes")
+                
                 try:
                     temp_upload_path.unlink()
                 except:
