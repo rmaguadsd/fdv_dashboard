@@ -373,6 +373,21 @@ def _get_total_rows(cache_id):
 class ThreadedHTTPServer(ThreadingMixIn, HTTPServer):
     """Handle each request in a separate thread so long parses don't block."""
     daemon_threads = True
+    timeout = 3600  # 1 hour socket timeout for large file uploads
+    
+    def server_bind(self):
+        """Bind server socket and configure it for large transfers"""
+        import socket
+        self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        # Enable TCP keepalive to prevent connection drops
+        self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+        if hasattr(socket, 'TCP_KEEPIDLE'):
+            self.socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPIDLE, 300)  # 5 min
+        if hasattr(socket, 'TCP_KEEPINTVL'):
+            self.socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPINTVL, 60)   # 1 min
+        if hasattr(socket, 'TCP_KEEPCNT'):
+            self.socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPCNT, 3)      # 3 probes
+        HTTPServer.server_bind(self)
 
 
 def parse_log_file(file_path, regex_include=None, regex_exclude=None, source_name=None):
@@ -649,21 +664,13 @@ def parse_log_file(file_path, regex_include=None, regex_exclude=None, source_nam
 
 
 def get_html():
-    """Return the HTML interface from external file with cache-busting timestamp"""
-    import time
+    """Return the HTML interface from external file"""
     html_file = Path(__file__).parent / 'fdv_chart.html'
     print(f"[get_html] Reading from: {html_file}", flush=True)
     print(f"[get_html] File exists: {html_file.exists()}", flush=True)
     html_content = html_file.read_text(encoding='utf-8')
     print(f"[get_html] Loaded {len(html_content)} bytes", flush=True)
     print(f"[get_html] Has 'point' selected: {'value=\"point\" selected' in html_content}", flush=True)
-    
-    # CACHE BUSTING: Inject current timestamp into version comment
-    # This forces browser to treat it as NEW content every time it's requested
-    timestamp = int(time.time() * 1000)  # milliseconds for extra uniqueness
-    cache_buster = f'<!-- CACHE-BUSTER: {timestamp} -->'
-    html_content = html_content.replace('<!-- VERSION: v2.1.3-xlog-fix-ts -->', cache_buster)
-    
     return html_content
 
 
@@ -686,9 +693,9 @@ def _run_parse_job(job_id, file_path, regex_include, regex_exclude, temp_path=No
     # Calculate dynamic timeout based on file size
     try:
         file_size_gb = os.path.getsize(file_path) / (1024 ** 3)
-        # Base 10 min + 10 min per GB, capped at 60 min
+        # Base 10 min + 10 min per GB, capped at 2 hours
         calculated_timeout = 600 + int(file_size_gb * 600)
-        MAX_PARSE_TIME = max(600, min(calculated_timeout, 3600))
+        MAX_PARSE_TIME = max(600, min(calculated_timeout, 7200))
     except:
         MAX_PARSE_TIME = 600  # Fallback to 10 min if size check fails
     
@@ -784,7 +791,7 @@ def _run_parse_multi_job(job_id, file_paths, regex_include, regex_exclude, temp_
     try:
         total_size_gb = sum(os.path.getsize(fp) / (1024 ** 3) for fp in file_paths)
         calculated_timeout = 600 + int(total_size_gb * 600)
-        MAX_PARSE_TIME = max(600, min(calculated_timeout, 3600))
+        MAX_PARSE_TIME = max(600, min(calculated_timeout, 7200))  # Cap at 2 hours for large datasets
     except:
         MAX_PARSE_TIME = 600  # Fallback to 10 min if size check fails
     
@@ -857,27 +864,44 @@ def _run_parse_multi_job(job_id, file_paths, regex_include, regex_exclude, temp_
         elapsed = time.time() - start_time
         csv_id = 'csv_' + uuid.uuid4().hex[:8]
         
+        debug_log(f"[PARSE_MULTI_JOB] All files parsed, total_rows={total_row_count}, headers={len(headers) if headers else 0}")
+        
         # Retrieve first 500 rows for preview
         preview_rows = []
         if primary_cache_id:
-            db_path = f"{CACHE_DIR}/{primary_cache_id}.db"
-            if Path(db_path).exists():
-                db = sqlite3.connect(db_path, check_same_thread=False)
-                db.row_factory = sqlite3.Row
-                col_names = ','.join([f'"{h}"' for h in headers])
-                cursor = db.execute(f'SELECT {col_names} FROM rows LIMIT 500')
-                preview_rows = [list(row) for row in cursor.fetchall()]
-                db.close()
+            try:
+                db_path = f"{CACHE_DIR}/{primary_cache_id}.db"
+                if Path(db_path).exists():
+                    db = sqlite3.connect(db_path, check_same_thread=False)
+                    db.row_factory = sqlite3.Row
+                    col_names = ','.join([f'"{h}"' for h in headers])
+                    cursor = db.execute(f'SELECT {col_names} FROM rows LIMIT 500')
+                    preview_rows = [list(row) for row in cursor.fetchall()]
+                    db.close()
+                    debug_log(f"[PARSE_MULTI_JOB] Retrieved {len(preview_rows)} preview rows")
+            except Exception as preview_err:
+                debug_log(f"[PARSE_MULTI_JOB] Error retrieving preview: {preview_err}")
+                errors.append(f'Preview error: {preview_err}')
         
-        parsed_cache[csv_id] = {
-            'headers': headers, 
-            'cache_id': primary_cache_id,
-            'row_count': total_row_count,
-            'is_sqlite': True
-        }
+        try:
+            parsed_cache[csv_id] = {
+                'headers': headers, 
+                'cache_id': primary_cache_id,
+                'row_count': total_row_count,
+                'is_sqlite': True
+            }
+            debug_log(f"[PARSE_MULTI_JOB] Added to parsed_cache: {csv_id}")
+        except Exception as cache_err:
+            debug_log(f"[PARSE_MULTI_JOB] Error updating parsed_cache: {cache_err}")
+            raise
         
         # Save metadata for session recovery after restart
-        _save_cache_metadata(primary_cache_id, csv_id, headers)
+        try:
+            _save_cache_metadata(primary_cache_id, csv_id, headers)
+            debug_log(f"[PARSE_MULTI_JOB] Saved metadata for {csv_id}")
+        except Exception as meta_err:
+            debug_log(f"[PARSE_MULTI_JOB] Error saving metadata: {meta_err}")
+            errors.append(f'Metadata save error: {meta_err}')
 
         PREVIEW = 500
         result = {
@@ -889,11 +913,16 @@ def _run_parse_multi_job(job_id, file_paths, regex_include, regex_exclude, temp_
             'parse_time_seconds': elapsed,
             'has_more': total_row_count > PREVIEW
         }
+        debug_log(f"[PARSE_MULTI_JOB] About to update job state to done")
         with parse_jobs_lock:
             parse_jobs[job_id]['state'] = 'done'
             parse_jobs[job_id]['result'] = result
+        debug_log(f"[PARSE_MULTI_JOB] Job completed successfully: {job_id}")
 
     except Exception as e:
+        import traceback
+        debug_log(f"[PARSE_MULTI_JOB] EXCEPTION: {e}")
+        debug_log(f"[PARSE_MULTI_JOB] Traceback: {traceback.format_exc()}")
         with parse_jobs_lock:
             parse_jobs[job_id]['state'] = 'error'
             parse_jobs[job_id]['error'] = str(e)
@@ -903,41 +932,6 @@ def _run_parse_multi_job(job_id, file_paths, regex_include, regex_exclude, temp_
                 Path(tp).unlink(missing_ok=True)
             except Exception:
                 pass
-
-
-def _parse_multipart_part_multi(part, file_contents, regex_include_ref, regex_exclude_ref):
-    """Parse a single multipart part for multi-file upload (streaming-safe)"""
-    if not part.strip():
-        return
-    
-    if b'name="file"' in part and b'filename=' in part:
-        lines = part.split(b'\r\n')
-        for i, line in enumerate(lines):
-            if i == 0:
-                continue
-            if line == b'':
-                content = b'\r\n'.join(lines[i+1:-1])
-                fname = ''
-                disp = lines[1].decode('utf-8', errors='ignore') if len(lines) > 1 else ''
-                m = re.search(r'filename="([^"]+)"', disp)
-                if m:
-                    fname = m.group(1)
-                file_contents.append((fname, content))
-                return
-    elif b'name="regex_include"' in part:
-        lines = part.split(b'\r\n')
-        for i, line in enumerate(lines):
-            if i == 0:
-                continue
-            if line == b'':
-                return b'\r\n'.join(lines[i+1:-1]).decode('utf-8', errors='ignore').strip()
-    elif b'name="regex_exclude"' in part:
-        lines = part.split(b'\r\n')
-        for i, line in enumerate(lines):
-            if i == 0:
-                continue
-            if line == b'':
-                return b'\r\n'.join(lines[i+1:-1]).decode('utf-8', errors='ignore').strip()
 
 
 def _send_json(handler, status, obj):
@@ -968,14 +962,11 @@ class RequestHandler(BaseHTTPRequestHandler):
                 print(f"[DEBUG] Sent response code", flush=True)
                 self.send_header('Content-Type', 'text/html; charset=utf-8')
                 self.send_header('Content-Length', len(body))
-                # AGGRESSIVE cache busting - force browser to re-fetch on every request
-                self.send_header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0, post-check=0, pre-check=0')
+                self.send_header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
                 self.send_header('Pragma', 'no-cache')
-                self.send_header('Expires', '-1')
-                # Unique ETag based on current milliseconds to force re-fetch
-                current_ms = int(time.time() * 1000000)
-                self.send_header('ETag', f'"{current_ms}"')
-                print(f"[DEBUG] Sending headers with ETag: {current_ms}", flush=True)
+                self.send_header('Expires', '0')
+                self.send_header('ETag', f'"{int(time.time() * 1000)}"')
+                print(f"[DEBUG] Sending headers", flush=True)
                 self.end_headers()
                 print(f"[DEBUG] Headers done, writing body", flush=True)
                 self.wfile.write(body)
@@ -1576,75 +1567,96 @@ class RequestHandler(BaseHTTPRequestHandler):
             # Multi-file upload — save each to temp, parse all, concatenate
             try:
                 content_len = int(self.headers.get('Content-Length', 0))
-                MAX_UPLOAD_SIZE = 10 * 1024 * 1024 * 1024  # 10 GB
-                if content_len > MAX_UPLOAD_SIZE:
-                    raise ValueError(f'Upload too large (>{MAX_UPLOAD_SIZE / (1024**3):.0f} GB)')
+                debug_log(f"[/parse_multi] Starting upload, Content-Length: {content_len / (1024**3):.2f} GB")
+                
+                if content_len > 10 * 1024 * 1024 * 1024:  # Increased to 10 GB
+                    raise ValueError('Upload too large (>10 GB)')
 
                 # Stream directly to temp file first
                 temp_upload_path = Path(tempfile.gettempdir()) / ('fdv_upload_' + uuid.uuid4().hex + '.tmp')
                 bytes_written = 0
-                max_chunk = 2 * 1024 * 1024  # 2 MB chunks (4x faster)
+                max_chunk = 1024 * 1024  # 1 MB chunks (faster streaming)
+                last_log = 0
                 
+                debug_log(f"[/parse_multi] Streaming to: {temp_upload_path}")
                 with open(temp_upload_path, 'wb') as tmp:
                     while bytes_written < content_len:
-                        chunk_size = min(max_chunk, content_len - bytes_written)
-                        chunk = self.rfile.read(chunk_size)
-                        if not chunk:
-                            break
-                        tmp.write(chunk)
-                        bytes_written += len(chunk)
-                        if bytes_written % (100 * 1024 * 1024) == 0:  # Log every 100MB
-                            debug_log(f"[UPLOAD] {bytes_written / (1024**3):.2f} GB written...")
+                        try:
+                            chunk_size = min(max_chunk, content_len - bytes_written)
+                            chunk = self.rfile.read(chunk_size)
+                            if not chunk:
+                                break
+                            tmp.write(chunk)
+                            bytes_written += len(chunk)
+                            
+                            # Log progress every 100 MB
+                            if bytes_written - last_log > 100 * 1024 * 1024:
+                                debug_log(f"[/parse_multi] Streamed {bytes_written / (1024**3):.2f} GB of {content_len / (1024**3):.2f} GB")
+                                last_log = bytes_written
+                        except Exception as chunk_err:
+                            debug_log(f"[/parse_multi] Error reading chunk: {chunk_err}")
+                            raise
 
-                # Parse multipart from disk using streaming (memory-safe)
+                # SEND 202 RESPONSE IMMEDIATELY after streaming completes (before parsing)
+                job_id = 'job_' + uuid.uuid4().hex[:8]
+                with parse_jobs_lock:
+                    parse_jobs[job_id] = {'state': 'pending', 'result': None, 'error': None}
+
+                debug_log(f"[/parse_multi] Upload complete, parsing multipart from disk")
+                
+                # Now parse multipart from disk
+                body = temp_upload_path.read_bytes()
+                
                 boundary = None
+                # Extract boundary from Content-Type header
                 content_type = self.headers.get('content-type', '')
                 if 'multipart/form-data' in content_type:
                     parts = content_type.split('boundary=')
                     if len(parts) > 1:
-                        boundary = parts[1].strip(' "')
+                        boundary = parts[1].strip(' "')  # Remove surrounding quotes and spaces
 
                 if not boundary:
                     raise ValueError('Missing multipart boundary')
+
+                boundary_bytes = ('--' + boundary).encode()
+                parts_list = body.split(boundary_bytes)
 
                 file_contents = []   # list of (filename, bytes)
                 regex_include = ''
                 regex_exclude = ''
 
-                # Stream multipart file with 8MB buffer (memory-efficient)
-                boundary_bytes = ('--' + boundary).encode()
-                buffer_size = 8 * 1024 * 1024  # 8MB buffer
-                current_part = b''
-                
-                with open(temp_upload_path, 'rb') as f:
-                    while True:
-                        chunk = f.read(buffer_size)
-                        if not chunk:
-                            # Process final part
-                            if current_part.strip():
-                                _parse_multipart_part_multi(current_part, file_contents, regex_include, regex_exclude)
-                            break
-                        
-                        current_part += chunk
-                        
-                        # Find boundaries in buffer
-                        while True:
-                            idx = current_part.find(boundary_bytes)
-                            if idx == -1:
+                for part in parts_list:
+                    debug_log(f"[parse_multi] Processing part, size={len(part)} bytes")
+                    if b'name="file"' in part and b'filename=' in part:
+                        lines = part.split(b'\r\n')
+                        for i, line in enumerate(lines):
+                            if i == 0: continue
+                            if line == b'':
+                                content = b'\r\n'.join(lines[i+1:-1])
+                                fname = ''
+                                disp = lines[1].decode('utf-8', errors='ignore') if len(lines) > 1 else ''
+                                m = re.search(r'filename="([^"]+)"', disp)
+                                if m:
+                                    fname = m.group(1)
+                                debug_log(f"[parse_multi] Found file: {fname}, size={len(content)} bytes")
+                                file_contents.append((fname, content))
                                 break
-                            
-                            # Process part before boundary
-                            part = current_part[:idx]
-                            if part.strip():
-                                _parse_multipart_part_multi(part, file_contents, regex_include, regex_exclude)
-                            
-                            # Move past boundary
-                            current_part = current_part[idx + len(boundary_bytes):]
-                
-                # Extract final values from parsed parts
-                for fname, content in file_contents:
-                    debug_log(f"[parse_multi] Found file: {fname}, size={len(content)} bytes")
-                
+                    elif b'name="regex_include"' in part:
+                        lines = part.split(b'\r\n')
+                        for i, line in enumerate(lines):
+                            if i == 0: continue
+                            if line == b'':
+                                regex_include = b'\r\n'.join(lines[i+1:-1]).decode('utf-8', errors='ignore').strip()
+                                break
+                    elif b'name="regex_exclude"' in part:
+                        lines = part.split(b'\r\n')
+                        for i, line in enumerate(lines):
+                            if i == 0: continue
+                            if line == b'':
+                                regex_exclude = b'\r\n'.join(lines[i+1:-1]).decode('utf-8', errors='ignore').strip()
+                                break
+
+                del body
                 try:
                     temp_upload_path.unlink()
                 except:
@@ -1667,10 +1679,20 @@ class RequestHandler(BaseHTTPRequestHandler):
                     orig_names.append(Path(fname).name if fname else None)
                 del file_contents
 
-                job_id = 'job_' + uuid.uuid4().hex[:8]
-                with parse_jobs_lock:
-                    parse_jobs[job_id] = {'state': 'pending', 'result': None, 'error': None}
-
+                debug_log(f"[/parse_multi] Created job {job_id}, sending 202 response now")
+                
+                # SEND 202 RESPONSE IMMEDIATELY (before starting parse job)
+                try:
+                    _send_json(self, 202, {
+                        'success': False, 'state': 'pending', 'job_id': job_id,
+                        'file_count': len(file_paths)
+                    })
+                    debug_log(f"[/parse_multi] 202 response sent successfully for job {job_id}")
+                except Exception as send_err:
+                    debug_log(f"[/parse_multi] ERROR sending 202 response: {send_err}")
+                    raise
+                
+                # NOW start the parse job in a background thread (after response sent)
                 threading.Thread(
                     target=_run_parse_multi_job,
                     args=(job_id, file_paths, regex_include if regex_include else None,
@@ -1678,13 +1700,14 @@ class RequestHandler(BaseHTTPRequestHandler):
                     daemon=True
                 ).start()
 
-                _send_json(self, 202, {
-                    'success': False, 'state': 'pending', 'job_id': job_id,
-                    'file_count': len(file_paths)
-                })
-
             except Exception as e:
-                _send_json(self, 400, {'success': False, 'error': str(e)})
+                debug_log(f"[/parse_multi] EXCEPTION in /parse_multi: {e}")
+                import traceback
+                debug_log(f"[/parse_multi] Traceback: {traceback.format_exc()}")
+                try:
+                    _send_json(self, 400, {'success': False, 'error': str(e)})
+                except:
+                    pass
 
         elif self.path == '/analyze':
             # Single-turn AI analysis — no session history
@@ -2467,13 +2490,16 @@ def main():
     print("Starting FDV Chart Parser...", file=sys.stderr, flush=True)
     print("Port      : " + str(_SERVER_PORT), file=sys.stderr, flush=True)
     print("Store dir : " + (_SERVER_STORE_DIR or '(none)'), file=sys.stderr, flush=True)
-    
-    # Recover any orphaned sessions from previous server runs
-    print("Recovering sessions from cache...", file=sys.stderr, flush=True)
-    _recover_sessions_from_cache()
+    print("Skipping session recovery for faster startup...", file=sys.stderr, flush=True)
+    # NOTE: Session recovery is now done on-demand (when browser requests /session-list)
+    # This allows the server to start immediately instead of blocking during recovery
     
     try:
         server = ThreadedHTTPServer(('0.0.0.0', _SERVER_PORT), RequestHandler)
+        # Set socket options for large file uploads
+        import socket
+        server.socket.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 16 * 1024 * 1024)  # 16 MB recv buffer
+        server.socket.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 16 * 1024 * 1024)  # 16 MB send buffer
         server.socket.settimeout(None)   # no accept() timeout; threads handle per-request I/O
         with open(log_file, 'a') as f:
             f.write("FDV Chart Parser is running at http://0.0.0.0:{} (all interfaces)\n".format(_SERVER_PORT))
