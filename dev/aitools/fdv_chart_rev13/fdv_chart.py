@@ -1036,22 +1036,6 @@ class RequestHandler(BaseHTTPRequestHandler):
             cached = parsed_cache[csv_id]
             headers = cached['headers']
             
-            # Load rows from SQLite if needed
-            if cached.get('is_sqlite'):
-                cache_id = cached.get('cache_id')
-                db_path = f"{CACHE_DIR}/{cache_id}.db"
-                rows = []
-                if Path(db_path).exists():
-                    db = sqlite3.connect(db_path, check_same_thread=False)
-                    db.row_factory = sqlite3.Row
-                    col_names = ','.join([f'"{h}"' for h in headers])
-                    cursor = db.execute(f'SELECT {col_names} FROM rows')
-                    rows = [list(row) for row in cursor.fetchall()]
-                    db.close()
-            else:
-                # Fallback to in-memory rows for backward compatibility
-                rows = cached.get('rows', [])
-
             def col_idx(name):
                 try: return headers.index(name)
                 except ValueError: return None
@@ -1084,17 +1068,61 @@ class RequestHandler(BaseHTTPRequestHandler):
 
             points = []
             skipped = 0
-            step = max(1, len(rows) // max_pts) if len(rows) > max_pts else 1
-            for row in rows[::step]:
-                xv = extract_num(row[xi], x_regex)
-                yv = extract_num(row[yi], y_regex)
-                if xv is None or yv is None:
-                    skipped += 1
-                    continue
-                pt = {'x': xv, 'y': yv}
-                if ci is not None and ci < len(row):
-                    pt['group'] = row[ci]
-                points.append(pt)
+            row_count = 0
+            sampled_count = 0
+            
+            # Stream rows from SQLite without loading all into memory
+            if cached.get('is_sqlite'):
+                cache_id = cached.get('cache_id')
+                db_path = f"{CACHE_DIR}/{cache_id}.db"
+                if Path(db_path).exists():
+                    db = sqlite3.connect(db_path, check_same_thread=False)
+                    db.row_factory = sqlite3.Row
+                    col_names = ','.join([f'"{h}"' for h in headers])
+                    cursor = db.execute(f'SELECT {col_names} FROM rows')
+                    
+                    # Stream rows in batches to avoid loading all into memory
+                    batch_size = 10000
+                    while True:
+                        batch = cursor.fetchmany(batch_size)
+                        if not batch:
+                            break
+                        
+                        for row in batch:
+                            row_count += 1
+                            # Sampling: only process every Nth row for plotting
+                            step = max(1, row_count // max_pts) if row_count > max_pts else 1
+                            if row_count % step != 0:
+                                continue
+                            
+                            row_list = list(row)
+                            xv = extract_num(row_list[xi], x_regex)
+                            yv = extract_num(row_list[yi], y_regex)
+                            if xv is None or yv is None:
+                                skipped += 1
+                                continue
+                            pt = {'x': xv, 'y': yv}
+                            if ci is not None and ci < len(row_list):
+                                pt['group'] = row_list[ci]
+                            points.append(pt)
+                            sampled_count += 1
+                    
+                    db.close()
+            else:
+                # Fallback to in-memory rows for backward compatibility
+                rows = cached.get('rows', [])
+                row_count = len(rows)
+                step = max(1, len(rows) // max_pts) if len(rows) > max_pts else 1
+                for row in rows[::step]:
+                    xv = extract_num(row[xi], x_regex)
+                    yv = extract_num(row[yi], y_regex)
+                    if xv is None or yv is None:
+                        skipped += 1
+                        continue
+                    pt = {'x': xv, 'y': yv}
+                    if ci is not None and ci < len(row):
+                        pt['group'] = row[ci]
+                    points.append(pt)
 
             resp = json.dumps({'success': True, 'points': points, 'skipped': skipped}).encode()
             self.send_response(200)
@@ -2329,18 +2357,26 @@ class RequestHandler(BaseHTTPRequestHandler):
                 if cached is None:
                     raise ValueError('csv_id not found in cache — re-parse the file first')
                 
-                # Load rows from SQLite if needed
+                # Load rows from SQLite in batches to avoid OOM
+                rows = []
                 if cached.get('is_sqlite'):
                     cache_id = cached.get('cache_id')
                     db_path = f"{CACHE_DIR}/{cache_id}.db"
-                    rows = []
                     if Path(db_path).exists():
                         db = sqlite3.connect(db_path, check_same_thread=False)
                         db.row_factory = sqlite3.Row
                         headers = cached.get('headers', [])
                         col_names = ','.join([f'"{h}"' for h in headers])
                         cursor = db.execute(f'SELECT {col_names} FROM rows')
-                        rows = [list(row) for row in cursor.fetchall()]
+                        
+                        # Stream rows in batches
+                        batch_size = 10000
+                        while True:
+                            batch = cursor.fetchmany(batch_size)
+                            if not batch:
+                                break
+                            rows.extend([list(row) for row in batch])
+                        
                         db.close()
                 else:
                     rows = cached.get('rows', [])

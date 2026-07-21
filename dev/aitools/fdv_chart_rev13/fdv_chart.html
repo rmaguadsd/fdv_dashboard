@@ -2784,7 +2784,15 @@ function setStatus(msg, cls) {
 
     var el = document.getElementById('status-bar');
 
-    el.textContent = msg; el.className = cls || '';
+    el.textContent = msg;
+
+    el.className = cls || '';
+
+    console.log('[setStatus]', msg, 'cls=' + (cls || ''));
+
+    /* Force reflow to ensure DOM update is rendered */
+
+    void el.offsetHeight;
 
 }
 
@@ -3310,11 +3318,11 @@ function toggleTopPanel() {
 
     if (panel.classList.contains('collapsed')) {
 
-        btn.textContent = 'Γû╢ Show';
+        btn.textContent = '▶ Show';
 
     } else {
 
-        btn.textContent = 'Γû╝ Hide';
+        btn.textContent = '▼ Hide';
 
     }
 
@@ -4087,7 +4095,7 @@ async function parseFile() {
 
     var ticker = setInterval(function() {
 
-        setStatus('Parsing' + nFiles + ' \u2026 ' + ((Date.now()-t0)/1000).toFixed(1) + 's', 'info');
+        setStatus('Parsing ' + nFiles + ' \u2026 ' + ((Date.now()-t0)/1000).toFixed(1) + 's', 'info');
 
     }, 500);
 
@@ -12951,7 +12959,7 @@ function drawCumProba() {
 
 
 
-    _syncMainTitle('Cum Proba Γöé ' + xCol + (hasColorDims ? '  Γöé  ' + colorDims.map(function(d){ return d.col; }).join(', ') : ''));
+    _syncMainTitle('Cum Proba – ' + xCol + (hasColorDims ? '  –  ' + colorDims.map(function(d){ return d.col; }).join(', ') : ''));
 
     var filtNote  = hasActiveFilters() ? ' – filtered' : '';
 
@@ -12977,7 +12985,7 @@ function drawCumProba() {
 
 
 
-/* ΓöÇΓöÇ Cumulative Probability (Sigma Scale) ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ */
+/* ═══ Cumulative Probability (Sigma Scale) ═══════════════════════════════ */
 
 function drawCumSigma() {
 
@@ -13401,7 +13409,7 @@ function drawCumSigma() {
 
     _setPointLabels(chartInst, null);
 
-    _syncMainTitle('Cum Sigma Γöé ' + xCol + (hasColorDims ? '  Γöé  ' + colorDims.map(function(d){ return d.col; }).join(', ') : ''));
+    _syncMainTitle('Cum Sigma – ' + xCol + (hasColorDims ? '  –  ' + colorDims.map(function(d){ return d.col; }).join(', ') : ''));
 
     var filtNote  = hasActiveFilters() ? ' – filtered' : '';
 
@@ -13425,7 +13433,7 @@ function drawCumSigma() {
 
 
 
-/* ΓöÇΓöÇ Reverse Cumulative Probability (RCDF) ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ */
+/* ═══ Reverse Cumulative Probability (RCDF) ═══════════════════════════ */
 
 function drawRcdf() {
 
@@ -13653,7 +13661,7 @@ function drawRcdf() {
 
 
 
-    _syncMainTitle('RCDF Γöé ' + xCol + (hasColorDims ? '  Γöé  ' + colorDims.map(function(d){ return d.col; }).join(', ') : ''));
+    _syncMainTitle('RCDF – ' + xCol + (hasColorDims ? '  –  ' + colorDims.map(function(d){ return d.col; }).join(', ') : ''));
 
     var filtNote  = hasActiveFilters() ? ' – filtered' : '';
 
@@ -13679,7 +13687,7 @@ function drawRcdf() {
 
 
 
-/* ΓöÇΓöÇ Box & Whisker ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ */
+/* ═══ Box & Whisker ════════════════════════════════════════════════════ */
 
 function drawBoxPlot() {
 
@@ -14061,7 +14069,7 @@ function drawBoxPlot() {
 
 
 
-    _syncMainTitle('Box & Whisker Γöé ' + xCol + ' vs ' + yCol);
+    _syncMainTitle('Box & Whisker – ' + xCol + ' vs ' + yCol);
 
     var filtNote = hasActiveFilters() ? ' – filtered' : '';
 
@@ -14201,7 +14209,7 @@ function _buildChartPrompt(ct, xCol, yCol, xRx, yRx, points, groupStats) {
 
         lines.push('');
 
-        lines.push('TASK: Analyse this chart. Respond in bullet points (ΓÇó). '
+        lines.push('TASK: Analyse this chart. Respond in bullet points (•). '
 
             + 'Cover every group – for each: distribution shape, central tendency, '
 
@@ -14213,7 +14221,7 @@ function _buildChartPrompt(ct, xCol, yCol, xRx, yRx, points, groupStats) {
 
         lines.push('');
 
-        lines.push('TASK: Analyse this chart. Respond in bullet points (ΓÇó). '
+        lines.push('TASK: Analyse this chart. Respond in bullet points (•). '
 
             + 'Cover: distribution shape, central tendency (mean/median), '
 
@@ -14337,7 +14345,7 @@ function _buildSplitPrompt(ct, xCol, yCol, xRx, yRx, scCol, tileStats) {
 
     lines.push('TASK: Comparative analysis – ' + tileStats.length
 
-        + ' groups split by "' + scCol + '". Respond in bullet points (ΓÇó). '
+        + ' groups split by "' + scCol + '". Respond in bullet points (•). '
 
         + 'Dedicate at least one bullet per group with its key stats. '
 
@@ -14449,7 +14457,7 @@ function _buildCrossPrompt(ct, xCol, yCol, xRx, yRx, scCol, colorCol, crossStats
 
     lines.push('');
 
-    lines.push('TASK: Two-dimensional comparative analysis. Respond in bullet points (ΓÇó). '
+    lines.push('TASK: Two-dimensional comparative analysis. Respond in bullet points (•). '
 
         + 'Within each tile (' + scCol + '): one bullet per color group (' + colorCol + ') '
 
@@ -14619,7 +14627,7 @@ function _renderAnalysisTiles(results) {
 
 
 
-/* ΓöÇΓöÇ Summary table ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ */
+/* ═══ Summary table ═══════════════════════════════════════════════════ */
 
 var _summaryRows = null, _summaryIsXOnly = false;
 
