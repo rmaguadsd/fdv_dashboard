@@ -336,7 +336,7 @@
 
         #chart-title-bar:empty:before {
 
-            content: "Click to add chart titleΓÇª";
+            content: "Click to add chart title";
 
             color: #bbb; font-weight: normal; font-style: italic;
 
@@ -662,7 +662,7 @@
 
         #summary-btn:disabled { opacity: 0.55; cursor: not-allowed; }
 
-        /* ΓöÇΓöÇ Multi-dimension group builder ΓöÇΓöÇ */
+        /* ══════ Multi-dimension group builder ══════ */
 
         .gdim-wrap { display:flex; flex-direction:column; gap:2px; }
 
@@ -744,7 +744,7 @@
 
         }
 
-        /* ΓöÇΓöÇ Plot spinner ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ */
+        /* ══════ Plot spinner ════════════════════════════════════════════════════════════════ */
 
         #plot-spinner {
 
@@ -824,7 +824,7 @@
 
 
 
-        /* ΓöÇΓöÇ CHAT DRAWER (FLOATING WINDOW) ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ */
+        /* ══════ CHAT DRAWER (FLOATING WINDOW) ════════════════════════════════════════════ */
 
         #chat-drawer {
 
@@ -1094,7 +1094,7 @@
 
 
 
-        /* ΓöÇΓöÇ Custom HTML tooltip (replaces canvas-clipped Chart.js tooltip) ΓöÇΓöÇ */
+        /* ══════ Custom HTML tooltip (replaces canvas-clipped Chart.js tooltip) ══════ */
 
         #chart-tooltip {
 
@@ -1154,7 +1154,7 @@
 
 
 
-        /* ΓöÇΓöÇ Panel resize grips ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ */
+        /* ══════ Panel resize grips ════════════════════════════════════════════════════════════════ */
 
         .panel-grip {
 
@@ -1290,7 +1290,7 @@
 
         <!-- Performance/Sampling group on the right -->
 
-        <span class="ctrl-label" style="color:#6c757d;font-weight:bold;white-space:nowrap">ΓÜí&nbsp;Performance:</span>
+        <span class="ctrl-label" style="color:#6c757d;font-weight:bold;white-space:nowrap">⏱&nbsp;Performance:</span>
 
         <select id="sampling-mode" style="padding:3px 6px;font-size:0.85em;border:1px solid #adb5bd;border-radius:3px;min-width:140px"
 
@@ -1430,7 +1430,7 @@
 
 
 
-    <!-- Upload directory row (hidden by default) ΓÇö combined with Files on same row -->
+    <!-- Upload directory row (hidden by default) – combined with Files on same row -->
 
     <div class="ctrl-row" id="src-row-dir" style="display:none">
 
@@ -1638,7 +1638,7 @@
 
         </span>
 
-        <!-- Z-Order control ΓÇö specify rendering order for color-by groups -->
+        <!-- Z-Order control – specify rendering order for color-by groups -->
 
         <label id="z-order-label" style="margin-left:8px;display:flex;align-items:center;gap:4px">
 
@@ -1654,7 +1654,7 @@
 
         </label>
 
-        <!-- Split-chart controls ΓÇö same mechanism as Color-by -->
+        <!-- Split-chart controls – same mechanism as Color-by -->
 
         <span id="split-col-label" style="margin-left:8px;display:inline-flex;align-items:flex-start;gap:4px;border-left:1px dashed #ced4da;padding-left:8px">
 
@@ -1666,7 +1666,7 @@
 
         </span>
 
-        <!-- Split-chart layout controls ΓÇö below dimensions -->
+        <!-- Split-chart layout controls – below dimensions -->
 
         <span style="margin-left:8px;display:flex;align-items:center;gap:8px;padding-top:4px;border-top:1px dashed #ced4da;margin-top:2px">
 
@@ -1782,7 +1782,7 @@
 
         </div>
 
-        <!-- Axis labels / XY-scale / Data-interval ΓÇö combined row -->
+        <!-- Axis labels / XY-scale / Data-interval – combined row -->
 
         <div style="width:100%;display:flex;align-items:center;gap:6px;flex-wrap:wrap;
 
@@ -1932,7 +1932,7 @@
 
             <input id="marker-input" type="text" autocomplete="off"
 
-                   placeholder="e.g.  x=10  or  x=10:Threshold  or  x=10:Threshold:1  ΓÇö press Enter to add"
+                   placeholder="e.g.  x=10  or  x=10:Threshold  or  x=10:Threshold:1  – press Enter to add"
 
                    title="Format: x=VALUE[:LABEL[:CHART_ID]]  or  y=VALUE[:LABEL[:CHART_ID]]&#10;VALUE: numeric position on axis&#10;LABEL: optional marker label text&#10;CHART_ID: optional numeric chart id (applies only to that chart, empty=all charts)&#10;Examples:  x=100  |  y=0.5:Threshold  |  x=200:UCL:2">
 
@@ -2186,7 +2186,7 @@
 
             <div id="unified-content" style="flex:1 1 0;min-height:0;overflow-y:auto;padding:10px;background:#fff;display:flex;flex-direction:column">
 
-                <!-- Messages/Content Output Area ΓÇö Single continuous stream -->
+                <!-- Messages/Content Output Area – Single continuous stream -->
 
                 <div id="content-output" style="flex:1 1 0;min-height:0;overflow-y:auto;margin-bottom:10px">
 
@@ -2342,7 +2342,7 @@ function _setPointLabels(chart, data) {
 
     _chartLabelMap.set(chart, data || null);
 
-    /* Use draw() directly ΓÇö more reliable than update('none') for
+    /* Use draw() directly – more reliable than update('none') for
 
        scatter+showLine charts where update may skip afterDraw */
 
@@ -3776,13 +3776,13 @@ function _updateSamplingStatus() {
 
         case 'random':
 
-            info = 'ΓÜí Hash-based deterministic (~10x faster)';
+            info = '⏱ Hash-based deterministic (~10x faster)';
 
             break;
 
         case 'decimation':
 
-            info = 'ΓÜí Bin-based shape-preserving (~8x faster)';
+            info = '⏱ Bin-based shape-preserving (~8x faster)';
 
             break;
 
@@ -4319,7 +4319,7 @@ function _buildTableHeader(headers) {
 
 
 
-/* ΓöÇΓöÇ Column resize via gripper drag ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ */
+/* ══════ Column resize via gripper drag ════════════════════════════════════════════════════════════════ */
 
 function _wireColResize() {
 
@@ -4913,7 +4913,7 @@ function onChartTypeChange() {
 
     function show(id, vis) { var el=document.getElementById(id); if(el) el.style.display=vis?'':'none'; }
 
-    /* boxplot: X = category col (label), Y = numeric value col ΓÇö both shown */
+    /* boxplot: X = category col (label), Y = numeric value col – both shown */
 
     show('y-col-label',    !isXOnly);
 
@@ -5351,7 +5351,7 @@ function _clearIntervals() {
 
 /* ================================================================
 
-   RECIPE  ΓÇö  save / load / delete plot settings in localStorage
+   RECIPE  –  save / load / delete plot settings in localStorage
 
 ================================================================ */
 
@@ -5493,7 +5493,7 @@ function _recipeApply(snap) {
 
         if (!el) return;
 
-        /* Column selectors ΓÇö defer if not yet populated (no data loaded) */
+        /* Column selectors – defer if not yet populated (no data loaded) */
 
         if ((id==='x-col'||id==='y-col'||id==='color-col') && el.options.length <= 1) return;
 
@@ -5579,7 +5579,7 @@ function _recipeApply(snap) {
 
     }
 
-    /* Restore column filter values ΓÇö immediate if headers already loaded, deferred otherwise */
+    /* Restore column filter values – immediate if headers already loaded, deferred otherwise */
 
     _recipeApplyColFilters(snap);
 
@@ -5597,7 +5597,7 @@ function _recipeApply(snap) {
 
     } else {
 
-        /* Headers already loaded ΓÇö restore dimensions immediately */
+        /* Headers already loaded – restore dimensions immediately */
 
         console.log('[_recipeApply] Restoring dimensions immediately (headers loaded)');
 
@@ -5729,7 +5729,7 @@ function _recipeApplyColFilters(snap) {
 
     var filterInputs = document.querySelectorAll('#filter-row input');
 
-    if (!filterInputs.length) return;   /* filter row not built yet ΓÇö will be done after parse */
+    if (!filterInputs.length) return;   /* filter row not built yet – will be done after parse */
 
     try {
 
@@ -5759,7 +5759,7 @@ function _recipeApplyColFilters(snap) {
 
         } else {
 
-            /* No filters in recipe ΓÇö hide the filter row if currently visible */
+            /* No filters in recipe – hide the filter row if currently visible */
 
             if (filtersVisible) toggleFilters();
 
@@ -6105,19 +6105,19 @@ function _recipeStatus(msg, cls) {
 
 /* ================================================================
 
-   SESSION  ΓÇö  save / load / delete complete data + settings
+   SESSION  –  save / load / delete complete data + settings
 
    Stored in localStorage under key  fdv_sessions_v1
 
    Each session entry: { headers, rows, fname, snap }
 
-   'rows' is the full allRows[] array ΓÇö allows restore without re-parse.
+   'rows' is the full allRows[] array – allows restore without re-parse.
 
 ================================================================ */
 
 /* ================================================================
 
-   STORE DIRECTORY  ΓÇö  optional disk-based save/load for recipes & sessions
+   STORE DIRECTORY  –  optional disk-based save/load for recipes & sessions
 
    When _storeDir is set, all recipe/session Save/Load/Delete operations
 
@@ -6127,7 +6127,7 @@ function _recipeStatus(msg, cls) {
 
 ================================================================ */
 
-var _storeDir = '';    /* active store directory ΓÇö empty means localStorage mode */
+var _storeDir = '';    /* active store directory – empty means localStorage mode */
 
 var _STORE_DIR_KEY = 'fdv_store_dir';
 
@@ -6143,7 +6143,7 @@ function _storeDirSet() {
 
     if (!val) {
 
-        /* Clear ΓÇö revert to localStorage mode */
+        /* Clear – revert to localStorage mode */
 
         _storeDir = '';
 
@@ -6295,7 +6295,7 @@ function _storeDirInit() {
 
     }
 
-    /* No local preference ΓÇö ask server for its configured default */
+    /* No local preference – ask server for its configured default */
 
     fetch('/store/default_dir')
 
@@ -6325,7 +6325,7 @@ function _storeDirInit() {
 
             }
 
-            /* If server has no default or dir missing ΓÇö stay in localStorage mode silently */
+            /* If server has no default or dir missing – stay in localStorage mode silently */
 
         })
 
@@ -6495,7 +6495,7 @@ function _sessionApplyEntry(entry, name) {
 
     _destroySplitCharts();
 
-    currentCsvId      = 'session:' + name;   /* placeholder ΓÇö updated below if store-dir */
+    currentCsvId      = 'session:' + name;   /* placeholder – updated below if store-dir */
 
     currentHeaders    = entry.headers;
 
@@ -6571,7 +6571,7 @@ function _sessionApplyEntry(entry, name) {
 
     /* Register loaded rows into server parsed_cache so re-saving works without re-parsing.
 
-       Fire-and-forget ΓÇö failure is silent (save will show its own error if csv_id is missing). */
+       Fire-and-forget – failure is silent (save will show its own error if csv_id is missing). */
 
     if (_storeDir) {
 
@@ -6875,7 +6875,7 @@ function _sessionSave() {
 
         if (_storeDir) {
 
-            /* Send a lightweight request ΓÇö the server reads rows from its own parsed_cache
+            /* Send a lightweight request – the server reads rows from its own parsed_cache
 
                and writes the full session file to disk, bypassing the JS string-length limit. */
 
@@ -6981,7 +6981,7 @@ function _sessionLoad() {
 
         /* For store-dir sessions: register server-side (loads rows into parsed_cache)
 
-           then stream rows via /rows ΓÇö avoids sending the full JSON over HTTP which
+           then stream rows via /rows – avoids sending the full JSON over HTTP which
 
            breaks on large files (>50 MB). */
 
@@ -8109,7 +8109,7 @@ function _splitChartKeys(row, colIdx, rxStr) {
 
         if (scDimPrefix === null) return keys;
 
-        return keys.map(function(k){ return scDimPrefix + ' Γöé ' + k; });
+        return keys.map(function(k){ return scDimPrefix + ' – ' + k; });
 
     }
 
@@ -8137,7 +8137,7 @@ function _splitChartKeys(row, colIdx, rxStr) {
 
         while ((m = rx.exec(raw)) !== null) {
 
-            /* Collect all defined capture groups (m[1], m[2], ΓÇª) */
+            /* Collect all defined capture groups (m[1], m[2], ...) */
 
             var groups = [];
 
@@ -8169,11 +8169,11 @@ function _splitChartKeys(row, colIdx, rxStr) {
 
    EDITABLE CHART TITLE
 
-   ΓÇó #chart-title-bar above the main canvas is a contenteditable div.
+   • #chart-title-bar above the main canvas is a contenteditable div.
 
-   ΓÇó .split-tile-title on each tile is also contenteditable.
+   • .split-tile-title on each tile is also contenteditable.
 
-   ΓÇó _syncMainTitle(text) sets the bar only when the user has NOT typed
+   • _syncMainTitle(text) sets the bar only when the user has NOT typed
 
      a custom title (resets on every new drawPlot() call).
 
@@ -8227,7 +8227,7 @@ function _titleBlur(ctx, tileIdx) {
 
     } else {
 
-        /* tile ΓÇö tileIdx is the position in _splitInsts[] */
+        /* tile – tileIdx is the position in _splitInsts[] */
 
         var titleEls = document.querySelectorAll('.split-tile-title');
 
@@ -8325,7 +8325,7 @@ function _wireTileTitles() {
 
    Each dim: { col: colName, colIdx: int, rx: regexStr }
 
-   Compound key = dim0_result " | " dim1_result ΓÇª
+   Compound key = dim0_result " | " dim1_result ...
 
 ================================================================ */
 
@@ -8355,7 +8355,7 @@ function _compoundKey(row, dims) {
 
     }
 
-    return parts.length ? parts.join(' Γöé ') : null;
+    return parts.length ? parts.join(' – ') : null;
 
 }
 
@@ -8399,7 +8399,7 @@ function _gdimAdd(type) {
 
     if (!wrap) return;
 
-    var opts = '<option value="">ΓÇö col ΓÇö</option>';
+    var opts = '<option value="">– col –</option>';
 
     /* Use currentHeaders if available, otherwise empty */
 
@@ -8489,7 +8489,7 @@ function _gdimSyncLegacy(type) {
 
     var dims = (type==='color') ? _colorDims : (type==='sc') ? _scDims : _splitDims;
 
-    /* Only update the legacy hidden inputs ΓÇö the sc select is real so skip for sc */
+    /* Only update the legacy hidden inputs – the sc select is real so skip for sc */
 
     if (type !== 'sc') {
 
@@ -8521,7 +8521,7 @@ function _gdimRebuildSelects(headers) {
 
             var prev = sel.value;
 
-            var opts = '<option value="">ΓÇö col ΓÇö</option>';
+            var opts = '<option value="">– col –</option>';
 
             headers.forEach(function(h) {
 
@@ -8703,7 +8703,7 @@ function _gdimRestoreDirect(type, dims) {
 
         /* Build select with options from currentHeaders */
 
-        var opts = '<option value="">ΓÇö col ΓÇö</option>';
+        var opts = '<option value="">– col –</option>';
 
         if (currentHeaders && currentHeaders.length > 0) {
 
@@ -8799,7 +8799,7 @@ function _gdimInit() {
 
    
 
-   Multiple capture groups joined with ", " ΓÇö e.g. PGTYPE_(..)_.*_BL_(\d)
+   Multiple capture groups joined with ", " – e.g. PGTYPE_(..)_.*_BL_(\d)
 
    on "BLAH_PGTYPE_UP_BLAH_BL_3" ΓåÆ "UP, 3".
 
@@ -8917,7 +8917,7 @@ function _extractGroupKey(raw, rxStr) {
 
             } catch(formulaErr) {
 
-                /* Formula execution error ΓÇö log and return error indicator */
+                /* Formula execution error – log and return error indicator */
 
                 console.error('[Formula Error] ' + formulaPart + ' | Error: ' + formulaErr.message);
 
@@ -8985,7 +8985,7 @@ function _destroySplitCharts() {
 
 
 
-/* ΓöÇΓöÇ Global plugin registration for boxplot scatter overlay ΓöÇΓöÇ */
+/* ══════ Global plugin registration for boxplot scatter overlay ══════ */
 
 var _boxplotPluginRegistered = false;
 
@@ -9297,7 +9297,7 @@ function _buildTileChart(canvas, ct, tileData, xCol, yCol, xRx, yRx, colCol, col
 
 
 
-    /* ΓöÇΓöÇ Box & Whisker tile ΓöÇΓöÇ */
+    /* ══════ Box & Whisker tile ══════ */
 
     if (ct === 'boxplot') {
 
@@ -9497,7 +9497,7 @@ function _buildTileChart(canvas, ct, tileData, xCol, yCol, xRx, yRx, colCol, col
 
 
 
-    /* ΓöÇΓöÇ Histogram tile ΓöÇΓöÇ */
+    /* ══════ Histogram tile ══════ */
 
     if (ct === 'histogram') {
 
@@ -9705,7 +9705,7 @@ function _buildTileChart(canvas, ct, tileData, xCol, yCol, xRx, yRx, colCol, col
 
 
 
-    /* ΓöÇΓöÇ Cum Proba / RCDF tile ΓöÇΓöÇ */
+    /* ══════ Cum Proba / RCDF tile ══════ */
 
     if (ct === 'cumproba' || ct === 'rcdf') {
 
@@ -9887,7 +9887,7 @@ function _buildTileChart(canvas, ct, tileData, xCol, yCol, xRx, yRx, colCol, col
 
 
 
-    /* ΓöÇΓöÇ Cum Sigma tile ΓöÇΓöÇ */
+    /* ══════ Cum Sigma tile ══════ */
 
     if (ct === 'cum_sigma') {
 
@@ -10239,7 +10239,7 @@ function _buildTileChart(canvas, ct, tileData, xCol, yCol, xRx, yRx, colCol, col
 
 
 
-    /* ΓöÇΓöÇ Scatter / Line tile ΓöÇΓöÇ */
+    /* ══════ Scatter / Line tile ══════ */
 
     var MAX_PTS = 5000;
 
@@ -10697,7 +10697,7 @@ function _drawSplitCharts() {
 
     /* Attach split key to each point using raw filteredIndices.
 
-       A row may match MULTIPLE keys (multi-capture regex) ΓÇö it goes into each bucket. */
+       A row may match MULTIPLE keys (multi-capture regex) – it goes into each bucket. */
 
     var buckets = {};
 
@@ -10967,7 +10967,7 @@ function _drawSplitCharts() {
 
     _wireTileTitles();
 
-    var filtNote  = hasActiveFilters() ? ' ΓÇö filtered' : '';
+    var filtNote  = hasActiveFilters() ? ' – filtered' : '';
 
     var totalBucketed = keys.reduce(function(s, k){ return s + (buckets[k]||[]).length; }, 0);
 
@@ -10985,13 +10985,13 @@ function _drawSplitCharts() {
 
 
 
-/* ΓöÇΓöÇ Custom HTML tooltip handler (shared by all charts) ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+/* ══════ Custom HTML tooltip handler (shared by all charts) ══════════════════════════════════════
 
    Renders outside the canvas so text is never clipped by plot width.
 
    Attach via: plugins: { tooltip: { enabled:false, external: _htmlTooltip } }
 
-   ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ */
+   ═════════════════════════════════════════════════════════════════════════════════ */
 
 var _htmlTooltipEl = null;
 
@@ -11091,7 +11091,7 @@ function _onSplitColChange() {
 
     /* When split-chart column/regex changes, destroy existing split tiles
 
-       and prompt the user to press Plot ΓÇö do NOT auto-render (can be slow). */
+       and prompt the user to press Plot – do NOT auto-render (can be slow). */
 
     var scDims = _gdimRead('sc');
 
@@ -11161,7 +11161,7 @@ function _spinStop() {
 
 
 
-/* ΓöÇΓöÇ Axis title helpers ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ */
+/* ══════ Axis title helpers ═════════════════════════════════════════════════════ */
 
 function _axisXTitle(defaultVal) {
 
@@ -11181,7 +11181,7 @@ function _axisYTitle(defaultVal) {
 
 
 
-/* ΓöÇΓöÇ Save plot panel to PNG ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ */
+/* ══════ Save plot panel to PNG ══════════════════════════════════════════════════ */
 
 function _savePlotPng() {
 
@@ -11235,7 +11235,7 @@ function _savePlotPng() {
 
 
 
-    /* ΓöÇΓöÇ Single chart: ask Chart.js directly for its canvas image ΓöÇΓöÇ */
+    /* ══════ Single chart: ask Chart.js directly for its canvas image ══════ */
 
     if (!isSplit) {
 
@@ -11261,7 +11261,7 @@ function _savePlotPng() {
 
 
 
-    /* ΓöÇΓöÇ Split charts: composite all tile canvases onto one output canvas ΓöÇΓöÇ */
+    /* ══════ Split charts: composite all tile canvases onto one output canvas ══════ */
 
     var tiles = document.querySelectorAll('#plot-grid .split-tile');
 
@@ -11507,7 +11507,9 @@ function drawPlot() {
 
     }
 
-}/* ΓöÇΓöÇ Scatter / Line ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ */
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════ Scatter / Line ══════════════════════════════════════════════════════════════════════════════════ */
 
 function drawScatterLine() {
 
@@ -12247,9 +12249,9 @@ function drawScatterLine() {
 
 
 
-    _syncMainTitle(xCol + ' vs ' + yCol + (colCol ? '  Γöé  ' + colCol : ''));
+    _syncMainTitle(xCol + ' vs ' + yCol + (colCol ? '  –  ' + colCol : ''));
 
-    var filtNote = hasActiveFilters() ? ' ΓÇö filtered' : '';
+    var filtNote = hasActiveFilters() ? ' – filtered' : '';
 
     var sampNote = sampled
 
@@ -12269,7 +12271,7 @@ function drawScatterLine() {
 
 
 
-/* ΓöÇΓöÇ Normal Distribution Inverse (Quantile) Function ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ */
+/* ══════ Normal Distribution Inverse (Quantile) Function ══════════════════════════════════ */
 
 /* Approximates the inverse of the standard normal CDF (phi^-1)
 
@@ -12331,7 +12333,7 @@ function normalInverse(p) {
 
 
 
-/* ΓöÇΓöÇ Inverse Normal CDF (Percent Point Function) ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ */
+/* ══════ Inverse Normal CDF (Percent Point Function) ══════════════════════════════════════ */
 
 /* Converts a Z-score back to its cumulative probability (0-1) */
 
@@ -12391,11 +12393,11 @@ function normalInverseCDF(z) {
 
 
 
-/* ΓöÇΓöÇ Histogram ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ */
+/* ══════════════════════════════════════════════════════════════════════════════════ Histogram ══════════════════════════════════════════════════════════════════════════════════ */
 
 function autoBins(n) { 
 
-    /* Rice Rule: 2 * n^(1/3) ΓÇö gives better granularity than Sturges */
+    /* Rice Rule: 2 * n^(1/3) – gives better granularity than Sturges */
 
     return Math.min(200, Math.max(10, Math.ceil(2 * Math.pow(n, 1/3)))); 
 
@@ -12407,7 +12409,7 @@ function buildHistBins(values, nBins) {
 
     if (!values.length) return { bins: [], counts: [], width: 0 };
 
-    /* Use loop instead of Math.min/max.apply ΓÇö avoids stack overflow on large arrays */
+    /* Use loop instead of Math.min/max.apply – avoids stack overflow on large arrays */
 
     var mn = values[0], mx = values[0];
 
@@ -12691,9 +12693,9 @@ function drawHistogram() {
 
 
 
-    _syncMainTitle('Histogram Γöé ' + xCol + (hasColorDims ? '  Γöé  ' + colorDims.map(function(d){ return d.col; }).join(', ') : ''));
+    _syncMainTitle('Histogram – ' + xCol + (hasColorDims ? '  –  ' + colorDims.map(function(d){ return d.col; }).join(', ') : ''));
 
-    var filtNote = hasActiveFilters() ? ' ΓÇö filtered' : '';
+    var filtNote = hasActiveFilters() ? ' – filtered' : '';
 
     var nGroups = Object.keys(groups).length;
 
@@ -12715,7 +12717,7 @@ function drawHistogram() {
 
 
 
-/* ΓöÇΓöÇ Cumulative Probability ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ */
+/* ══════════════════════════════════════════════════════════════════════════════ Cumulative Probability ══════════════════════════════════════════════════════════════════════════════ */
 
 function drawCumProba() {
 
@@ -12751,7 +12753,7 @@ function drawCumProba() {
 
     var iv      = _getIntervals();
 
-    /* DO NOT pass a groupCol to readFilteredFromMemory ΓÇö cumproba handles grouping via colorDims */
+    /* DO NOT pass a groupCol to readFilteredFromMemory – cumproba handles grouping via colorDims */
 
     var res     = readFilteredFromMemory(xCol, null, null, xRx, null, iv.xLo, iv.xHi, '', '');
 
@@ -12863,7 +12865,7 @@ function drawCumProba() {
 
     /* Feed the global fdvPointLabels plugin: build labels per dataset in same order as datasets[] */
 
-    /* Done after datasets are built ΓÇö see below */
+    /* Done after datasets are built – see below */
 
 
 
@@ -12951,7 +12953,7 @@ function drawCumProba() {
 
     _syncMainTitle('Cum Proba Γöé ' + xCol + (hasColorDims ? '  Γöé  ' + colorDims.map(function(d){ return d.col; }).join(', ') : ''));
 
-    var filtNote  = hasActiveFilters() ? ' ΓÇö filtered' : '';
+    var filtNote  = hasActiveFilters() ? ' – filtered' : '';
 
     var nGroups   = Object.keys(groups).length;
 
@@ -13401,7 +13403,7 @@ function drawCumSigma() {
 
     _syncMainTitle('Cum Sigma Γöé ' + xCol + (hasColorDims ? '  Γöé  ' + colorDims.map(function(d){ return d.col; }).join(', ') : ''));
 
-    var filtNote  = hasActiveFilters() ? ' ΓÇö filtered' : '';
+    var filtNote  = hasActiveFilters() ? ' – filtered' : '';
 
     var nGroups   = Object.keys(groups).length;
 
@@ -13459,7 +13461,7 @@ function drawRcdf() {
 
     var iv      = _getIntervals();
 
-    /* DO NOT pass a groupCol to readFilteredFromMemory ΓÇö rcdf handles grouping via colorDims */
+    /* DO NOT pass a groupCol to readFilteredFromMemory – rcdf handles grouping via colorDims */
 
     var res     = readFilteredFromMemory(xCol, null, null, xRx, null, iv.xLo, iv.xHi, '', '');
 
@@ -13653,7 +13655,7 @@ function drawRcdf() {
 
     _syncMainTitle('RCDF Γöé ' + xCol + (hasColorDims ? '  Γöé  ' + colorDims.map(function(d){ return d.col; }).join(', ') : ''));
 
-    var filtNote  = hasActiveFilters() ? ' ΓÇö filtered' : '';
+    var filtNote  = hasActiveFilters() ? ' – filtered' : '';
 
     var nGroups   = Object.keys(groups).length;
 
@@ -13763,7 +13765,7 @@ function drawBoxPlot() {
 
         total++;
 
-        /* Group label ΓÇö apply X regex to extract/transform the category key */
+        /* Group label – apply X regex to extract/transform the category key */
 
         var g = (xCol === yCol) ? yCol : _extractGroupKey(xRaw, xRx);
 
@@ -14061,7 +14063,7 @@ function drawBoxPlot() {
 
     _syncMainTitle('Box & Whisker Γöé ' + xCol + ' vs ' + yCol);
 
-    var filtNote = hasActiveFilters() ? ' ΓÇö filtered' : '';
+    var filtNote = hasActiveFilters() ? ' – filtered' : '';
 
     var capNote  = capped ? ' \u26a0 capped at ' + MAX_GROUPS + ' groups \u2014 use X regex to reduce' : '';
 
@@ -14083,7 +14085,7 @@ function drawBoxPlot() {
 
    AI ANALYSIS ENGINE
 
-   Pure addition ΓÇö zero changes to any existing function.
+   Pure addition – zero changes to any existing function.
 
 ================================================================ */
 
@@ -14201,7 +14203,7 @@ function _buildChartPrompt(ct, xCol, yCol, xRx, yRx, points, groupStats) {
 
         lines.push('TASK: Analyse this chart. Respond in bullet points (ΓÇó). '
 
-            + 'Cover every group ΓÇö for each: distribution shape, central tendency, '
+            + 'Cover every group – for each: distribution shape, central tendency, '
 
             + 'spread, and outliers with concrete numbers. '
 
@@ -14215,7 +14217,7 @@ function _buildChartPrompt(ct, xCol, yCol, xRx, yRx, points, groupStats) {
 
             + 'Cover: distribution shape, central tendency (mean/median), '
 
-            + 'spread (std/range), and any notable outliers ΓÇö each as its own bullet. '
+            + 'spread (std/range), and any notable outliers – each as its own bullet. '
 
             + 'Use concrete numbers. Be complete, do not truncate.');
 
@@ -14275,7 +14277,7 @@ function _buildChartPrompt(ct, xCol, yCol, xRx, yRx, points, groupStats) {
 
 /* Build a comparative prompt when split-charts are active.
 
-   tileStats: array of {key, xSt, ySt, n} ΓÇö one entry per split tile. */
+   tileStats: array of {key, xSt, ySt, n} – one entry per split tile. */
 
 function _buildSplitPrompt(ct, xCol, yCol, xRx, yRx, scCol, tileStats) {
 
@@ -14333,7 +14335,7 @@ function _buildSplitPrompt(ct, xCol, yCol, xRx, yRx, scCol, tileStats) {
 
     lines.push('');
 
-    lines.push('TASK: Comparative analysis ΓÇö ' + tileStats.length
+    lines.push('TASK: Comparative analysis – ' + tileStats.length
 
         + ' groups split by "' + scCol + '". Respond in bullet points (ΓÇó). '
 
@@ -14343,7 +14345,7 @@ function _buildSplitPrompt(ct, xCol, yCol, xRx, yRx, scCol, tileStats) {
 
         + 'and any groups crossing marker lines. '
 
-        + 'Be complete ΓÇö cover every group, do not truncate.');
+        + 'Be complete – cover every group, do not truncate.');
 
 
 
@@ -14459,7 +14461,7 @@ function _buildCrossPrompt(ct, xCol, yCol, xRx, yRx, scCol, colorCol, crossStats
 
         + 'that stands out most and why. Note any marker line crossings. '
 
-        + 'Be complete ΓÇö cover every group and tile, do not truncate.');
+        + 'Be complete – cover every group and tile, do not truncate.');
 
 
 
@@ -14623,9 +14625,9 @@ var _summaryRows = null, _summaryIsXOnly = false;
 
 var _summaryXLabel = '', _summaryYLabel = '', _summaryGroupDim = '';
 
-var _lastSummaryText = '';   /* plain-text snapshot ΓÇö included in chat context */
+var _lastSummaryText = '';   /* plain-text snapshot – included in chat context */
 
-var _lastAnalysisText = '';  /* plain-text snapshot of AI analysis ΓÇö included in chat context */
+var _lastAnalysisText = '';  /* plain-text snapshot of AI analysis – included in chat context */
 
 
 
@@ -14653,7 +14655,7 @@ function _showSummary() {
 
         errorDiv.style.cssText = 'padding:8px 12px;background:#fff3cd;border-left:3px solid #e67e00;border-radius:4px;color:#e67e00';
 
-        errorDiv.textContent = 'ΓÜá No data ΓÇö parse a file first.';
+        errorDiv.textContent = 'ΓÜá No data – parse a file first.';
 
         msgs.appendChild(errorDiv);
 
@@ -15013,7 +15015,7 @@ function _summaryCopyCSV() {
 
 
 
-/* POST to /analyze ΓÇö returns summary string or throws */
+/* POST to /analyze – returns summary string or throws */
 
 async function _fetchSummary(prompt) {
 
@@ -15071,7 +15073,7 @@ async function _fetchSummary(prompt) {
 
 
 
-/* Entry point ΓÇö wired to the Analyze button.
+/* Entry point – wired to the Analyze button.
 
    ONE LLM call per chart always. Split-by ΓåÆ comparative prompt, not per-tile calls. */
 
@@ -15095,7 +15097,7 @@ function _analyzeChart() {
 
     if (!currentCsvId) {
 
-        _chatAddNote('ΓÜá No data loaded ΓÇö parse a file first, then draw a plot.');
+        _chatAddNote('ΓÜá No data loaded – parse a file first, then draw a plot.');
 
         return;
 
@@ -15143,7 +15145,7 @@ function _analyzeChart() {
 
 
 
-    /* Helper ΓÇö extract the effective group key for in-chart grouping */
+    /* Helper – extract the effective group key for in-chart grouping */
 
     var inChartGroupCol = isXOnly ? (splitCol || colCol) : colCol;
 
@@ -15451,7 +15453,7 @@ function _analyzeChart() {
 
                    split-by series (cumproba/histogram).
 
-                   One comparative prompt ΓÇö same structure as split-chart.
+                   One comparative prompt – same structure as split-chart.
 
                    ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ */
 
@@ -15497,7 +15499,7 @@ function _analyzeChart() {
 
                 } else {
 
-                    /* Only one group resolved ΓÇö plain single-chart analysis */
+                    /* Only one group resolved – plain single-chart analysis */
 
                     var allPts2 = b2.buckets[b2.keys[0]] || [];
 
@@ -15505,7 +15507,7 @@ function _analyzeChart() {
 
                     prompt     = _buildChartPrompt(ct, xCol, yCol, xRx, yRx, allPts2, null);
 
-                    headerNote = 'Analysis ΓÇö ' + xCol
+                    headerNote = 'Analysis – ' + xCol
 
                         + (ct !== 'histogram' && ct !== 'cumproba' && ct !== 'rcdf' ? ' vs ' + yCol : '');
 
@@ -15517,7 +15519,7 @@ function _analyzeChart() {
 
                 /* ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
 
-                   PLAIN SINGLE CHART ΓÇö no grouping at all
+                   PLAIN SINGLE CHART – no grouping at all
 
                    ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ */
 
@@ -15531,7 +15533,7 @@ function _analyzeChart() {
 
                 if (!res.points.length) {
 
-                    _chatAddNote('ΓÜá No numeric data ΓÇö draw a plot first.');
+                    _chatAddNote('ΓÜá No numeric data – draw a plot first.');
 
                     return;
 
@@ -15541,7 +15543,7 @@ function _analyzeChart() {
 
                 prompt     = _buildChartPrompt(ct, xCol, yCol, xRx, yRx, res.points, null);
 
-                headerNote = 'Analysis ΓÇö ' + xCol
+                headerNote = 'Analysis – ' + xCol
 
                     + (ct !== 'histogram' && ct !== 'cumproba' && ct !== 'rcdf' ? ' vs ' + yCol : '');
 
@@ -15571,13 +15573,13 @@ function _analyzeChart() {
 
 /* Hide analysis panel whenever a new plot is drawn.
 
-   Uses wrapper pattern ΓÇö drawPlot body is NOT modified. */
+   Uses wrapper pattern – drawPlot body is NOT modified. */
 
 var _ai_drawPlot_orig = drawPlot;
 
 drawPlot = function() {
 
-    // No need to hide analysis panel ΓÇö it's now part of unified chat stream
+    // No need to hide analysis panel – it's now part of unified chat stream
 
     return _ai_drawPlot_orig.apply(this, arguments);
 
@@ -15587,7 +15589,7 @@ drawPlot = function() {
 
 /* Reset analysis state on full reset.
 
-   Uses wrapper pattern ΓÇö resetAll body is NOT modified. */
+   Uses wrapper pattern – resetAll body is NOT modified. */
 
 var _ai_resetAll_orig = resetAll;
 
@@ -15595,7 +15597,7 @@ resetAll = function() {
 
     _ai_resetAll_orig.apply(this, arguments);
 
-    // No need to reset analysis divs ΓÇö unified chat stream cleared by _chatReset
+    // No need to reset analysis divs – unified chat stream cleared by _chatReset
 
 };
 
@@ -15673,13 +15675,13 @@ function _updateChatBanner() {
 
     var chat    = document.getElementById('chat-drawer-title');
 
-    if (chat)    chat.textContent    = '≡ƒÆ¼ Chat with ' + label + ' ΓÇö ask about your data';
+    if (chat)    chat.textContent    = '≡ƒÆ¼ Chat with ' + label + ' – ask about your data';
 
 }
 
 
 
-/* Populate dropdown from /models (GET ΓÇö Ollama's pulled model list) */
+/* Populate dropdown from /models (GET – Ollama's pulled model list) */
 
 async function _loadModelList() {
 
@@ -15769,7 +15771,7 @@ async function _loadModelList() {
 
         console.error('[DEBUG] Error stack:', e.stack);
 
-        /* silently ignore ΓÇö default 'llama3' stays */ 
+        /* silently ignore – default 'llama3' stays */ 
 
     }
 
@@ -15889,7 +15891,7 @@ var _chatOpen         = false;
 
 var _chatBusy         = false;
 
-var _chatPending      = '';   /* legacy ΓÇö superseded by _chatContextDirty */
+var _chatPending      = '';   /* legacy – superseded by _chatContextDirty */
 
 var _chatContextDirty = true; /* true = build+send fresh context on next _chatSend() */
 
@@ -16051,7 +16053,7 @@ function _buildChatContext() {
 
     if (!document.getElementById('x-col').value) {
 
-        return 'No X column selected ΓÇö draw a plot first.';
+        return 'No X column selected – draw a plot first.';
 
     }
 
@@ -16233,7 +16235,7 @@ function _buildChatContext() {
 
         if (gcIdx >= 0) {
 
-            /* 2-D: tile ├ù color-group ΓÇö same cross-bucket logic */
+            /* 2-D: tile ├ù color-group – same cross-bucket logic */
 
             var crossBuckets = {}, crossOrder = [], tileSet = {}, colorSet = {};
 
@@ -16423,13 +16425,13 @@ function _buildChatContext() {
 
     lines.push('[QUERY: col=COLUMN_NAME, filter=EXPRESSION, group=COLUMN_NAME, agg=mean|count|min|max|std|all]');
 
-    lines.push('  col    ΓÇö column to aggregate (required)');
+    lines.push('  col    – column to aggregate (required)');
 
-    lines.push('  filter ΓÇö optional row filter, same syntax as table filter (e.g. >0.001  or  ==PASS)');
+    lines.push('  filter – optional row filter, same syntax as table filter (e.g. >0.001  or  ==PASS)');
 
-    lines.push('  group  ΓÇö optional column to group by');
+    lines.push('  group  – optional column to group by');
 
-    lines.push('  agg    ΓÇö aggregation: mean (default), count, min, max, std, all (full stats)');
+    lines.push('  agg    – aggregation: mean (default), count, min, max, std, all (full stats)');
 
     lines.push('Example: [QUERY: col=RBER, filter=>0.001, group=DUT, agg=mean]');
 
@@ -16489,7 +16491,7 @@ function _chatInjectContext() {
 
 
 
-    /* For ConnectMaiGPT ΓÇö immediately fire @general:system + chart data */
+    /* For ConnectMaiGPT – immediately fire @general:system + chart data */
 
     if (_chatProvider() === 'connectmaigpt') {
 
@@ -16577,7 +16579,7 @@ function _chatReset() {
 
 
 
-/* ΓöÇΓöÇ ConnectMaiGPT sender ΓÇö proxied through Python backend ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+/* ΓöÇΓöÇ ConnectMaiGPT sender – proxied through Python backend ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 
    The MCP server uses JSON-RPC over SSE (not OpenAI-compatible), so we
 
@@ -16603,11 +16605,11 @@ async function _chatSendMaiGpt(userMsg, context, thinkingEl) {
 
     if (isGenSystem) {
 
-        _chatAddNote('\uD83D\uDD27 Mode: @general:system ΓÇö sending chart data as system context');
+        _chatAddNote('\uD83D\uDD27 Mode: @general:system – sending chart data as system context');
 
     } else if (isGenQuery) {
 
-        _chatAddNote('\uD83D\uDD27 Mode: @general ΓÇö sending bare query, no chart data');
+        _chatAddNote('\uD83D\uDD27 Mode: @general – sending bare query, no chart data');
 
     }
 
@@ -16797,7 +16799,7 @@ function _chatSend() {
 
 
 
-    /* Always build fresh context on every send ΓÇö ensures the model
+    /* Always build fresh context on every send – ensures the model
 
        is aware of current chart data on every turn, not just the first.
 
@@ -16847,7 +16849,7 @@ function _chatSend() {
 
             result.actions.forEach(function(a) { _chatAddNote('\uD83D\uDCCC ' + a); });
 
-            /* Execute data query commands ΓÇö inject results as follow-up context */
+            /* Execute data query commands – inject results as follow-up context */
 
             var queryResults = _chatExecQueryCmds(fullText);
 
@@ -17219,7 +17221,7 @@ function _chatExecMarkerCmds(raw) {
 
 
 
-    /* 1 ΓÇö [CLEAR_MARKERS] */
+    /* 1 – [CLEAR_MARKERS] */
 
     if (/\[CLEAR_MARKERS\]/i.test(raw)) {
 
@@ -17235,7 +17237,7 @@ function _chatExecMarkerCmds(raw) {
 
 
 
-    /* 2 ΓÇö [MARKER: x=VALUE:LABEL] or [MARKER: y=VALUE:LABEL] */
+    /* 2 – [MARKER: x=VALUE:LABEL] or [MARKER: y=VALUE:LABEL] */
 
     var markerRx = /\[MARKER:\s*([^\]]+)\]/gi;
 
@@ -17371,7 +17373,7 @@ function _chatKeydown(e) {
 
 
 
-    /* ΓöÇΓöÇ Analysis panel resize ΓÇö drag UP to grow, with snap + persistence ΓöÇΓöÇ */
+    /* ΓöÇΓöÇ Analysis panel resize – drag UP to grow, with snap + persistence ΓöÇΓöÇ */
 
     (function() {
 
@@ -17489,7 +17491,7 @@ function _chatKeydown(e) {
 
 
 
-    /* ΓöÇΓöÇ Chat drawer window drag ΓÇö move floating window around ΓöÇΓöÇ */
+    /* ΓöÇΓöÇ Chat drawer window drag – move floating window around ΓöÇΓöÇ */
 
     (function() {
 
