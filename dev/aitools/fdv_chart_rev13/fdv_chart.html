@@ -662,7 +662,7 @@
 
         #summary-btn:disabled { opacity: 0.55; cursor: not-allowed; }
 
-        /* ══════ Multi-dimension group builder ══════ */
+        /* ------ Multi-dimension group builder ------ */
 
         .gdim-wrap { display:flex; flex-direction:column; gap:2px; }
 
@@ -744,7 +744,7 @@
 
         }
 
-        /* ══════ Plot spinner ════════════════════════════════════════════════════════════════ */
+        /* ------ Plot spinner ---------------------------------------------------------------- */
 
         #plot-spinner {
 
@@ -824,7 +824,7 @@
 
 
 
-        /* ══════ CHAT DRAWER (FLOATING WINDOW) ════════════════════════════════════════════ */
+        /* ------ CHAT DRAWER (FLOATING WINDOW) -------------------------------------------- */
 
         #chat-drawer {
 
@@ -1094,7 +1094,7 @@
 
 
 
-        /* ══════ Custom HTML tooltip (replaces canvas-clipped Chart.js tooltip) ══════ */
+        /* ------ Custom HTML tooltip (replaces canvas-clipped Chart.js tooltip) ------ */
 
         #chart-tooltip {
 
@@ -1154,7 +1154,7 @@
 
 
 
-        /* ══════ Panel resize grips ════════════════════════════════════════════════════════════════ */
+        /* ------ Panel resize grips ---------------------------------------------------------------- */
 
         .panel-grip {
 
@@ -1176,7 +1176,7 @@
 
         .panel-grip:hover::after { background: rgba(0,0,0,0.38); }
 
-        /* Analysis panel grip – taller, more prominent, drag-up-to-grow */
+        /* Analysis panel grip - taller, more prominent, drag-up-to-grow */
 
         #analysis-grip {
 
@@ -1230,7 +1230,7 @@
 
         }
 
-        /* Chat drawer grip – now acts as title bar for window dragging */
+        /* Chat drawer grip - now acts as title bar for window dragging */
 
         #chat-grip {
 
@@ -1290,7 +1290,7 @@
 
         <!-- Performance/Sampling group on the right -->
 
-        <span class="ctrl-label" style="color:#6c757d;font-weight:bold;white-space:nowrap">⏱&nbsp;Performance:</span>
+        <span class="ctrl-label" style="color:#6c757d;font-weight:bold;white-space:nowrap">?&nbsp;Performance:</span>
 
         <select id="sampling-mode" style="padding:3px 6px;font-size:0.85em;border:1px solid #adb5bd;border-radius:3px;min-width:140px"
 
@@ -1344,7 +1344,7 @@
 
         
 
-        <button id="panel-toggle-btn" onclick="toggleTopPanel()">◄ Hide</button>
+        <button id="panel-toggle-btn" onclick="toggleTopPanel()">? Hide</button>
 
     </div>
 
@@ -1390,7 +1390,7 @@
 
 
 
-    <!-- Upload files row (hidden by default) – now combined with Store dir -->
+    <!-- Upload files row (hidden by default) - now combined with Store dir -->
 
     <div class="ctrl-row" id="src-row-files" style="display:none">
 
@@ -1430,7 +1430,7 @@
 
 
 
-    <!-- Upload directory row (hidden by default) – combined with Files on same row -->
+    <!-- Upload directory row (hidden by default) - combined with Files on same row -->
 
     <div class="ctrl-row" id="src-row-dir" style="display:none">
 
@@ -1486,7 +1486,7 @@
 
 
 
-    <!-- Recipe + Session row – always visible at the landing page -->
+    <!-- Recipe + Session row - always visible at the landing page -->
 
     <div class="ctrl-row" id="recipe-row" style="border-top:1px dashed #ced4da;padding-top:5px;margin-top:2px;flex-wrap:wrap;gap:6px">
 
@@ -1506,13 +1506,13 @@
 
         <button class="btn" style="padding:4px 12px;font-size:0.85em" onclick="_recipeLoad()"
 
-                title="Load the selected recipe – restores parse regex + all plot settings">&#8595;&nbsp;Load</button>
+                title="Load the selected recipe - restores parse regex + all plot settings">&#8595;&nbsp;Load</button>
 
         <button class="btn" style="padding:4px 12px;font-size:0.85em;background:#6f42c1;color:#fff;border-color:#6f42c1"
 
                 onclick="_recipePlay()"
 
-                title="Play recipe: parse (if needed) then plot – smart replay of the full session">&#9654;&#9654;&nbsp;Play</button>
+                title="Play recipe: parse (if needed) then plot - smart replay of the full session">&#9654;&#9654;&nbsp;Play</button>
 
         <input type="text" id="recipe-name" autocomplete="off" placeholder="recipe name&hellip;"
 
@@ -1638,7 +1638,7 @@
 
         </span>
 
-        <!-- Z-Order control – specify rendering order for color-by groups -->
+        <!-- Z-Order control - specify rendering order for color-by groups -->
 
         <label id="z-order-label" style="margin-left:8px;display:flex;align-items:center;gap:4px">
 
@@ -1654,7 +1654,7 @@
 
         </label>
 
-        <!-- Split-chart controls – same mechanism as Color-by -->
+        <!-- Split-chart controls - same mechanism as Color-by -->
 
         <span id="split-col-label" style="margin-left:8px;display:inline-flex;align-items:flex-start;gap:4px;border-left:1px dashed #ced4da;padding-left:8px">
 
@@ -1666,7 +1666,7 @@
 
         </span>
 
-        <!-- Split-chart layout controls – below dimensions -->
+        <!-- Split-chart layout controls - below dimensions -->
 
         <span style="margin-left:8px;display:flex;align-items:center;gap:8px;padding-top:4px;border-top:1px dashed #ced4da;margin-top:2px">
 
@@ -1760,7 +1760,7 @@
 
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
 
-            <span style="font-size:0.82em;color:#007bff;font-weight:bold">≡ƒûÑ∩╕Å Font:</span>
+            <span style="font-size:0.82em;color:#007bff;font-weight:bold">=-n+- Font:</span>
 
             <select id="font-item-select" onchange="_onFontItemSelect()" style="padding:4px 6px;border:1px solid #ccc;border-radius:3px;font-size:0.82em;cursor:pointer;min-width:110px">
 
@@ -1782,7 +1782,7 @@
 
         </div>
 
-        <!-- Axis labels / XY-scale / Data-interval – combined row -->
+        <!-- Axis labels / XY-scale / Data-interval - combined row -->
 
         <div style="width:100%;display:flex;align-items:center;gap:6px;flex-wrap:wrap;
 
@@ -1932,7 +1932,7 @@
 
             <input id="marker-input" type="text" autocomplete="off"
 
-                   placeholder="e.g.  x=10  or  x=10:Threshold  or  x=10:Threshold:1  – press Enter to add"
+                   placeholder="e.g.  x=10  or  x=10:Threshold  or  x=10:Threshold:1  - press Enter to add"
 
                    title="Format: x=VALUE[:LABEL[:CHART_ID]]  or  y=VALUE[:LABEL[:CHART_ID]]&#10;VALUE: numeric position on axis&#10;LABEL: optional marker label text&#10;CHART_ID: optional numeric chart id (applies only to that chart, empty=all charts)&#10;Examples:  x=100  |  y=0.5:Threshold  |  x=200:UCL:2">
 
@@ -2162,7 +2162,7 @@
 
                 <button type="button" onclick="_analyzeChart()" style="padding:2px 6px;font-size:1.0em;background:rgba(255,255,255,0.18);border:1px solid rgba(255,255,255,0.35);color:#fff;border-radius:3px;cursor:pointer;white-space:nowrap"
 
-                        title="Generate AI summary analysis of the chart">≡ƒôè Analyze</button>
+                        title="Generate AI summary analysis of the chart">=- Analyze</button>
 
                 <button type="button" onclick="_showSummary()" style="padding:2px 6px;font-size:1.0em;background:rgba(255,255,255,0.18);border:1px solid rgba(255,255,255,0.35);color:#fff;border-radius:3px;cursor:pointer;white-space:nowrap"
 
@@ -2186,7 +2186,7 @@
 
             <div id="unified-content" style="flex:1 1 0;min-height:0;overflow-y:auto;padding:10px;background:#fff;display:flex;flex-direction:column">
 
-                <!-- Messages/Content Output Area – Single continuous stream -->
+                <!-- Messages/Content Output Area - Single continuous stream -->
 
                 <div id="content-output" style="flex:1 1 0;min-height:0;overflow-y:auto;margin-bottom:10px">
 
@@ -2342,7 +2342,7 @@ function _setPointLabels(chart, data) {
 
     _chartLabelMap.set(chart, data || null);
 
-    /* Use draw() directly – more reliable than update('none') for
+    /* Use draw() directly - more reliable than update('none') for
 
        scatter+showLine charts where update may skip afterDraw */
 
@@ -3318,11 +3318,11 @@ function toggleTopPanel() {
 
     if (panel.classList.contains('collapsed')) {
 
-        btn.textContent = '▶ Show';
+        btn.textContent = '? Show';
 
     } else {
 
-        btn.textContent = '▼ Hide';
+        btn.textContent = '? Hide';
 
     }
 
@@ -3468,7 +3468,7 @@ function _rebuildPills() {
 
 
 
-// Wire file-input change ΓåÆ accumulate into _selectedFiles
+// Wire file-input change ? accumulate into _selectedFiles
 
 document.addEventListener('DOMContentLoaded', function() {
 
@@ -3778,19 +3778,19 @@ function _updateSamplingStatus() {
 
         case 'none':
 
-            info = '≡ƒôè 100% accurate, may be slower';
+            info = '=- 100% accurate, may be slower';
 
             break;
 
         case 'random':
 
-            info = '⏱ Hash-based deterministic (~10x faster)';
+            info = '? Hash-based deterministic (~10x faster)';
 
             break;
 
         case 'decimation':
 
-            info = '⏱ Bin-based shape-preserving (~8x faster)';
+            info = '? Bin-based shape-preserving (~8x faster)';
 
             break;
 
@@ -4277,9 +4277,31 @@ function _onParseResult(result, fname, t0) {
 
     _setPlotBtnLoading(true);
 
-    setTableInfo(total.toLocaleString() + ' rows \u00b7 ' + result.headers.length +
+    setTableInfo(total.toLocaleString() + ' rows · ' + result.headers.length +
 
-                 ' columns \u00b7 ' + fname + ' \u2014 loading\u2026');
+                 ' columns · ' + fname + ' — loading…');
+
+    /* WARN if dataset is too large - show popup immediately after parsing */
+    if (total > 2000000) {
+        var warnDiv = document.createElement('div');
+        warnDiv.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);' +
+                                'background:#fff;border:3px solid #d9534f;border-radius:8px;' +
+                                'padding:20px;max-width:500px;z-index:10000;box-shadow:0 4px 20px rgba(0,0,0,0.3);' +
+                                'font-family:Arial,sans-serif;';
+        warnDiv.innerHTML = '<div style="color:#d9534f;font-size:16px;font-weight:bold;margin-bottom:10px;">' +
+                            '⚠ Large Dataset Warning</div>' +
+                            '<div style="color:#333;font-size:14px;line-height:1.6;margin-bottom:15px;">' +
+                            'This dataset has <strong>' + total.toLocaleString() + ' rows</strong> (> 2M).<br>' +
+                            'Rendering large charts may cause memory errors or slow performance.<br><br>' +
+                            '<strong>Recommendation:</strong> Use the <strong>Performance</strong> feature ' +
+                            'to reduce samples to <strong>less than 1M rows</strong> before charting.' +
+                            '</div>' +
+                            '<button onclick="this.parentNode.parentNode.removeChild(this.parentNode);" ' +
+                            'style="background:#138496;color:#fff;border:none;padding:8px 16px;' +
+                            'border-radius:4px;cursor:pointer;font-size:14px;">OK, Got it</button>';
+        document.body.appendChild(warnDiv);
+        console.warn('[parseFile] Large dataset warning: ' + total + ' rows');
+    }
 
 
 
@@ -4327,7 +4349,7 @@ function _buildTableHeader(headers) {
 
 
 
-/* ══════ Column resize via gripper drag ════════════════════════════════════════════════════════════════ */
+/* ------ Column resize via gripper drag ---------------------------------------------------------------- */
 
 function _wireColResize() {
 
@@ -4529,13 +4551,35 @@ async function loadMoreRows(csv_id, ncols, offset, total, fname) {
 
     _updatePlotCoverBanner();
 
-    setTableInfo(total.toLocaleString() + ' rows \u00b7 ' + ncols +
+    setTableInfo(total.toLocaleString() + ' rows · ' + ncols +
 
-                 ' columns \u00b7 ' + fname);
+                 ' columns · ' + fname);
 
     if (hasActiveFilters()) _updateFilterInfo(buildActiveFilters().length);
 
     _saveSession(fname);   /* persist session so browser refresh can restore */
+
+    /* Show warning again if still > 2M after full load (in case first warning was dismissed) */
+    if (total > 2000000 && !window._largeDatasetWarningShown) {
+        window._largeDatasetWarningShown = true;
+        var warnDiv = document.createElement('div');
+        warnDiv.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);' +
+                                'background:#fff;border:3px solid #d9534f;border-radius:8px;' +
+                                'padding:20px;max-width:500px;z-index:10000;box-shadow:0 4px 20px rgba(0,0,0,0.3);' +
+                                'font-family:Arial,sans-serif;';
+        warnDiv.innerHTML = '<div style="color:#d9534f;font-size:16px;font-weight:bold;margin-bottom:10px;">' +
+                            '⚠ Large Dataset Warning</div>' +
+                            '<div style="color:#333;font-size:14px;line-height:1.6;margin-bottom:15px;">' +
+                            'This dataset has <strong>' + total.toLocaleString() + ' rows</strong> (> 2M).<br>' +
+                            'Rendering large charts may cause memory errors or slow performance.<br><br>' +
+                            '<strong>Recommendation:</strong> Use the <strong>Performance</strong> feature ' +
+                            'to reduce samples to <strong>less than 1M rows</strong> before charting.' +
+                            '</div>' +
+                            '<button onclick="this.parentNode.parentNode.removeChild(this.parentNode);" ' +
+                            'style="background:#138496;color:#fff;border:none;padding:8px 16px;' +
+                            'border-radius:4px;cursor:pointer;font-size:14px;">OK, Got it</button>';
+        document.body.appendChild(warnDiv);
+    }
 
     drawPlot();
 
@@ -4840,8 +4884,19 @@ function readFilteredFromMemory(xCol, yCol, groupCol, xRx, yRx, ivXlo, ivXhi, iv
 
 
     var points = [], skipped = 0;
+    /* Apply smart sampling to prevent OOM while maintaining group discovery accuracy.
+       With two-pass split chart approach: pass 1 discovers groups (no sampling),
+       pass 2 populates data (with sampling). We sample here to keep raw data bounded. */
+    var samplingStep = 1;
+    var totalFiltered = filteredIndices.length;
+    if (totalFiltered > 150000) {
+        samplingStep = Math.ceil(totalFiltered / 150000);
+    }
 
     for (var r = 0; r < filteredIndices.length; r++) {
+
+        /* Apply smart decimation sampling */
+        if (r % samplingStep !== 0) continue;
 
         var row  = allRows[filteredIndices[r]];
 
@@ -4921,7 +4976,7 @@ function onChartTypeChange() {
 
     function show(id, vis) { var el=document.getElementById(id); if(el) el.style.display=vis?'':'none'; }
 
-    /* boxplot: X = category col (label), Y = numeric value col – both shown */
+    /* boxplot: X = category col (label), Y = numeric value col - both shown */
 
     show('y-col-label',    !isXOnly);
 
@@ -5359,7 +5414,7 @@ function _clearIntervals() {
 
 /* ================================================================
 
-   RECIPE  –  save / load / delete plot settings in localStorage
+   RECIPE  -  save / load / delete plot settings in localStorage
 
 ================================================================ */
 
@@ -5501,7 +5556,7 @@ function _recipeApply(snap) {
 
         if (!el) return;
 
-        /* Column selectors – defer if not yet populated (no data loaded) */
+        /* Column selectors - defer if not yet populated (no data loaded) */
 
         if ((id==='x-col'||id==='y-col'||id==='color-col') && el.options.length <= 1) return;
 
@@ -5587,7 +5642,7 @@ function _recipeApply(snap) {
 
     }
 
-    /* Restore column filter values – immediate if headers already loaded, deferred otherwise */
+    /* Restore column filter values - immediate if headers already loaded, deferred otherwise */
 
     _recipeApplyColFilters(snap);
 
@@ -5605,7 +5660,7 @@ function _recipeApply(snap) {
 
     } else {
 
-        /* Headers already loaded – restore dimensions immediately */
+        /* Headers already loaded - restore dimensions immediately */
 
         console.log('[_recipeApply] Restoring dimensions immediately (headers loaded)');
 
@@ -5737,7 +5792,7 @@ function _recipeApplyColFilters(snap) {
 
     var filterInputs = document.querySelectorAll('#filter-row input');
 
-    if (!filterInputs.length) return;   /* filter row not built yet – will be done after parse */
+    if (!filterInputs.length) return;   /* filter row not built yet - will be done after parse */
 
     try {
 
@@ -5767,7 +5822,7 @@ function _recipeApplyColFilters(snap) {
 
         } else {
 
-            /* No filters in recipe – hide the filter row if currently visible */
+            /* No filters in recipe - hide the filter row if currently visible */
 
             if (filtersVisible) toggleFilters();
 
@@ -6113,19 +6168,19 @@ function _recipeStatus(msg, cls) {
 
 /* ================================================================
 
-   SESSION  –  save / load / delete complete data + settings
+   SESSION  -  save / load / delete complete data + settings
 
    Stored in localStorage under key  fdv_sessions_v1
 
    Each session entry: { headers, rows, fname, snap }
 
-   'rows' is the full allRows[] array – allows restore without re-parse.
+   'rows' is the full allRows[] array - allows restore without re-parse.
 
 ================================================================ */
 
 /* ================================================================
 
-   STORE DIRECTORY  –  optional disk-based save/load for recipes & sessions
+   STORE DIRECTORY  -  optional disk-based save/load for recipes & sessions
 
    When _storeDir is set, all recipe/session Save/Load/Delete operations
 
@@ -6135,7 +6190,7 @@ function _recipeStatus(msg, cls) {
 
 ================================================================ */
 
-var _storeDir = '';    /* active store directory – empty means localStorage mode */
+var _storeDir = '';    /* active store directory - empty means localStorage mode */
 
 var _STORE_DIR_KEY = 'fdv_store_dir';
 
@@ -6151,7 +6206,7 @@ function _storeDirSet() {
 
     if (!val) {
 
-        /* Clear – revert to localStorage mode */
+        /* Clear - revert to localStorage mode */
 
         _storeDir = '';
 
@@ -6303,7 +6358,7 @@ function _storeDirInit() {
 
     }
 
-    /* No local preference – ask server for its configured default */
+    /* No local preference - ask server for its configured default */
 
     fetch('/store/default_dir')
 
@@ -6333,7 +6388,7 @@ function _storeDirInit() {
 
             }
 
-            /* If server has no default or dir missing – stay in localStorage mode silently */
+            /* If server has no default or dir missing - stay in localStorage mode silently */
 
         })
 
@@ -6367,7 +6422,7 @@ function _sessionStatus(msg, cls) {
 
 function _loadSessionIndex() {
 
-    /* Index maps name ΓåÆ size_bytes (lightweight, always kept current) */
+    /* Index maps name ? size_bytes (lightweight, always kept current) */
 
     try { return JSON.parse(localStorage.getItem(_SESSION_KEY + '_index') || '{}'); } catch(e) { return {}; }
 
@@ -6503,7 +6558,7 @@ function _sessionApplyEntry(entry, name) {
 
     _destroySplitCharts();
 
-    currentCsvId      = 'session:' + name;   /* placeholder – updated below if store-dir */
+    currentCsvId      = 'session:' + name;   /* placeholder - updated below if store-dir */
 
     currentHeaders    = entry.headers;
 
@@ -6579,7 +6634,7 @@ function _sessionApplyEntry(entry, name) {
 
     /* Register loaded rows into server parsed_cache so re-saving works without re-parsing.
 
-       Fire-and-forget – failure is silent (save will show its own error if csv_id is missing). */
+       Fire-and-forget - failure is silent (save will show its own error if csv_id is missing). */
 
     if (_storeDir) {
 
@@ -6883,7 +6938,7 @@ function _sessionSave() {
 
         if (_storeDir) {
 
-            /* Send a lightweight request – the server reads rows from its own parsed_cache
+            /* Send a lightweight request - the server reads rows from its own parsed_cache
 
                and writes the full session file to disk, bypassing the JS string-length limit. */
 
@@ -6989,7 +7044,7 @@ function _sessionLoad() {
 
         /* For store-dir sessions: register server-side (loads rows into parsed_cache)
 
-           then stream rows via /rows – avoids sending the full JSON over HTTP which
+           then stream rows via /rows - avoids sending the full JSON over HTTP which
 
            breaks on large files (>50 MB). */
 
@@ -7537,13 +7592,13 @@ function _convertMarkersBetweenCharts(fromChart, toChart) {
 
                 if (mk.markerLabel && mk.markerLabel.indexOf('P=') === 0) {
 
-                    mk.markerLabel = '╧â=' + sigma.toFixed(3);
+                    mk.markerLabel = '--=' + sigma.toFixed(3);
 
                 }
 
                 markersTouched++;
 
-                console.log('[Marker Convert] Percentile ' + oldValue.toFixed(4) + ' ΓåÆ Sigma ' + sigma.toFixed(4));
+                console.log('[Marker Convert] Percentile ' + oldValue.toFixed(4) + ' ? Sigma ' + sigma.toFixed(4));
 
             }
 
@@ -7575,7 +7630,7 @@ function _convertMarkersBetweenCharts(fromChart, toChart) {
 
             /* Update label to show percentile value */
 
-            if (mk.markerLabel && mk.markerLabel.indexOf('╧â=') === 0) {
+            if (mk.markerLabel && mk.markerLabel.indexOf('--=') === 0) {
 
                 mk.markerLabel = 'P=' + (pct * 100).toFixed(1) + '%';
 
@@ -7583,7 +7638,7 @@ function _convertMarkersBetweenCharts(fromChart, toChart) {
 
             markersTouched++;
 
-            console.log('[Marker Convert] Sigma ' + sigma.toFixed(4) + ' ΓåÆ Percentile ' + pct.toFixed(4));
+            console.log('[Marker Convert] Sigma ' + sigma.toFixed(4) + ' ? Percentile ' + pct.toFixed(4));
 
         }
 
@@ -7631,7 +7686,7 @@ function _buildAnnotations() {
 
         if (mk.sourceChart === 'split-mode') {
 
-            console.log('[_buildAnnotations]   ΓåÆ Marker is for split-mode, FILTER OUT on single chart');
+            console.log('[_buildAnnotations]   ? Marker is for split-mode, FILTER OUT on single chart');
 
             return false;
 
@@ -7645,7 +7700,7 @@ function _buildAnnotations() {
 
         if (!mk.sourceChart) {
 
-            console.log('[_buildAnnotations]   ΓåÆ Marker has no sourceChart (legacy), FILTER OUT on single chart');
+            console.log('[_buildAnnotations]   ? Marker has no sourceChart (legacy), FILTER OUT on single chart');
 
             return false;
 
@@ -7657,7 +7712,7 @@ function _buildAnnotations() {
 
         var matches = mk.sourceChart === currentChartType;
 
-        console.log('[_buildAnnotations]   ΓåÆ Marker sourceChart=' + mk.sourceChart + ' vs current=' + currentChartType + ' ΓåÆ ' + (matches ? 'SHOW' : 'FILTER OUT'));
+        console.log('[_buildAnnotations]   ? Marker sourceChart=' + mk.sourceChart + ' vs current=' + currentChartType + ' ? ' + (matches ? 'SHOW' : 'FILTER OUT'));
 
         return matches;
 
@@ -8075,17 +8130,17 @@ function _splitChartKey(row, colIdx, rxStr) {
 
    Multi-value rules:
 
-   1. No regex  ΓåÆ split raw cell value on commas  ("A,B" ΓåÆ ["A","B"])
+   1. No regex  ? split raw cell value on commas  ("A,B" ? ["A","B"])
 
-   2. Regex with capture groups ΓåÆ join ALL defined capture groups with ", "
+   2. Regex with capture groups ? join ALL defined capture groups with ", "
 
-      e.g. PGTYPE_(..)_.*_BL_(\d) on "BLAH_PGTYPE_UP_BLAH_BL_3" ΓåÆ ["UP, 3"]
+      e.g. PGTYPE_(..)_.*_BL_(\d) on "BLAH_PGTYPE_UP_BLAH_BL_3" ? ["UP, 3"]
 
-   3. Regex matches multiple times in one cell ΓåÆ one key per match occurrence
+   3. Regex matches multiple times in one cell ? one key per match occurrence
 
-      e.g. (DUT\d+) on "DUT1 DUT2" ΓåÆ ["DUT1", "DUT2"]
+      e.g. (DUT\d+) on "DUT1 DUT2" ? ["DUT1", "DUT2"]
 
-   4. No capture groups ΓåÆ use full match string as key */
+   4. No capture groups ? use full match string as key */
 
 function _splitChartKeys(row, colIdx, rxStr) {
 
@@ -8117,7 +8172,7 @@ function _splitChartKeys(row, colIdx, rxStr) {
 
         if (scDimPrefix === null) return keys;
 
-        return keys.map(function(k){ return scDimPrefix + ' – ' + k; });
+        return keys.map(function(k){ return scDimPrefix + ' - ' + k; });
 
     }
 
@@ -8177,11 +8232,11 @@ function _splitChartKeys(row, colIdx, rxStr) {
 
    EDITABLE CHART TITLE
 
-   • #chart-title-bar above the main canvas is a contenteditable div.
+   - #chart-title-bar above the main canvas is a contenteditable div.
 
-   • .split-tile-title on each tile is also contenteditable.
+   - .split-tile-title on each tile is also contenteditable.
 
-   • _syncMainTitle(text) sets the bar only when the user has NOT typed
+   - _syncMainTitle(text) sets the bar only when the user has NOT typed
 
      a custom title (resets on every new drawPlot() call).
 
@@ -8235,7 +8290,7 @@ function _titleBlur(ctx, tileIdx) {
 
     } else {
 
-        /* tile – tileIdx is the position in _splitInsts[] */
+        /* tile - tileIdx is the position in _splitInsts[] */
 
         var titleEls = document.querySelectorAll('.split-tile-title');
 
@@ -8323,11 +8378,11 @@ function _wireTileTitles() {
 
    MULTI-DIMENSION GROUP BUILDER
 
-   _colorDims  ΓåÆ used by colorKey()  in scatter / line
+   _colorDims  ? used by colorKey()  in scatter / line
 
-   _splitDims  ΓåÆ used by groupKey()  in cumproba / histogram
+   _splitDims  ? used by groupKey()  in cumproba / histogram
 
-   _scDims     ΓåÆ extra dims added to split-chart-col
+   _scDims     ? extra dims added to split-chart-col
 
 
 
@@ -8363,7 +8418,7 @@ function _compoundKey(row, dims) {
 
     }
 
-    return parts.length ? parts.join(' – ') : null;
+    return parts.length ? parts.join(' - ') : null;
 
 }
 
@@ -8407,7 +8462,7 @@ function _gdimAdd(type) {
 
     if (!wrap) return;
 
-    var opts = '<option value="">– col –</option>';
+    var opts = '<option value="">- col -</option>';
 
     /* Use currentHeaders if available, otherwise empty */
 
@@ -8497,7 +8552,7 @@ function _gdimSyncLegacy(type) {
 
     var dims = (type==='color') ? _colorDims : (type==='sc') ? _scDims : _splitDims;
 
-    /* Only update the legacy hidden inputs – the sc select is real so skip for sc */
+    /* Only update the legacy hidden inputs - the sc select is real so skip for sc */
 
     if (type !== 'sc') {
 
@@ -8529,7 +8584,7 @@ function _gdimRebuildSelects(headers) {
 
             var prev = sel.value;
 
-            var opts = '<option value="">– col –</option>';
+            var opts = '<option value="">- col -</option>';
 
             headers.forEach(function(h) {
 
@@ -8711,7 +8766,7 @@ function _gdimRestoreDirect(type, dims) {
 
         /* Build select with options from currentHeaders */
 
-        var opts = '<option value="">– col –</option>';
+        var opts = '<option value="">- col -</option>';
 
         if (currentHeaders && currentHeaders.length > 0) {
 
@@ -8733,7 +8788,7 @@ function _gdimRestoreDirect(type, dims) {
 
             + ' onchange="_gdimChanged(\'' + type + '\')" value="' + escHtml(dim.rx || '') + '">'
 
-            + '<button class="gdim-del" onclick="this.parentNode.parentNode.removeChild(this.parentNode); _gdimChanged(\'' + type + '\')">├ù</button>';
+            + '<button class="gdim-del" onclick="this.parentNode.parentNode.removeChild(this.parentNode); _gdimChanged(\'' + type + '\')">-</button>';
 
         
 
@@ -8807,9 +8862,9 @@ function _gdimInit() {
 
    
 
-   Multiple capture groups joined with ", " – e.g. PGTYPE_(..)_.*_BL_(\d)
+   Multiple capture groups joined with ", " - e.g. PGTYPE_(..)_.*_BL_(\d)
 
-   on "BLAH_PGTYPE_UP_BLAH_BL_3" ΓåÆ "UP, 3".
+   on "BLAH_PGTYPE_UP_BLAH_BL_3" ? "UP, 3".
 
    No regex: returns raw value.
 
@@ -8925,7 +8980,7 @@ function _extractGroupKey(raw, rxStr) {
 
             } catch(formulaErr) {
 
-                /* Formula execution error – log and return error indicator */
+                /* Formula execution error - log and return error indicator */
 
                 console.error('[Formula Error] ' + formulaPart + ' | Error: ' + formulaErr.message);
 
@@ -8993,7 +9048,7 @@ function _destroySplitCharts() {
 
 
 
-/* ══════ Global plugin registration for boxplot scatter overlay ══════ */
+/* ------ Global plugin registration for boxplot scatter overlay ------ */
 
 var _boxplotPluginRegistered = false;
 
@@ -9233,7 +9288,7 @@ function _buildTileChart(canvas, ct, tileData, xCol, yCol, xRx, yRx, colCol, col
 
                 if (tileMatches && chartTypeMatches) {
 
-                    console.log('[_buildTileChart ' + ct + ']   Marker: chartItem=' + mk.chartItem + ' tile matches ' + chartId + ', sourceChart=' + mk.sourceChart + ' matches ' + ct + ' ΓåÆ SHOW');
+                    console.log('[_buildTileChart ' + ct + ']   Marker: chartItem=' + mk.chartItem + ' tile matches ' + chartId + ', sourceChart=' + mk.sourceChart + ' matches ' + ct + ' ? SHOW');
 
                     return true;
 
@@ -9241,11 +9296,11 @@ function _buildTileChart(canvas, ct, tileData, xCol, yCol, xRx, yRx, colCol, col
 
                     if (!tileMatches) {
 
-                        console.log('[_buildTileChart ' + ct + ']   Marker: chartItem=' + mk.chartItem + ' tile does NOT match ' + chartId + ' ΓåÆ HIDE');
+                        console.log('[_buildTileChart ' + ct + ']   Marker: chartItem=' + mk.chartItem + ' tile does NOT match ' + chartId + ' ? HIDE');
 
                     } else {
 
-                        console.log('[_buildTileChart ' + ct + ']   Marker: chartItem=' + mk.chartItem + ' tile matches but sourceChart=' + mk.sourceChart + ' does NOT match ' + ct + ' ΓåÆ HIDE');
+                        console.log('[_buildTileChart ' + ct + ']   Marker: chartItem=' + mk.chartItem + ' tile matches but sourceChart=' + mk.sourceChart + ' does NOT match ' + ct + ' ? HIDE');
 
                     }
 
@@ -9263,7 +9318,7 @@ function _buildTileChart(canvas, ct, tileData, xCol, yCol, xRx, yRx, colCol, col
 
         if (mk.sourceChart === ct) {
 
-            console.log('[_buildTileChart ' + ct + ']   Marker: no chartItem, sourceChart=' + mk.sourceChart + ' matches chart type ' + ct + ' ΓåÆ SHOW on all tiles');
+            console.log('[_buildTileChart ' + ct + ']   Marker: no chartItem, sourceChart=' + mk.sourceChart + ' matches chart type ' + ct + ' ? SHOW on all tiles');
 
             return true;
 
@@ -9275,7 +9330,7 @@ function _buildTileChart(canvas, ct, tileData, xCol, yCol, xRx, yRx, colCol, col
 
         if (!mk.sourceChart) {
 
-            console.log('[_buildTileChart ' + ct + ']   Marker: sourceChart=null (legacy, no chartItem) ΓåÆ SHOW on all tiles');
+            console.log('[_buildTileChart ' + ct + ']   Marker: sourceChart=null (legacy, no chartItem) ? SHOW on all tiles');
 
             return true;
 
@@ -9285,7 +9340,7 @@ function _buildTileChart(canvas, ct, tileData, xCol, yCol, xRx, yRx, colCol, col
 
         /* Filter out markers for different chart types */
 
-        console.log('[_buildTileChart ' + ct + ']   Marker: sourceChart=' + mk.sourceChart + ' does NOT match chart type ' + ct + ' ΓåÆ HIDE');
+        console.log('[_buildTileChart ' + ct + ']   Marker: sourceChart=' + mk.sourceChart + ' does NOT match chart type ' + ct + ' ? HIDE');
 
         return false;
 
@@ -9305,7 +9360,7 @@ function _buildTileChart(canvas, ct, tileData, xCol, yCol, xRx, yRx, colCol, col
 
 
 
-    /* ══════ Box & Whisker tile ══════ */
+    /* ------ Box & Whisker tile ------ */
 
     if (ct === 'boxplot') {
 
@@ -9505,7 +9560,7 @@ function _buildTileChart(canvas, ct, tileData, xCol, yCol, xRx, yRx, colCol, col
 
 
 
-    /* ══════ Histogram tile ══════ */
+    /* ------ Histogram tile ------ */
 
     if (ct === 'histogram') {
 
@@ -9713,7 +9768,7 @@ function _buildTileChart(canvas, ct, tileData, xCol, yCol, xRx, yRx, colCol, col
 
 
 
-    /* ══════ Cum Proba / RCDF tile ══════ */
+    /* ------ Cum Proba / RCDF tile ------ */
 
     if (ct === 'cumproba' || ct === 'rcdf') {
 
@@ -9895,7 +9950,7 @@ function _buildTileChart(canvas, ct, tileData, xCol, yCol, xRx, yRx, colCol, col
 
 
 
-    /* ══════ Cum Sigma tile ══════ */
+    /* ------ Cum Sigma tile ------ */
 
     if (ct === 'cum_sigma') {
 
@@ -10205,7 +10260,7 @@ function _buildTileChart(canvas, ct, tileData, xCol, yCol, xRx, yRx, colCol, col
 
                         return i.dataset.label + ':  ' + xCol + '=' + i.parsed.x.toFixed(6) +
 
-                               '  ╧â=' + sigma.toFixed(6);
+                               '  --=' + sigma.toFixed(6);
 
                     }}}
 
@@ -10233,7 +10288,7 @@ function _buildTileChart(canvas, ct, tileData, xCol, yCol, xRx, yRx, colCol, col
 
                         title: { display: true, text: _axisXTitle('Observed ' + xCol + (xRx ? ' ['+xRx+']' : '') + (xLog ? ' (log)' : '')) } }, xScale),
 
-                    y: Object.assign({ title: { display: true, text: _axisYTitle('Theoretical Quantiles (Sigma / ╧â)') },
+                    y: Object.assign({ title: { display: true, text: _axisYTitle('Theoretical Quantiles (Sigma / --)') },
 
                          grace: 0 }, yScale)
 
@@ -10247,7 +10302,7 @@ function _buildTileChart(canvas, ct, tileData, xCol, yCol, xRx, yRx, colCol, col
 
 
 
-    /* ══════ Scatter / Line tile ══════ */
+    /* ------ Scatter / Line tile ------ */
 
     var MAX_PTS = 5000;
 
@@ -10629,43 +10684,45 @@ function _buildTileChart(canvas, ct, tileData, xCol, yCol, xRx, yRx, colCol, col
 
 function _drawSplitCharts() {
 
-    _destroySplitCharts();
+    try {
 
-    
+        _destroySplitCharts();
 
-    /* RESET the color map for this rendering to ensure unique colors per group */
+        
 
-    window._tileGroupColorMap = {};
+        /* RESET the color map for this rendering to ensure unique colors per group */
 
-    
+        window._tileGroupColorMap = {};
 
-    /* Ensure the boxplot scatter overlay plugin is registered globally */
+        
 
-    if (document.getElementById('chart-type').value === 'boxplot') {
+        /* Ensure the boxplot scatter overlay plugin is registered globally */
 
-        _ensureBoxplotPluginRegistered();
+        if (document.getElementById('chart-type').value === 'boxplot') {
 
-    }
+            _ensureBoxplotPluginRegistered();
+
+        }
 
 
 
-    var ct        = document.getElementById('chart-type').value;
+        var ct        = document.getElementById('chart-type').value;
 
-    var xCol      = document.getElementById('x-col').value;
+        var xCol      = document.getElementById('x-col').value;
 
-    var yCol      = document.getElementById('y-col').value;
+        var yCol      = document.getElementById('y-col').value;
 
-    var xRx       = document.getElementById('x-regex').value.trim();
+        var xRx       = document.getElementById('x-regex').value.trim();
 
-    var yRx       = document.getElementById('y-regex').value.trim();
+        var yRx       = document.getElementById('y-regex').value.trim();
 
-    var colCol    = document.getElementById('color-col').value;
+        var colCol    = document.getElementById('color-col').value;
 
-    var colorRx   = document.getElementById('color-regex').value.trim();
+        var colorRx   = document.getElementById('color-regex').value.trim();
 
-    var scDims    = _gdimRead('sc');   /* Split-chart dimensions (unified mechanism) */
+        var scDims    = _gdimRead('sc');   /* Split-chart dimensions (unified mechanism) */
 
-    var scCol     = scDims.length > 0 ? scDims[0].col : '';  /* Primary split column from dims */
+        var scCol     = scDims.length > 0 ? scDims[0].col : '';  /* Primary split column from dims */
 
     var scRx      = scDims.length > 0 ? scDims[0].rx : '';   /* Primary split regex from dims */
 
@@ -10693,6 +10750,18 @@ function _drawSplitCharts() {
 
     var isXOnly = ct === 'histogram' || ct === 'cumproba' || ct === 'rcdf' || ct === 'cum_sigma';
 
+    /* WARN if dataset is too large - check BEFORE loading data */
+    if (filteredIndices.length > 2000000) {
+        var warnMsg = 'WARNING: Dataset has ' + filteredIndices.length.toLocaleString() + ' rows (> 2M). ' +
+                      'Rendering may cause memory errors. Recommend using the Performance feature to sample data first.';
+        status.textContent = warnMsg;
+        status.style.color = '#d9534f';
+        status.style.backgroundColor = '#fff5f5';
+        status.style.padding = '10px';
+        status.style.borderRadius = '4px';
+        console.warn('[_drawSplitCharts] ' + warnMsg);
+    }
+
     var iv      = _getIntervals();
 
     var res     = readFilteredFromMemory(xCol, isXOnly ? null : yCol,
@@ -10705,7 +10774,7 @@ function _drawSplitCharts() {
 
     /* Attach split key to each point using raw filteredIndices.
 
-       A row may match MULTIPLE keys (multi-capture regex) – it goes into each bucket. */
+       A row may match MULTIPLE keys (multi-capture regex) - it goes into each bucket. */
 
     var buckets = {};
 
@@ -10719,7 +10788,23 @@ function _drawSplitCharts() {
 
     var yHi_bp = (ct === 'boxplot' && iv.yHi !== '') ? parseFloat(iv.yHi) : NaN;
 
+    /* FIRST PASS: Collect ALL unique split keys (no sampling) to ensure all groups appear */
     for (var r = 0; r < filteredIndices.length; r++) {
+        var row = allRows[filteredIndices[r]];
+        var keys_r = _splitChartKeys(row, scIdx, scRx).map(function(k){ return k || '(blank)'; });
+        keys_r.forEach(function(key) {
+            if (!buckets[key]) { buckets[key] = []; bucketOrder.push(key); }
+        });
+    }
+
+    /* No auto-sampling - user should use Performance feature for sampling */
+    var bucketSamplingStep = 1;
+
+    /* SECOND PASS: Populate bucket data with sampling to manage memory */
+    for (var r = 0; r < filteredIndices.length; r++) {
+
+        /* Apply decimation sampling for bucket data population */
+        if (r % bucketSamplingStep !== 0) continue;
 
         var row = allRows[filteredIndices[r]];
 
@@ -10729,7 +10814,7 @@ function _drawSplitCharts() {
 
         keys_r.forEach(function(key) {
 
-            if (!buckets[key]) { buckets[key] = []; bucketOrder.push(key); }
+            /* Bucket already created in first pass, just add data */
 
 
 
@@ -10975,7 +11060,7 @@ function _drawSplitCharts() {
 
     _wireTileTitles();
 
-    var filtNote  = hasActiveFilters() ? ' – filtered' : '';
+    var filtNote  = hasActiveFilters() ? ' - filtered' : '';
 
     var totalBucketed = keys.reduce(function(s, k){ return s + (buckets[k]||[]).length; }, 0);
 
@@ -10989,17 +11074,32 @@ function _drawSplitCharts() {
 
     _spinStop();
 
+    } catch(e) { 
+        var status = document.getElementById('plot-status');
+        if (filteredIndices.length > 2000000) {
+            status.textContent = 'WARNING: Dataset too large (' + filteredIndices.length.toLocaleString() + ' rows). ' +
+                                'Memory error likely. Use Performance feature to sample data. Error: ' + e.message;
+        } else {
+            status.textContent = 'Split chart error: ' + e.message;
+        }
+        status.style.color = '#d9534f';
+        status.style.backgroundColor = '#fff5f5';
+        status.style.padding = '10px';
+        console.error('[_drawSplitCharts] Error:', e);
+        _spinStop(); 
+    }
+
 }
 
 
 
-/* ══════ Custom HTML tooltip handler (shared by all charts) ══════════════════════════════════════
+/* ------ Custom HTML tooltip handler (shared by all charts) --------------------------------------
 
    Renders outside the canvas so text is never clipped by plot width.
 
    Attach via: plugins: { tooltip: { enabled:false, external: _htmlTooltip } }
 
-   ═════════════════════════════════════════════════════════════════════════════════ */
+   --------------------------------------------------------------------------------- */
 
 var _htmlTooltipEl = null;
 
@@ -11099,7 +11199,7 @@ function _onSplitColChange() {
 
     /* When split-chart column/regex changes, destroy existing split tiles
 
-       and prompt the user to press Plot – do NOT auto-render (can be slow). */
+       and prompt the user to press Plot - do NOT auto-render (can be slow). */
 
     var scDims = _gdimRead('sc');
 
@@ -11169,7 +11269,7 @@ function _spinStop() {
 
 
 
-/* ══════ Axis title helpers ═════════════════════════════════════════════════════ */
+/* ------ Axis title helpers ----------------------------------------------------- */
 
 function _axisXTitle(defaultVal) {
 
@@ -11189,7 +11289,7 @@ function _axisYTitle(defaultVal) {
 
 
 
-/* ══════ Save plot panel to PNG ══════════════════════════════════════════════════ */
+/* ------ Save plot panel to PNG -------------------------------------------------- */
 
 function _savePlotPng() {
 
@@ -11243,7 +11343,7 @@ function _savePlotPng() {
 
 
 
-    /* ══════ Single chart: ask Chart.js directly for its canvas image ══════ */
+    /* ------ Single chart: ask Chart.js directly for its canvas image ------ */
 
     if (!isSplit) {
 
@@ -11253,7 +11353,7 @@ function _savePlotPng() {
 
         if (!dataUrl || dataUrl === 'data:,') { _fail('Chart canvas is empty.'); return; }
 
-        /* Convert dataURL ΓåÆ Blob */
+        /* Convert dataURL ? Blob */
 
         var arr  = dataUrl.split(','), mime = arr[0].match(/:(.*?);/)[1];
 
@@ -11269,7 +11369,7 @@ function _savePlotPng() {
 
 
 
-    /* ══════ Split charts: composite all tile canvases onto one output canvas ══════ */
+    /* ------ Split charts: composite all tile canvases onto one output canvas ------ */
 
     var tiles = document.querySelectorAll('#plot-grid .split-tile');
 
@@ -11517,7 +11617,7 @@ function drawPlot() {
 
 }
 
-/* ══════════════════════════════════════════════════════════════════════════════ Scatter / Line ══════════════════════════════════════════════════════════════════════════════════ */
+/* ------------------------------------------------------------------------------ Scatter / Line ---------------------------------------------------------------------------------- */
 
 function drawScatterLine() {
 
@@ -11557,10 +11657,21 @@ function drawScatterLine() {
 
 
 
-    if (!currentCsvId) { status.textContent = 'Session expired \u2014 re-parse file.'; _spinStop(); return; }
+    if (!currentCsvId) { status.textContent = 'Session expired — re-parse file.'; _spinStop(); return; }
 
-    status.textContent = 'Computing\u2026';
+    status.textContent = 'Computing…';
 
+    /* WARN if dataset is too large - check BEFORE loading data */
+    if (filteredIndices.length > 2000000) {
+        var warnMsg = 'WARNING: Dataset has ' + filteredIndices.length.toLocaleString() + ' rows (> 2M). ' +
+                      'Rendering may cause memory errors. Recommend using the Performance feature to sample data first.';
+        status.textContent = warnMsg;
+        status.style.color = '#d9534f';
+        status.style.backgroundColor = '#fff5f5';
+        status.style.padding = '10px';
+        status.style.borderRadius = '4px';
+        console.warn('[drawScatterLine] ' + warnMsg);
+    }
 
 
     var iv      = _getIntervals();
@@ -11893,7 +12004,7 @@ function drawScatterLine() {
 
             convertedZOrderList.push(groupName);
 
-            console.log('[drawScatterLine] index ' + idx + ' ΓåÆ group "' + groupName + '"');
+            console.log('[drawScatterLine] index ' + idx + ' ? group "' + groupName + '"');
 
         } else if (!isNaN(idx)) {
 
@@ -12227,7 +12338,7 @@ function drawScatterLine() {
 
                         
 
-                        /* Apply jitter and clamp to ┬▒0.5*xwidth */
+                        /* Apply jitter and clamp to --0.5*xwidth */
 
                         var jitteredX = dp.x + jitterAmount;
 
@@ -12257,9 +12368,9 @@ function drawScatterLine() {
 
 
 
-    _syncMainTitle(xCol + ' vs ' + yCol + (colCol ? '  –  ' + colCol : ''));
+    _syncMainTitle(xCol + ' vs ' + yCol + (colCol ? '  -  ' + colCol : ''));
 
-    var filtNote = hasActiveFilters() ? ' – filtered' : '';
+    var filtNote = hasActiveFilters() ? ' - filtered' : '';
 
     var sampNote = sampled
 
@@ -12279,7 +12390,7 @@ function drawScatterLine() {
 
 
 
-/* ══════ Normal Distribution Inverse (Quantile) Function ══════════════════════════════════ */
+/* ------ Normal Distribution Inverse (Quantile) Function ---------------------------------- */
 
 /* Approximates the inverse of the standard normal CDF (phi^-1)
 
@@ -12341,7 +12452,7 @@ function normalInverse(p) {
 
 
 
-/* ══════ Inverse Normal CDF (Percent Point Function) ══════════════════════════════════════ */
+/* ------ Inverse Normal CDF (Percent Point Function) -------------------------------------- */
 
 /* Converts a Z-score back to its cumulative probability (0-1) */
 
@@ -12401,11 +12512,11 @@ function normalInverseCDF(z) {
 
 
 
-/* ══════════════════════════════════════════════════════════════════════════════════ Histogram ══════════════════════════════════════════════════════════════════════════════════ */
+/* ---------------------------------------------------------------------------------- Histogram ---------------------------------------------------------------------------------- */
 
 function autoBins(n) { 
 
-    /* Rice Rule: 2 * n^(1/3) – gives better granularity than Sturges */
+    /* Rice Rule: 2 * n^(1/3) - gives better granularity than Sturges */
 
     return Math.min(200, Math.max(10, Math.ceil(2 * Math.pow(n, 1/3)))); 
 
@@ -12417,7 +12528,7 @@ function buildHistBins(values, nBins) {
 
     if (!values.length) return { bins: [], counts: [], width: 0 };
 
-    /* Use loop instead of Math.min/max.apply – avoids stack overflow on large arrays */
+    /* Use loop instead of Math.min/max.apply - avoids stack overflow on large arrays */
 
     var mn = values[0], mx = values[0];
 
@@ -12465,11 +12576,21 @@ function drawHistogram() {
 
 
 
-    if (!currentCsvId) { status.textContent = 'Session expired \u2014 re-parse file.'; _spinStop(); return; }
+    if (!currentCsvId) { status.textContent = 'Session expired — re-parse file.'; _spinStop(); return; }
 
-    status.textContent = 'Computing\u2026';
+    status.textContent = 'Computing…';
 
-
+    /* WARN if dataset is too large - check BEFORE loading data */
+    if (filteredIndices.length > 2000000) {
+        var warnMsg = 'WARNING: Dataset has ' + filteredIndices.length.toLocaleString() + ' rows (> 2M). ' +
+                      'Rendering may cause memory errors. Recommend using the Performance feature to sample data first.';
+        status.textContent = warnMsg;
+        status.style.color = '#d9534f';
+        status.style.backgroundColor = '#fff5f5';
+        status.style.padding = '10px';
+        status.style.borderRadius = '4px';
+        console.warn('[drawHistogram] ' + warnMsg);
+    }
 
     /* Re-read color dims from UI at draw time (don't rely on global sync) */
 
@@ -12701,9 +12822,9 @@ function drawHistogram() {
 
 
 
-    _syncMainTitle('Histogram – ' + xCol + (hasColorDims ? '  –  ' + colorDims.map(function(d){ return d.col; }).join(', ') : ''));
+    _syncMainTitle('Histogram - ' + xCol + (hasColorDims ? '  -  ' + colorDims.map(function(d){ return d.col; }).join(', ') : ''));
 
-    var filtNote = hasActiveFilters() ? ' – filtered' : '';
+    var filtNote = hasActiveFilters() ? ' - filtered' : '';
 
     var nGroups = Object.keys(groups).length;
 
@@ -12725,7 +12846,7 @@ function drawHistogram() {
 
 
 
-/* ══════════════════════════════════════════════════════════════════════════════ Cumulative Probability ══════════════════════════════════════════════════════════════════════════════ */
+/* ------------------------------------------------------------------------------ Cumulative Probability ------------------------------------------------------------------------------ */
 
 function drawCumProba() {
 
@@ -12745,11 +12866,21 @@ function drawCumProba() {
 
 
 
-    if (!currentCsvId) { status.textContent = 'Session expired \u2014 re-parse file.'; _spinStop(); return; }
+    if (!currentCsvId) { status.textContent = 'Session expired — re-parse file.'; _spinStop(); return; }
 
-    status.textContent = 'Computing\u2026';
+    status.textContent = 'Computing…';
 
-
+    /* WARN if dataset is too large - check BEFORE loading data */
+    if (filteredIndices.length > 2000000) {
+        var warnMsg = 'WARNING: Dataset has ' + filteredIndices.length.toLocaleString() + ' rows (> 2M). ' +
+                      'Rendering may cause memory errors. Recommend using the Performance feature to sample data first.';
+        status.textContent = warnMsg;
+        status.style.color = '#d9534f';
+        status.style.backgroundColor = '#fff5f5';
+        status.style.padding = '10px';
+        status.style.borderRadius = '4px';
+        console.warn('[drawCumproba] ' + warnMsg);
+    }
 
     /* Re-read color dims from UI at draw time (don't rely on global sync) */
 
@@ -12761,7 +12892,7 @@ function drawCumProba() {
 
     var iv      = _getIntervals();
 
-    /* DO NOT pass a groupCol to readFilteredFromMemory – cumproba handles grouping via colorDims */
+    /* DO NOT pass a groupCol to readFilteredFromMemory - cumproba handles grouping via colorDims */
 
     var res     = readFilteredFromMemory(xCol, null, null, xRx, null, iv.xLo, iv.xHi, '', '');
 
@@ -12873,7 +13004,7 @@ function drawCumProba() {
 
     /* Feed the global fdvPointLabels plugin: build labels per dataset in same order as datasets[] */
 
-    /* Done after datasets are built – see below */
+    /* Done after datasets are built - see below */
 
 
 
@@ -12959,9 +13090,9 @@ function drawCumProba() {
 
 
 
-    _syncMainTitle('Cum Proba – ' + xCol + (hasColorDims ? '  –  ' + colorDims.map(function(d){ return d.col; }).join(', ') : ''));
+    _syncMainTitle('Cum Proba - ' + xCol + (hasColorDims ? '  -  ' + colorDims.map(function(d){ return d.col; }).join(', ') : ''));
 
-    var filtNote  = hasActiveFilters() ? ' – filtered' : '';
+    var filtNote  = hasActiveFilters() ? ' - filtered' : '';
 
     var nGroups   = Object.keys(groups).length;
 
@@ -12985,7 +13116,7 @@ function drawCumProba() {
 
 
 
-/* ═══ Cumulative Probability (Sigma Scale) ═══════════════════════════════ */
+/* --- Cumulative Probability (Sigma Scale) ------------------------------- */
 
 function drawCumSigma() {
 
@@ -13001,11 +13132,21 @@ function drawCumSigma() {
 
 
 
-    if (!currentCsvId) { status.textContent = 'Session expired \u2014 re-parse file.'; _spinStop(); return; }
+    if (!currentCsvId) { status.textContent = 'Session expired — re-parse file.'; _spinStop(); return; }
 
-    status.textContent = 'Computing\u2026';
+    status.textContent = 'Computing…';
 
-
+    /* WARN if dataset is too large - check BEFORE loading data */
+    if (filteredIndices.length > 2000000) {
+        var warnMsg = 'WARNING: Dataset has ' + filteredIndices.length.toLocaleString() + ' rows (> 2M). ' +
+                      'Rendering may cause memory errors. Recommend using the Performance feature to sample data first.';
+        status.textContent = warnMsg;
+        status.style.color = '#d9534f';
+        status.style.backgroundColor = '#fff5f5';
+        status.style.padding = '10px';
+        status.style.borderRadius = '4px';
+        console.warn('[drawRCDF] ' + warnMsg);
+    }
 
     /* Re-read color dims from UI at draw time */
 
@@ -13359,7 +13500,7 @@ function drawCumSigma() {
 
                         return item.dataset.label + ':  ' + xCol + '=' + item.parsed.x.toFixed(6) +
 
-                               '  ╧â=' + sigma.toFixed(6);
+                               '  --=' + sigma.toFixed(6);
 
                     }
 
@@ -13387,7 +13528,7 @@ function drawCumSigma() {
 
                     position: 'left',
 
-                    title: { display: true, text: _axisYTitle('Theoretical Quantiles (Sigma / ╧â)') },
+                    title: { display: true, text: _axisYTitle('Theoretical Quantiles (Sigma / --)') },
 
                     grace: 0
 
@@ -13409,9 +13550,9 @@ function drawCumSigma() {
 
     _setPointLabels(chartInst, null);
 
-    _syncMainTitle('Cum Sigma – ' + xCol + (hasColorDims ? '  –  ' + colorDims.map(function(d){ return d.col; }).join(', ') : ''));
+    _syncMainTitle('Cum Sigma - ' + xCol + (hasColorDims ? '  -  ' + colorDims.map(function(d){ return d.col; }).join(', ') : ''));
 
-    var filtNote  = hasActiveFilters() ? ' – filtered' : '';
+    var filtNote  = hasActiveFilters() ? ' - filtered' : '';
 
     var nGroups   = Object.keys(groups).length;
 
@@ -13433,7 +13574,7 @@ function drawCumSigma() {
 
 
 
-/* ═══ Reverse Cumulative Probability (RCDF) ═══════════════════════════ */
+/* --- Reverse Cumulative Probability (RCDF) --------------------------- */
 
 function drawRcdf() {
 
@@ -13453,11 +13594,21 @@ function drawRcdf() {
 
 
 
-    if (!currentCsvId) { status.textContent = 'Session expired \u2014 re-parse file.'; _spinStop(); return; }
+    if (!currentCsvId) { status.textContent = 'Session expired — re-parse file.'; _spinStop(); return; }
 
-    status.textContent = 'Computing\u2026';
+    status.textContent = 'Computing…';
 
-
+    /* WARN if dataset is too large - check BEFORE loading data */
+    if (filteredIndices.length > 2000000) {
+        var warnMsg = 'WARNING: Dataset has ' + filteredIndices.length.toLocaleString() + ' rows (> 2M). ' +
+                      'Rendering may cause memory errors. Recommend using the Performance feature to sample data first.';
+        status.textContent = warnMsg;
+        status.style.color = '#d9534f';
+        status.style.backgroundColor = '#fff5f5';
+        status.style.padding = '10px';
+        status.style.borderRadius = '4px';
+        console.warn('[drawRcdf] ' + warnMsg);
+    }
 
     /* Re-read color dims from UI at draw time (don't rely on global sync) */
 
@@ -13469,7 +13620,7 @@ function drawRcdf() {
 
     var iv      = _getIntervals();
 
-    /* DO NOT pass a groupCol to readFilteredFromMemory – rcdf handles grouping via colorDims */
+    /* DO NOT pass a groupCol to readFilteredFromMemory - rcdf handles grouping via colorDims */
 
     var res     = readFilteredFromMemory(xCol, null, null, xRx, null, iv.xLo, iv.xHi, '', '');
 
@@ -13661,9 +13812,9 @@ function drawRcdf() {
 
 
 
-    _syncMainTitle('RCDF – ' + xCol + (hasColorDims ? '  –  ' + colorDims.map(function(d){ return d.col; }).join(', ') : ''));
+    _syncMainTitle('RCDF - ' + xCol + (hasColorDims ? '  -  ' + colorDims.map(function(d){ return d.col; }).join(', ') : ''));
 
-    var filtNote  = hasActiveFilters() ? ' – filtered' : '';
+    var filtNote  = hasActiveFilters() ? ' - filtered' : '';
 
     var nGroups   = Object.keys(groups).length;
 
@@ -13687,7 +13838,7 @@ function drawRcdf() {
 
 
 
-/* ═══ Box & Whisker ════════════════════════════════════════════════════ */
+/* --- Box & Whisker ---------------------------------------------------- */
 
 function drawBoxPlot() {
 
@@ -13747,7 +13898,7 @@ function drawBoxPlot() {
 
     /* Collect {group (string from xCol), value (numeric from yCol)} pairs.
 
-       Use a seen-set for O(1) dedup instead of indexOf (avoids O(n┬▓) hang). */
+       Use a seen-set for O(1) dedup instead of indexOf (avoids O(n--) hang). */
 
     var groups = {}, order = [], seen = {}, skipped = 0, total = 0, capped = false;
 
@@ -13773,7 +13924,7 @@ function drawBoxPlot() {
 
         total++;
 
-        /* Group label – apply X regex to extract/transform the category key */
+        /* Group label - apply X regex to extract/transform the category key */
 
         var g = (xCol === yCol) ? yCol : _extractGroupKey(xRaw, xRx);
 
@@ -14069,9 +14220,9 @@ function drawBoxPlot() {
 
 
 
-    _syncMainTitle('Box & Whisker – ' + xCol + ' vs ' + yCol);
+    _syncMainTitle('Box & Whisker - ' + xCol + ' vs ' + yCol);
 
-    var filtNote = hasActiveFilters() ? ' – filtered' : '';
+    var filtNote = hasActiveFilters() ? ' - filtered' : '';
 
     var capNote  = capped ? ' \u26a0 capped at ' + MAX_GROUPS + ' groups \u2014 use X regex to reduce' : '';
 
@@ -14093,7 +14244,7 @@ function drawBoxPlot() {
 
    AI ANALYSIS ENGINE
 
-   Pure addition – zero changes to any existing function.
+   Pure addition - zero changes to any existing function.
 
 ================================================================ */
 
@@ -14209,9 +14360,9 @@ function _buildChartPrompt(ct, xCol, yCol, xRx, yRx, points, groupStats) {
 
         lines.push('');
 
-        lines.push('TASK: Analyse this chart. Respond in bullet points (•). '
+        lines.push('TASK: Analyse this chart. Respond in bullet points (-). '
 
-            + 'Cover every group – for each: distribution shape, central tendency, '
+            + 'Cover every group - for each: distribution shape, central tendency, '
 
             + 'spread, and outliers with concrete numbers. '
 
@@ -14221,11 +14372,11 @@ function _buildChartPrompt(ct, xCol, yCol, xRx, yRx, points, groupStats) {
 
         lines.push('');
 
-        lines.push('TASK: Analyse this chart. Respond in bullet points (•). '
+        lines.push('TASK: Analyse this chart. Respond in bullet points (-). '
 
             + 'Cover: distribution shape, central tendency (mean/median), '
 
-            + 'spread (std/range), and any notable outliers – each as its own bullet. '
+            + 'spread (std/range), and any notable outliers - each as its own bullet. '
 
             + 'Use concrete numbers. Be complete, do not truncate.');
 
@@ -14285,7 +14436,7 @@ function _buildChartPrompt(ct, xCol, yCol, xRx, yRx, points, groupStats) {
 
 /* Build a comparative prompt when split-charts are active.
 
-   tileStats: array of {key, xSt, ySt, n} – one entry per split tile. */
+   tileStats: array of {key, xSt, ySt, n} - one entry per split tile. */
 
 function _buildSplitPrompt(ct, xCol, yCol, xRx, yRx, scCol, tileStats) {
 
@@ -14343,9 +14494,9 @@ function _buildSplitPrompt(ct, xCol, yCol, xRx, yRx, scCol, tileStats) {
 
     lines.push('');
 
-    lines.push('TASK: Comparative analysis – ' + tileStats.length
+    lines.push('TASK: Comparative analysis - ' + tileStats.length
 
-        + ' groups split by "' + scCol + '". Respond in bullet points (•). '
+        + ' groups split by "' + scCol + '". Respond in bullet points (-). '
 
         + 'Dedicate at least one bullet per group with its key stats. '
 
@@ -14353,7 +14504,7 @@ function _buildSplitPrompt(ct, xCol, yCol, xRx, yRx, scCol, tileStats) {
 
         + 'and any groups crossing marker lines. '
 
-        + 'Be complete – cover every group, do not truncate.');
+        + 'Be complete - cover every group, do not truncate.');
 
 
 
@@ -14373,7 +14524,7 @@ function _buildSplitPrompt(ct, xCol, yCol, xRx, yRx, scCol, tileStats) {
 
 
 
-/* Build a two-dimensional comparative prompt: split-chart tiles ├ù color groups.
+/* Build a two-dimensional comparative prompt: split-chart tiles +- color groups.
 
    crossStats: array of {tileKey, colorKey, n, xSt, ySt}
 
@@ -14457,7 +14608,7 @@ function _buildCrossPrompt(ct, xCol, yCol, xRx, yRx, scCol, colorCol, crossStats
 
     lines.push('');
 
-    lines.push('TASK: Two-dimensional comparative analysis. Respond in bullet points (•). '
+    lines.push('TASK: Two-dimensional comparative analysis. Respond in bullet points (-). '
 
         + 'Within each tile (' + scCol + '): one bullet per color group (' + colorCol + ') '
 
@@ -14469,7 +14620,7 @@ function _buildCrossPrompt(ct, xCol, yCol, xRx, yRx, scCol, colorCol, crossStats
 
         + 'that stands out most and why. Note any marker line crossings. '
 
-        + 'Be complete – cover every group and tile, do not truncate.');
+        + 'Be complete - cover every group and tile, do not truncate.');
 
 
 
@@ -14627,15 +14778,15 @@ function _renderAnalysisTiles(results) {
 
 
 
-/* ═══ Summary table ═══════════════════════════════════════════════════ */
+/* --- Summary table --------------------------------------------------- */
 
 var _summaryRows = null, _summaryIsXOnly = false;
 
 var _summaryXLabel = '', _summaryYLabel = '', _summaryGroupDim = '';
 
-var _lastSummaryText = '';   /* plain-text snapshot – included in chat context */
+var _lastSummaryText = '';   /* plain-text snapshot - included in chat context */
 
-var _lastAnalysisText = '';  /* plain-text snapshot of AI analysis – included in chat context */
+var _lastAnalysisText = '';  /* plain-text snapshot of AI analysis - included in chat context */
 
 
 
@@ -14663,7 +14814,7 @@ function _showSummary() {
 
         errorDiv.style.cssText = 'padding:8px 12px;background:#fff3cd;border-left:3px solid #e67e00;border-radius:4px;color:#e67e00';
 
-        errorDiv.textContent = 'ΓÜá No data – parse a file first.';
+        errorDiv.textContent = 'G- No data - parse a file first.';
 
         msgs.appendChild(errorDiv);
 
@@ -15023,7 +15174,7 @@ function _summaryCopyCSV() {
 
 
 
-/* POST to /analyze – returns summary string or throws */
+/* POST to /analyze - returns summary string or throws */
 
 async function _fetchSummary(prompt) {
 
@@ -15081,9 +15232,9 @@ async function _fetchSummary(prompt) {
 
 
 
-/* Entry point – wired to the Analyze button.
+/* Entry point - wired to the Analyze button.
 
-   ONE LLM call per chart always. Split-by ΓåÆ comparative prompt, not per-tile calls. */
+   ONE LLM call per chart always. Split-by ? comparative prompt, not per-tile calls. */
 
 function _analyzeChart() {
 
@@ -15105,7 +15256,7 @@ function _analyzeChart() {
 
     if (!currentCsvId) {
 
-        _chatAddNote('ΓÜá No data loaded – parse a file first, then draw a plot.');
+        _chatAddNote('G- No data loaded - parse a file first, then draw a plot.');
 
         return;
 
@@ -15113,7 +15264,7 @@ function _analyzeChart() {
 
     if (!document.getElementById('x-col').value) {
 
-        _chatAddNote('ΓÜá Select an X column and draw a plot first.');
+        _chatAddNote('G- Select an X column and draw a plot first.');
 
         return;
 
@@ -15121,7 +15272,7 @@ function _analyzeChart() {
 
 
 
-    _chatAddNote('≡ƒôè Contacting ' + _selectedModel() + 'ΓÇª');
+    _chatAddNote('=- Contacting ' + _selectedModel() + 'G-');
 
 
 
@@ -15153,7 +15304,7 @@ function _analyzeChart() {
 
 
 
-    /* Helper – extract the effective group key for in-chart grouping */
+    /* Helper - extract the effective group key for in-chart grouping */
 
     var inChartGroupCol = isXOnly ? (splitCol || colCol) : colCol;
 
@@ -15173,7 +15324,7 @@ function _analyzeChart() {
 
 
 
-    /* Bucket rows by a given key function ΓåÆ returns {keys[], buckets{keyΓåÆ[{x,y}]}} */
+    /* Bucket rows by a given key function ? returns {keys[], buckets{key?[{x,y}]}} */
 
     function bucketRows(keyFn) {
 
@@ -15263,17 +15414,17 @@ function _analyzeChart() {
 
             if (scCol && _splitInsts.length > 0) {
 
-                /* ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
+                /* G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-
 
                    SPLIT-CHART MODE
 
-                   If color-by is also active ΓåÆ 2-D cross analysis
+                   If color-by is also active ? 2-D cross analysis
 
-                   (tile ├ù color-group in ONE prompt).
+                   (tile +- color-group in ONE prompt).
 
-                   Otherwise ΓåÆ 1-D tile comparison.
+                   Otherwise ? 1-D tile comparison.
 
-                   ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ */
+                   G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G- */
 
                 var scIdx   = currentHeaders.indexOf(scCol);
 
@@ -15285,7 +15436,7 @@ function _analyzeChart() {
 
                 if (gcIdx2 >= 0) {
 
-                    /* ΓöÇΓöÇ 2-D: tile ├ù color-group ΓöÇΓöÇ */
+                    /* G-G- 2-D: tile +- color-group G-G- */
 
                     /* Bucket by compound key "tileKey\x00colorKey" */
 
@@ -15391,7 +15542,7 @@ function _analyzeChart() {
 
                     if (!crossStats.length) {
 
-                        _chatAddNote('ΓÜá No data found.');
+                        _chatAddNote('G- No data found.');
 
                         return;
 
@@ -15401,7 +15552,7 @@ function _analyzeChart() {
 
                         + (inChartGroupRx ? ' [' + inChartGroupRx + ']' : '');
 
-                    _chatAddNote('≡ƒôè Cross-dimensional analysis: ' + tileKeys2.length + ' tiles ├ù ' + colorKeys2.length + ' color groupsΓÇª');
+                    _chatAddNote('=- Cross-dimensional analysis: ' + tileKeys2.length + ' tiles +- ' + colorKeys2.length + ' color groupsG-');
 
                     prompt     = _buildCrossPrompt(ct, xCol, yCol, xRx, yRx,
 
@@ -15419,7 +15570,7 @@ function _analyzeChart() {
 
                 } else {
 
-                    /* ΓöÇΓöÇ 1-D: tile comparison only ΓöÇΓöÇ */
+                    /* G-G- 1-D: tile comparison only G-G- */
 
                     var b1d = bucketRows(function(row) {
 
@@ -15429,7 +15580,7 @@ function _analyzeChart() {
 
                     if (!b1d.keys.length) {
 
-                        _chatAddNote('ΓÜá No data found for split column.');
+                        _chatAddNote('G- No data found for split column.');
 
                         return;
 
@@ -15437,7 +15588,7 @@ function _analyzeChart() {
 
                     var tileStats = toTileStats(b1d);
 
-                    _chatAddNote('≡ƒôè Comparing ' + tileStats.length + ' split-chart tilesΓÇª');
+                    _chatAddNote('=- Comparing ' + tileStats.length + ' split-chart tilesG-');
 
                     prompt     = _buildSplitPrompt(ct, xCol, yCol, xRx, yRx,
 
@@ -15453,7 +15604,7 @@ function _analyzeChart() {
 
             } else if (inChartGroupCol) {
 
-                /* ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
+                /* G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-
 
                    SINGLE CHART WITH IN-CHART COLOR/SPLIT GROUPING
 
@@ -15461,9 +15612,9 @@ function _analyzeChart() {
 
                    split-by series (cumproba/histogram).
 
-                   One comparative prompt – same structure as split-chart.
+                   One comparative prompt - same structure as split-chart.
 
-                   ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ */
+                   G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G- */
 
                 var gcIdx = currentHeaders.indexOf(inChartGroupCol);
 
@@ -15475,7 +15626,7 @@ function _analyzeChart() {
 
                 if (!b2.keys.length) {
 
-                    _chatAddNote('ΓÜá No numeric data in selected column.');
+                    _chatAddNote('G- No numeric data in selected column.');
 
                     return;
 
@@ -15491,9 +15642,9 @@ function _analyzeChart() {
 
                 if (colorStats.length > 1) {
 
-                    /* Multiple color/split groups ΓåÆ full comparative analysis */
+                    /* Multiple color/split groups ? full comparative analysis */
 
-                    _chatAddNote('≡ƒôè Comparing ' + colorStats.length + ' color groupsΓÇª');
+                    _chatAddNote('=- Comparing ' + colorStats.length + ' color groupsG-');
 
                     prompt     = _buildSplitPrompt(ct, xCol, yCol, xRx, yRx,
 
@@ -15507,15 +15658,15 @@ function _analyzeChart() {
 
                 } else {
 
-                    /* Only one group resolved – plain single-chart analysis */
+                    /* Only one group resolved - plain single-chart analysis */
 
                     var allPts2 = b2.buckets[b2.keys[0]] || [];
 
-                    _chatAddNote('≡ƒôè Analyzing chartΓÇª');
+                    _chatAddNote('=- Analyzing chartG-');
 
                     prompt     = _buildChartPrompt(ct, xCol, yCol, xRx, yRx, allPts2, null);
 
-                    headerNote = 'Analysis – ' + xCol
+                    headerNote = 'Analysis - ' + xCol
 
                         + (ct !== 'histogram' && ct !== 'cumproba' && ct !== 'rcdf' ? ' vs ' + yCol : '');
 
@@ -15525,11 +15676,11 @@ function _analyzeChart() {
 
             } else {
 
-                /* ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
+                /* G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-
 
-                   PLAIN SINGLE CHART – no grouping at all
+                   PLAIN SINGLE CHART - no grouping at all
 
-                   ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ */
+                   G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G- */
 
                 var iv3 = _getIntervals();
 
@@ -15541,17 +15692,17 @@ function _analyzeChart() {
 
                 if (!res.points.length) {
 
-                    _chatAddNote('ΓÜá No numeric data – draw a plot first.');
+                    _chatAddNote('G- No numeric data - draw a plot first.');
 
                     return;
 
                 }
 
-                _chatAddNote('≡ƒôè Analyzing chartΓÇª');
+                _chatAddNote('=- Analyzing chartG-');
 
                 prompt     = _buildChartPrompt(ct, xCol, yCol, xRx, yRx, res.points, null);
 
-                headerNote = 'Analysis – ' + xCol
+                headerNote = 'Analysis - ' + xCol
 
                     + (ct !== 'histogram' && ct !== 'cumproba' && ct !== 'rcdf' ? ' vs ' + yCol : '');
 
@@ -15567,9 +15718,9 @@ function _analyzeChart() {
 
         } catch(e) {
 
-            _chatAddNote('Γ¥î Error: ' + (e.message || 'Unknown error'));
+            _chatAddNote('G- Error: ' + (e.message || 'Unknown error'));
 
-            _chatAddNote('≡ƒÆí Tip: Make sure Ollama is running on port 11434 and the selected model is pulled (use the Γ¼ç button to pull).');
+            _chatAddNote('=- Tip: Make sure Ollama is running on port 11434 and the selected model is pulled (use the G- button to pull).');
 
         }
 
@@ -15581,13 +15732,13 @@ function _analyzeChart() {
 
 /* Hide analysis panel whenever a new plot is drawn.
 
-   Uses wrapper pattern – drawPlot body is NOT modified. */
+   Uses wrapper pattern - drawPlot body is NOT modified. */
 
 var _ai_drawPlot_orig = drawPlot;
 
 drawPlot = function() {
 
-    // No need to hide analysis panel – it's now part of unified chat stream
+    // No need to hide analysis panel - it's now part of unified chat stream
 
     return _ai_drawPlot_orig.apply(this, arguments);
 
@@ -15597,7 +15748,7 @@ drawPlot = function() {
 
 /* Reset analysis state on full reset.
 
-   Uses wrapper pattern – resetAll body is NOT modified. */
+   Uses wrapper pattern - resetAll body is NOT modified. */
 
 var _ai_resetAll_orig = resetAll;
 
@@ -15605,13 +15756,13 @@ resetAll = function() {
 
     _ai_resetAll_orig.apply(this, arguments);
 
-    // No need to reset analysis divs – unified chat stream cleared by _chatReset
+    // No need to reset analysis divs - unified chat stream cleared by _chatReset
 
 };
 
 
 
-/* ΓöÇΓöÇ Model selector ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ */
+/* G-G- Model selector G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G- */
 
 function _selectedModel() {
 
@@ -15683,13 +15834,13 @@ function _updateChatBanner() {
 
     var chat    = document.getElementById('chat-drawer-title');
 
-    if (chat)    chat.textContent    = '≡ƒÆ¼ Chat with ' + label + ' – ask about your data';
+    if (chat)    chat.textContent    = '=- Chat with ' + label + ' - ask about your data';
 
 }
 
 
 
-/* Populate dropdown from /models (GET – Ollama's pulled model list) */
+/* Populate dropdown from /models (GET - Ollama's pulled model list) */
 
 async function _loadModelList() {
 
@@ -15779,7 +15930,7 @@ async function _loadModelList() {
 
         console.error('[DEBUG] Error stack:', e.stack);
 
-        /* silently ignore – default 'llama3' stays */ 
+        /* silently ignore - default 'llama3' stays */ 
 
     }
 
@@ -15893,13 +16044,13 @@ document.addEventListener('DOMContentLoaded', function() {
 
 
 
-/* ΓöÇΓöÇ Chat session ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ */
+/* G-G- Chat session G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G- */
 
 var _chatOpen         = false;
 
 var _chatBusy         = false;
 
-var _chatPending      = '';   /* legacy – superseded by _chatContextDirty */
+var _chatPending      = '';   /* legacy - superseded by _chatContextDirty */
 
 var _chatContextDirty = true; /* true = build+send fresh context on next _chatSend() */
 
@@ -16061,13 +16212,13 @@ function _buildChatContext() {
 
     if (!document.getElementById('x-col').value) {
 
-        return 'No X column selected – draw a plot first.';
+        return 'No X column selected - draw a plot first.';
 
     }
 
 
 
-    /* ΓöÇΓöÇ Read all the same inputs as _analyzeChart ΓöÇΓöÇ */
+    /* G-G- Read all the same inputs as _analyzeChart G-G- */
 
     var ct       = document.getElementById('chart-type').value;
 
@@ -16197,7 +16348,7 @@ function _buildChatContext() {
 
 
 
-    /* ΓöÇΓöÇ Header ΓöÇΓöÇ */
+    /* G-G- Header G-G- */
 
     var lines = [];
 
@@ -16229,11 +16380,11 @@ function _buildChatContext() {
 
 
 
-    /* ΓöÇΓöÇ Data: mirrors the three code paths in _analyzeChart ΓöÇΓöÇ */
+    /* G-G- Data: mirrors the three code paths in _analyzeChart G-G- */
 
     if (scCol && _splitInsts.length > 0) {
 
-        /* ΓöÇΓöÇ SPLIT-CHART MODE ΓöÇΓöÇ */
+        /* G-G- SPLIT-CHART MODE G-G- */
 
         var scIdx = currentHeaders.indexOf(scCol);
 
@@ -16243,7 +16394,7 @@ function _buildChatContext() {
 
         if (gcIdx >= 0) {
 
-            /* 2-D: tile ├ù color-group – same cross-bucket logic */
+            /* 2-D: tile +- color-group - same cross-bucket logic */
 
             var crossBuckets = {}, crossOrder = [], tileSet = {}, colorSet = {};
 
@@ -16335,7 +16486,7 @@ function _buildChatContext() {
 
     } else if (inChartGroupCol) {
 
-        /* ΓöÇΓöÇ SINGLE CHART WITH IN-CHART GROUPING ΓöÇΓöÇ */
+        /* G-G- SINGLE CHART WITH IN-CHART GROUPING G-G- */
 
         var gcIdx3 = currentHeaders.indexOf(inChartGroupCol);
 
@@ -16361,7 +16512,7 @@ function _buildChatContext() {
 
     } else {
 
-        /* ΓöÇΓöÇ PLAIN SINGLE CHART ΓöÇΓöÇ */
+        /* G-G- PLAIN SINGLE CHART G-G- */
 
         var b3 = bucketRows(function() { return '__all__'; });
 
@@ -16381,7 +16532,7 @@ function _buildChatContext() {
 
 
 
-    /* ΓöÇΓöÇ Marker reference lines ΓöÇΓöÇ */
+    /* G-G- Marker reference lines G-G- */
 
     if (_markers && _markers.length) {
 
@@ -16397,7 +16548,7 @@ function _buildChatContext() {
 
 
 
-    /* ΓöÇΓöÇ Raw data sample (evenly spaced across filtered rows) ΓöÇΓöÇ */
+    /* G-G- Raw data sample (evenly spaced across filtered rows) G-G- */
 
     var sampleN = _chatDataSampleSize;
 
@@ -16427,19 +16578,19 @@ function _buildChatContext() {
 
 
 
-    /* ΓöÇΓöÇ QUERY tool instructions ΓöÇΓöÇ */
+    /* G-G- QUERY tool instructions G-G- */
 
     lines.push('\nYou may request computed aggregations by embedding one or more QUERY tokens in your reply:');
 
     lines.push('[QUERY: col=COLUMN_NAME, filter=EXPRESSION, group=COLUMN_NAME, agg=mean|count|min|max|std|all]');
 
-    lines.push('  col    – column to aggregate (required)');
+    lines.push('  col    - column to aggregate (required)');
 
-    lines.push('  filter – optional row filter, same syntax as table filter (e.g. >0.001  or  ==PASS)');
+    lines.push('  filter - optional row filter, same syntax as table filter (e.g. >0.001  or  ==PASS)');
 
-    lines.push('  group  – optional column to group by');
+    lines.push('  group  - optional column to group by');
 
-    lines.push('  agg    – aggregation: mean (default), count, min, max, std, all (full stats)');
+    lines.push('  agg    - aggregation: mean (default), count, min, max, std, all (full stats)');
 
     lines.push('Example: [QUERY: col=RBER, filter=>0.001, group=DUT, agg=mean]');
 
@@ -16447,7 +16598,7 @@ function _buildChatContext() {
 
 
 
-    /* ΓöÇΓöÇ Append last Analysis output if available ΓöÇΓöÇ */
+    /* G-G- Append last Analysis output if available G-G- */
 
     if (typeof _lastAnalysisText === 'string' && _lastAnalysisText.trim()) {
 
@@ -16461,7 +16612,7 @@ function _buildChatContext() {
 
 
 
-    /* ΓöÇΓöÇ Append last Summary output if available ΓöÇΓöÇ */
+    /* G-G- Append last Summary output if available G-G- */
 
     if (typeof _lastSummaryText === 'string' && _lastSummaryText.trim()) {
 
@@ -16499,7 +16650,7 @@ function _chatInjectContext() {
 
 
 
-    /* For ConnectMaiGPT – immediately fire @general:system + chart data */
+    /* For ConnectMaiGPT - immediately fire @general:system + chart data */
 
     if (_chatProvider() === 'connectmaigpt') {
 
@@ -16587,7 +16738,7 @@ function _chatReset() {
 
 
 
-/* ΓöÇΓöÇ ConnectMaiGPT sender – proxied through Python backend ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+/* G-G- ConnectMaiGPT sender - proxied through Python backend G-G-G-G-G-G-G-G-G-G-G-G-G-G-
 
    The MCP server uses JSON-RPC over SSE (not OpenAI-compatible), so we
 
@@ -16595,7 +16746,7 @@ function _chatReset() {
 
    MCP session lifecycle and streams the reply back as SSE tokens.
 
-ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ */
+G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G- */
 
 async function _chatSendMaiGpt(userMsg, context, thinkingEl) {
 
@@ -16613,11 +16764,11 @@ async function _chatSendMaiGpt(userMsg, context, thinkingEl) {
 
     if (isGenSystem) {
 
-        _chatAddNote('\uD83D\uDD27 Mode: @general:system – sending chart data as system context');
+        _chatAddNote('\uD83D\uDD27 Mode: @general:system - sending chart data as system context');
 
     } else if (isGenQuery) {
 
-        _chatAddNote('\uD83D\uDD27 Mode: @general – sending bare query, no chart data');
+        _chatAddNote('\uD83D\uDD27 Mode: @general - sending bare query, no chart data');
 
     }
 
@@ -16807,7 +16958,7 @@ function _chatSend() {
 
 
 
-    /* Always build fresh context on every send – ensures the model
+    /* Always build fresh context on every send - ensures the model
 
        is aware of current chart data on every turn, not just the first.
 
@@ -16857,7 +17008,7 @@ function _chatSend() {
 
             result.actions.forEach(function(a) { _chatAddNote('\uD83D\uDCCC ' + a); });
 
-            /* Execute data query commands – inject results as follow-up context */
+            /* Execute data query commands - inject results as follow-up context */
 
             var queryResults = _chatExecQueryCmds(fullText);
 
@@ -17011,7 +17162,7 @@ function _chatSend() {
 
 
 
-/* ΓöÇΓöÇ Chat marker command executor ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ */
+/* G-G- Chat marker command executor G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G- */
 
 /* Scans an LLM reply for [MARKER: ...] and [CLEAR_MARKERS] tokens,
 
@@ -17021,13 +17172,13 @@ function _chatSend() {
 
    { text: <cleaned reply>, actions: [<description>, ...] }          */
 
-/* ΓöÇΓöÇ Chat data query executor ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+/* G-G- Chat data query executor G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-
 
    Parses [QUERY: col=X, filter=EXPR, group=Y, agg=mean] tokens from
 
    the LLM reply, runs them against allRows[], returns result strings.
 
-ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ */
+G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G- */
 
 function _chatExecQueryCmds(raw) {
 
@@ -17163,7 +17314,7 @@ function _chatExecQueryCmds(raw) {
 
 
 
-/* ΓöÇΓöÇ Chat [SUMMARY] / [ANALYZE] command executor ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ */
+/* G-G- Chat [SUMMARY] / [ANALYZE] command executor G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G- */
 
 function _chatExecSummaryCmds(raw) {
 
@@ -17229,7 +17380,7 @@ function _chatExecMarkerCmds(raw) {
 
 
 
-    /* 1 – [CLEAR_MARKERS] */
+    /* 1 - [CLEAR_MARKERS] */
 
     if (/\[CLEAR_MARKERS\]/i.test(raw)) {
 
@@ -17245,7 +17396,7 @@ function _chatExecMarkerCmds(raw) {
 
 
 
-    /* 2 – [MARKER: x=VALUE:LABEL] or [MARKER: y=VALUE:LABEL] */
+    /* 2 - [MARKER: x=VALUE:LABEL] or [MARKER: y=VALUE:LABEL] */
 
     var markerRx = /\[MARKER:\s*([^\]]+)\]/gi;
 
@@ -17375,13 +17526,13 @@ function _chatKeydown(e) {
 
 
 
-/* ΓöÇΓöÇ Panel resize grips (analysis + chat) ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ */
+/* G-G- Panel resize grips (analysis + chat) G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G- */
 
 (function() {
 
 
 
-    /* ΓöÇΓöÇ Analysis panel resize – drag UP to grow, with snap + persistence ΓöÇΓöÇ */
+    /* G-G- Analysis panel resize - drag UP to grow, with snap + persistence G-G- */
 
     (function() {
 
@@ -17499,7 +17650,7 @@ function _chatKeydown(e) {
 
 
 
-    /* ΓöÇΓöÇ Chat drawer window drag – move floating window around ΓöÇΓöÇ */
+    /* G-G- Chat drawer window drag - move floating window around G-G- */
 
     (function() {
 
@@ -17609,7 +17760,7 @@ function _chatKeydown(e) {
 
 
 
-    /* ΓöÇΓöÇ Chat drawer window resize ΓöÇΓöÇ */
+    /* G-G- Chat drawer window resize G-G- */
 
     (function() {
 
@@ -17709,7 +17860,7 @@ function _chatKeydown(e) {
 
 
 
-        /* ΓöÇΓöÇ Top-left resize handler ΓöÇΓöÇ */
+        /* G-G- Top-left resize handler G-G- */
 
         var resizerTopLeft = document.getElementById('chat-resize-topleft');
 
@@ -17799,7 +17950,7 @@ function _chatKeydown(e) {
 
 
 
-/* ΓöÇΓöÇ Drag-to-resize plot ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ */
+/* G-G- Drag-to-resize plot G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G-G- */
 
 (function() {
 
@@ -17934,7 +18085,7 @@ function _chatKeydown(e) {
 
 
 
-/* ΓöÇΓöÇ Initialize chat font size from localStorage ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ */
+/* --- Initialize chat font size from localStorage ------------------------------- */
 
 (function() {
 
