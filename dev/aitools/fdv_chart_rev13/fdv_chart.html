@@ -3800,6 +3800,10 @@ function _onSamplingModeChange() {
 
     _updateSamplingStatus();
 
+    /* AUTO-REDRAW: Immediately redraw chart when sampling mode changes */
+    console.log('[Sampling Mode Change] Changed to "' + _samplingMode + '" - redrawing chart...');
+    drawPlot();
+
 }
 
 
@@ -14386,9 +14390,29 @@ function drawBoxPlot() {
 
                         
 
-                        /* Both not in z-order list: keep alphabetical */
+                        /* Both not in z-order list: try numeric sort first */
 
-                        if (aIdx === -1 && bIdx === -1) return a.localeCompare(b, undefined, {numeric:true});
+                        if (aIdx === -1 && bIdx === -1) {
+
+                            /* Try to parse as numbers for proper numeric ordering */
+
+                            var aNum = parseFloat(a);
+
+                            var bNum = parseFloat(b);
+
+                            /* If both are valid numbers, compare numerically (handles negatives correctly) */
+
+                            if (!isNaN(aNum) && !isNaN(bNum)) {
+
+                                return aNum - bNum;
+
+                            }
+
+                            /* Fall back to string comparison with numeric hints */
+
+                            return a.localeCompare(b, undefined, {numeric:true});
+
+                        }
 
                         
 
@@ -14412,19 +14436,24 @@ function drawBoxPlot() {
 
 
 
-    /* Helper: create jittered scatter data points - NO JITTER: points always at exact group center */
+    /* Helper: create scatter data points with optional jitter */
 
     var scatterData = [];
+    var useJitter = window._useScatterJitter || (document.getElementById('bp-jitter') && document.getElementById('bp-jitter').checked);
 
     keys.forEach(function(k, gIdx) {
 
         var groupData = groups[k];
 
-        groupData.forEach(function(yVal) {
+        groupData.forEach(function(yVal, ptIdx) {
 
-            /* No jitter: point stays at exact group index */
+            /* Apply jitter if enabled */
 
             var xJitter = gIdx;
+            if (useJitter) {
+                /* Add random jitter around the group center (±0.2 range) */
+                xJitter = gIdx + (Math.random() - 0.5) * 0.4;
+            }
 
             scatterData.push({ x: xJitter, y: yVal, gIdx: gIdx });
 
@@ -14432,7 +14461,7 @@ function drawBoxPlot() {
 
     });
 
-    console.log('[boxplot] Generated', scatterData.length, 'scatter points with NO jitter (exact group positions)');
+    console.log('[boxplot] Generated', scatterData.length, 'scatter points with', useJitter ? 'jitter' : 'NO jitter');
 
 
 
@@ -14494,17 +14523,19 @@ function drawBoxPlot() {
 
             if (minEl && (!minEl.value || minEl.value === '')) {
 
-                /* For log scale: auto min should be one order of magnitude below yMin */
+                /* For log scale: auto min slightly below data minimum */
 
-                minEl.value = Math.max(0.1, Math.pow(10, Math.floor(Math.log10(yMin)) - 1)).toPrecision(6);
+                var logMin = Math.floor(Math.log10(yMin));
+                minEl.value = Math.pow(10, logMin).toPrecision(6);
 
             }
 
             if (maxEl && (!maxEl.value || maxEl.value === '')) {
 
-                /* For log scale: auto max should be one order of magnitude above yMax */
+                /* For log scale: auto max slightly above data maximum */
 
-                maxEl.value = Math.pow(10, Math.ceil(Math.log10(yMax)) + 1).toPrecision(6);
+                var logMax = Math.ceil(Math.log10(yMax));
+                maxEl.value = Math.pow(10, logMax).toPrecision(6);
 
             }
 
@@ -14620,7 +14651,9 @@ function drawBoxPlot() {
 
                     type: yLog ? 'logarithmic' : 'linear',
 
-                    title: { display: true, text: _axisYTitle(yCol + (yRx ? ' [' + yRx + ']' : '')) }
+                    title: { display: true, text: _axisYTitle(yCol + (yRx ? ' [' + yRx + ']' : '')) },
+
+                    beginAtZero: !yLog  /* Never begin at zero on log scale */
 
                 }, getAxisScale('y-min', 'y-max', 'y-step'))
 
