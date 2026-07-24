@@ -1,12 +1,12 @@
 ﻿#!/usr/bin/env python3
 import sys
 
-log_path = r'd:\FDV\git\fdv_dashboard\dev\aitools\fdv_chart\fdv_chart_startup.log'
+log_path = r'd:\FDV\git\fdv_dashboard\dev\aitools\fdv_chart_rev13\fdv_chart_startup.log'
 with open(log_path, 'w') as f:
     f.write("STARTUP_BEGIN\n")
 
 # Also set up a debug log file
-DEBUG_LOG = r'd:\FDV\git\fdv_dashboard\dev\aitools\fdv_chart\fdv_chart_debug.log'
+DEBUG_LOG = r'd:\FDV\git\fdv_dashboard\dev\aitools\fdv_chart_rev13\fdv_chart_debug.log'
 
 def debug_log(msg):
     """Write message to debug log and stdout"""
@@ -17,6 +17,8 @@ def debug_log(msg):
     except:
         pass
     print(msg, flush=True)
+
+debug_log("[INIT] debug_log function is working!")
 
 print("PYTHON_START")
 sys.stdout.flush()
@@ -948,31 +950,34 @@ class RequestHandler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         """Handle GET requests"""
-        print(f"[DEBUG] GET {self.path}", flush=True)
+        msg = f"[GET] {self.path} - {time.time()}"
+        print(msg, flush=True)
+        sys.stdout.flush()
+        debug_log(f"[GET] {self.path}")
         # Treat /fdv_chart.html (with or without query string) as an alias for /,
         # so links/bookmarks created against the static dev server still work.
         _root_path = self.path.split('?', 1)[0]
         if _root_path in ('/', '/fdv_chart.html', '/index.html'):
             # Serve HTML interface
             try:
-                print(f"[DEBUG] Serving root path", flush=True)
+                debug_log(f"[GET] Serving root path")
                 body = get_html().encode('utf-8')
-                print(f"[DEBUG] Got HTML body: {len(body)} bytes", flush=True)
+                debug_log(f"[GET] Got HTML body: {len(body)} bytes")
                 self.send_response(200)
-                print(f"[DEBUG] Sent response code", flush=True)
+                debug_log(f"[GET] Sent response code")
                 self.send_header('Content-Type', 'text/html; charset=utf-8')
                 self.send_header('Content-Length', len(body))
                 self.send_header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
                 self.send_header('Pragma', 'no-cache')
                 self.send_header('Expires', '0')
                 self.send_header('ETag', f'"{int(time.time() * 1000)}"')
-                print(f"[DEBUG] Sending headers", flush=True)
+                debug_log(f"[GET] Sending headers")
                 self.end_headers()
-                print(f"[DEBUG] Headers done, writing body", flush=True)
+                debug_log(f"[GET] Headers done, writing body")
                 self.wfile.write(body)
-                print(f"[DEBUG] Body written, done", flush=True)
+                debug_log(f"[GET] Body written, done")
             except Exception as e:
-                print(f"ERROR serving /: {e}", flush=True)
+                debug_log(f"[GET] ERROR serving /: {e}")
                 import traceback
                 traceback.print_exc(file=sys.stderr)
                 try:
@@ -1414,6 +1419,7 @@ class RequestHandler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         """Handle POST requests"""
+        debug_log(f"[POST] {self.path}")
         if self.path == '/parse_path':
             # Server-side path parse — starts async job, returns job_id immediately
             try:
@@ -2471,26 +2477,69 @@ class RequestHandler(BaseHTTPRequestHandler):
             try:
                 length = int(self.headers.get('Content-Length', 0))
                 body   = json.loads(self.rfile.read(length).decode('utf-8'))
-                d      = (body.get('dir', '') or '').strip()
-                fname  = os.path.basename((body.get('file', '') or '').strip())
-                if not d or not fname:
-                    raise ValueError('dir and file are required')
-                if not (fname.endswith('.fdv_recipe') or fname.endswith('.fdv_session')):
-                    raise ValueError('Invalid file type')
-                fpath = os.path.join(d, fname)
-                if not os.path.isfile(fpath):
-                    raise ValueError('File not found: ' + fname)
                 os.remove(fpath)
                 _send_json(self, 200, {'success': True})
             except Exception as e:
                 _send_json(self, 200, {'success': False, 'error': str(e)})
 
+        elif self.path == '/calculate_quantiles':
+            """Server-side cum_sigma quantile calculation endpoint"""
+            try:
+                content_len = int(self.headers.get('Content-Length', 0))
+                body = json.loads(self.rfile.read(content_len).decode('utf-8'))
+                
+                tile_data = body.get('tileData', [])
+                color_groups = body.get('colorGroups', {})
+                
+                if not tile_data or not color_groups:
+                    raise ValueError('tileData and colorGroups required')
+                
+                # Calculate quantiles on server using Python (much faster)
+                rank_to_sigma = {}
+                
+                for group_name, group_indices in color_groups.items():
+                    # Extract values for this group
+                    group_items = []
+                    for idx in group_indices:
+                        if idx >= 0 and idx < len(tile_data):
+                            val = tile_data[idx]
+                            if val is not None:
+                                group_items.append((idx, val))
+                    
+                    if not group_items:
+                        continue
+                    
+                    # Sort by value to get ranks within group
+                    group_items_sorted = sorted(group_items, key=lambda x: x[1])
+                    group_n = len(group_items_sorted)
+                    
+                    # Calculate sigma for each item using percentile position
+                    for sort_idx, (orig_idx, val) in enumerate(group_items_sorted):
+                        # Percentile position (0 to 1) within this group
+                        pct = (sort_idx + 0.5) / group_n
+                        
+                        # Simple inverse normal approximation
+                        import math
+                        if pct < 0.5:
+                            sigma = -math.sqrt(-2 * math.log(2 * pct))
+                        else:
+                            sigma = math.sqrt(-2 * math.log(2 * (1 - pct)))
+                        
+                        rank_to_sigma[orig_idx] = sigma
+                
+                debug_log(f"[calculate_quantiles] Calculated {len(rank_to_sigma)} quantiles for {len(color_groups)} groups")
+                _send_json(self, 200, {'success': True, 'rankToSigma': rank_to_sigma})
+                
+            except Exception as e:
+                debug_log(f"[calculate_quantiles] Error: {e}")
+                _send_json(self, 400, {'success': False, 'error': str(e)})
+
         else:
             self.send_error(404)
 
     def log_message(self, format, *args):
-        """Suppress request logging"""
-        pass
+        """Log request messages to stdout"""
+        print(f"[{self.log_date_time_string()}] {format % args}", flush=True)
 
 
 def main():
@@ -2518,7 +2567,7 @@ def main():
         except ValueError:
             _SERVER_STORE_DIR = a.strip()
 
-    log_file = r'd:\FDV\git\fdv_dashboard\dev\aitools\fdv_chart\server.log'
+    log_file = r'd:\FDV\git\fdv_dashboard\dev\aitools\fdv_chart_rev13\server.log'
     with open(log_file, 'w') as f:
         f.write("Starting FDV Chart Parser...\n")
         f.flush()
@@ -2542,6 +2591,22 @@ def main():
             f.flush()
         print("FDV Chart Parser is running at http://0.0.0.0:{} (all interfaces)".format(_SERVER_PORT), file=sys.stderr, flush=True)
         print("Press Ctrl+C to stop", file=sys.stderr, flush=True)
+        
+        # Start heartbeat thread to show server is alive
+        def heartbeat():
+            start_time = time.time()
+            while True:
+                time.sleep(30)
+                uptime = int(time.time() - start_time)
+                with parse_jobs_lock:
+                    pending = sum(1 for j in parse_jobs.values() if j.get('state') == 'pending')
+                    running = sum(1 for j in parse_jobs.values() if j.get('state') == 'running')
+                    completed = sum(1 for j in parse_jobs.values() if j.get('state') == 'complete')
+                debug_log(f"[HEARTBEAT] uptime={uptime}s, pending={pending}, running={running}, completed={completed}")
+        
+        hb_thread = threading.Thread(target=heartbeat, daemon=True)
+        hb_thread.start()
+        
         server.serve_forever()
     except KeyboardInterrupt:
         print("\nShutting down...", file=sys.stderr, flush=True)

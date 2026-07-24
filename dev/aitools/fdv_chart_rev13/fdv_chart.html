@@ -312,6 +312,16 @@
 
                                     white-space: normal; text-overflow: clip; }
 
+        /* Progress bar for tile rendering */
+
+        #tile-progress-bar {
+
+            background: linear-gradient(90deg, #007bff, #0056b3);
+
+            box-shadow: 0 2px 4px rgba(0, 86, 179, 0.3);
+
+        }
+
         /* Main chart editable title bar */
 
         #chart-title-bar {
@@ -1315,6 +1325,26 @@
                    style="width:80px;padding:3px 6px;font-size:0.85em;border:1px solid #adb5bd;border-radius:3px"
 
                    title="Maximum number of points to render (100-100,000)">
+
+        </label>
+
+        <label id="decimation-method-label" style="font-size:0.85em;color:#555;white-space:nowrap;display:none;margin-left:8px">
+
+            Bin method:
+
+            <select id="decimation-method" style="padding:3px 6px;font-size:0.85em;border:1px solid #adb5bd;border-radius:3px;width:100px"
+
+                    title="How to aggregate points within each bin">
+
+                <option value="average">Average</option>
+
+                <option value="max">Max Y</option>
+
+                <option value="min">Min Y</option>
+
+                <option value="median">Median</option>
+
+            </select>
 
         </label>
 
@@ -3758,6 +3788,16 @@ function _onSamplingModeChange() {
 
     _maxPoints    = parseInt(document.getElementById('max-points').value) || 10000;
 
+    /* Show decimation method selector only when Decimation mode is active */
+
+    var decimMethodLabel = document.getElementById('decimation-method-label');
+
+    if (decimMethodLabel) {
+
+        decimMethodLabel.style.display = (_samplingMode === 'decimation') ? 'inline-block' : 'none';
+
+    }
+
     _updateSamplingStatus();
 
 }
@@ -3862,39 +3902,146 @@ function _applyPointSampling(points) {
 
     if (mode === 'decimation') {
 
-        // Bin-based decimation - preserve shape by averaging within bins
+        // Bin-based decimation - aggregate within bins SEPARATELY BY GROUP to avoid cross-contamination
+        // NOTE: For Cum Sigma and Cumproba plots, decimation aggregates computed values (Y: sigma or probability),
+        // not the original data (X). This can distort the distribution since aggregating ordinal ranks loses
+        // information about the original data spread. For both cumulative plots, Random sampling is recommended.
+        // However, decimation still provides memory benefits and reasonable approximations for visual inspection.
 
-        var binSize = Math.ceil(points.length / maxPts);
+        var aggregateMethod = document.getElementById('decimation-method') ?
+                              document.getElementById('decimation-method').value : 'average';
+
+        console.log('[Sampling] Decimation starting: ' + points.length + ' points, maxPts=' + maxPts + ', method=' + aggregateMethod);
+
+        
+
+        /* Group points by their color/group to ensure NO cross-contamination between DUTs/groups */
+
+        var groupedPoints = {};
+
+        points.forEach(function(p) {
+
+            var groupKey = (p.group !== undefined && p.group !== null) ? String(p.group) : '(default)';
+
+            if (!groupedPoints[groupKey]) { groupedPoints[groupKey] = []; }
+
+            groupedPoints[groupKey].push(p);
+
+        });
+
+        
 
         var result = [];
 
-        for (var b = 0; b < points.length; b += binSize) {
+        
 
-            var bin = points.slice(b, b + binSize);
+        /* Decimate each group separately */
 
-            if (bin.length > 0) {
+        Object.keys(groupedPoints).forEach(function(groupKey) {
 
-                var avgX = bin.reduce(function(s, p) { return s + (p.x || p[0] || 0); }, 0) / bin.length;
+            var groupPoints = groupedPoints[groupKey];
 
-                var avgY = bin.reduce(function(s, p) { return s + (p.y || p[1] || 0); }, 0) / bin.length;
+            var binSize = Math.ceil(groupPoints.length / maxPts);  /* Calculate binSize per group */
 
-                var newPt = { x: avgX, y: avgY };
+            
 
-                // Preserve metadata from first point in bin for color grouping
+            for (var b = 0; b < groupPoints.length; b += binSize) {
 
-                if (bin[0].group !== undefined) newPt.group = bin[0].group;
+                var bin = groupPoints.slice(b, b + binSize);
 
-                if (bin[0]._ri !== undefined) newPt._ri = bin[0]._ri;
+                if (bin.length > 0) {
 
-                if (bin[0].splitGroup !== undefined) newPt.splitGroup = bin[0].splitGroup;
+                    var newPt;
 
-                result.push(newPt);
+                    
+
+                    if (aggregateMethod === 'average') {
+
+                        // Average of all points in bin
+
+                        var avgX = bin.reduce(function(s, p) { return s + (p.x || p[0] || 0); }, 0) / bin.length;
+
+                        var avgY = bin.reduce(function(s, p) { return s + (p.y || p[1] || 0); }, 0) / bin.length;
+
+                        newPt = { x: avgX, y: avgY };
+
+                    }
+
+                    else if (aggregateMethod === 'max') {
+
+                        // Maximum Y value in bin, average X
+
+                        var maxY = Math.max.apply(null, bin.map(function(p) { return p.y || p[1] || 0; }));
+
+                        var avgX = bin.reduce(function(s, p) { return s + (p.x || p[0] || 0); }, 0) / bin.length;
+
+                        newPt = { x: avgX, y: maxY };
+
+                    }
+
+                    else if (aggregateMethod === 'min') {
+
+                        // Minimum Y value in bin, average X
+
+                        var minY = Math.min.apply(null, bin.map(function(p) { return p.y || p[1] || 0; }));
+
+                        var avgX = bin.reduce(function(s, p) { return s + (p.x || p[0] || 0); }, 0) / bin.length;
+
+                        newPt = { x: avgX, y: minY };
+
+                    }
+
+                    else if (aggregateMethod === 'median') {
+
+                        // Median of Y values in bin, average X
+
+                        var yVals = bin.map(function(p) { return p.y || p[1] || 0; }).sort(function(a,b) { return a-b; });
+
+                        var medianY = yVals.length % 2 === 0 ? 
+
+                                      (yVals[yVals.length/2-1] + yVals[yVals.length/2]) / 2 : 
+
+                                      yVals[Math.floor(yVals.length/2)];
+
+                        var avgX = bin.reduce(function(s, p) { return s + (p.x || p[0] || 0); }, 0) / bin.length;
+
+                        newPt = { x: avgX, y: medianY };
+
+                    }
+
+                    else {
+
+                        // Default to average
+
+                        var avgX = bin.reduce(function(s, p) { return s + (p.x || p[0] || 0); }, 0) / bin.length;
+
+                        var avgY = bin.reduce(function(s, p) { return s + (p.y || p[1] || 0); }, 0) / bin.length;
+
+                        newPt = { x: avgX, y: avgY };
+
+                    }
+
+                    
+
+                    // Preserve metadata from first point in bin for color grouping
+
+                    if (bin[0].group !== undefined) newPt.group = bin[0].group;
+
+                    if (bin[0]._ri !== undefined) newPt._ri = bin[0]._ri;
+
+                    if (bin[0].splitGroup !== undefined) newPt.splitGroup = bin[0].splitGroup;
+
+                    result.push(newPt);
+
+                }
 
             }
 
-        }
+        });
 
-        console.log('[Sampling] Decimation: kept ' + result.length + ' of ' + points.length);
+        
+
+        console.log('[Sampling] Decimation (' + aggregateMethod + '): kept ' + result.length + ' of ' + points.length + ' (grouped by color - no cross-contamination)');
 
         return result;
 
@@ -3988,9 +4135,10 @@ async function parseFile() {
 
             form.append('regex_exclude', regexExclude);
 
-            // Add 30-minute timeout for large file uploads (6GB can take up to 15-20 min)
+            // Add 3-hour timeout for large file uploads/processing (can take 1-2 hours for 6GB+)
+            // Must be >= server timeout which is 600s + (file_size_gb * 600), capped at 7200s
             var controller = new AbortController();
-            var timeoutId = setTimeout(() => controller.abort(), 1800000); // 30 minutes
+            var timeoutId = setTimeout(() => controller.abort(), 10800000); // 3 hours
             resp = await fetch('/parse_multi', { method: 'POST', body: form, signal: controller.signal });
             clearTimeout(timeoutId);
 
@@ -4020,9 +4168,10 @@ async function parseFile() {
 
             form2.append('regex_exclude', regexExclude);
 
-            // Add 30-minute timeout for large file uploads (6GB can take up to 15-20 min)
+            // Add 3-hour timeout for large file uploads/processing (can take 1-2 hours for 6GB+)
+            // Must be >= server timeout which is 600s + (file_size_gb * 600), capped at 7200s
             var controller = new AbortController();
-            var timeoutId = setTimeout(() => controller.abort(), 1800000); // 30 minutes
+            var timeoutId = setTimeout(() => controller.abort(), 10800000); // 3 hours
             resp = await fetch('/parse_multi', { method: 'POST', body: form2, signal: controller.signal });
             clearTimeout(timeoutId);
 
@@ -4885,12 +5034,18 @@ function readFilteredFromMemory(xCol, yCol, groupCol, xRx, yRx, ivXlo, ivXhi, iv
 
     var points = [], skipped = 0;
     /* Apply smart sampling to prevent OOM while maintaining group discovery accuracy.
+       CRITICAL: Only apply if user hasn't disabled sampling globally (sampling-mode != 'none')
        With two-pass split chart approach: pass 1 discovers groups (no sampling),
        pass 2 populates data (with sampling). We sample here to keep raw data bounded. */
+    var userMode = document.getElementById('sampling-mode') ? document.getElementById('sampling-mode').value : 'none';
     var samplingStep = 1;
     var totalFiltered = filteredIndices.length;
-    if (totalFiltered > 150000) {
+    
+    if (userMode !== 'none' && totalFiltered > 150000) {
         samplingStep = Math.ceil(totalFiltered / 150000);
+        console.log('[readFilteredFromMemory] Sampling enabled (mode=' + userMode + '): ' + totalFiltered + ' rows -> sampling step=' + samplingStep);
+    } else if (userMode === 'none') {
+        console.log('[readFilteredFromMemory] Sampling disabled (mode=none): using ALL ' + totalFiltered + ' rows');
     }
 
     for (var r = 0; r < filteredIndices.length; r++) {
@@ -9866,7 +10021,7 @@ function _buildTileChart(canvas, ct, tileData, xCol, yCol, xRx, yRx, colCol, col
 
                 borderWidth: 1.8,
 
-                pointRadius: n <= 2000 ? 2 : 0,
+                pointRadius: n <= 2000 ? 2 : 1.5,
 
                 pointHoverRadius: n <= 2000 ? 4 : 0,
 
@@ -9968,7 +10123,7 @@ function _buildTileChart(canvas, ct, tileData, xCol, yCol, xRx, yRx, colCol, col
 
             var g = innerSplitCol ? innerSplitKey(pt) : colorKey(pt);
 
-            return { v: pt.x, idx: idx, group: g };
+            return { v: pt.x, idx: pt._ri !== undefined ? pt._ri : idx, group: g };
 
         });
 
@@ -9993,74 +10148,68 @@ function _buildTileChart(canvas, ct, tileData, xCol, yCol, xRx, yRx, colCol, col
         /* Calculate theoretical quantiles PER GROUP based on each group's own ranking */
 
         var rankToSigmaTile = {};  /* Maps original index -> theoretical sigma */
-
-        Object.keys(csGroups).forEach(function(groupName) {
-
-            var groupItems = csGroups[groupName];
-
-            
-
-            /* Sort this group's items by value to get ranks within the group */
-
-            var sortedGroupByValue = groupItems.slice().sort(function(a,b){ return a.v - b.v; });
-
-            var groupN = sortedGroupByValue.length;
-
-            
-
-            /* Calculate sigma for each item in this group based on its rank within the group */
-
-            sortedGroupByValue.forEach(function(item, sortIdx) {
-
-                /* Percentile position (0 to 1) within this group */
-
-                var pct = (sortIdx + 0.5) / groupN;  /* Use midpoint for better estimation */
-
-                
-
-                /* Simple inverse normal using approximation */
-
-                var sigma;
-
-                if (pct < 0.5) {
-
-                    sigma = -Math.sqrt(-2 * Math.log(2 * pct));
-
-                } else {
-
-                    sigma = Math.sqrt(-2 * Math.log(2 * (1 - pct)));
-
-                }
-
-                rankToSigmaTile[item.idx] = sigma;
-
-            });
-
-        });
-
         
-
+        /* SYNCHRONOUS calculation: _buildTileChart is called synchronously from _drawSplitCharts,
+           so we need to return immediately. Sigma calculation is fast enough for ~10K sampled points per tile. */
+        
+        console.log('[_buildTileChart cum_sigma] Starting SYNCHRONOUS sigma calculation for ' + Object.keys(csGroups).length + ' groups');
+        
+        /* Process each group synchronously */
+        Object.keys(csGroups).forEach(function(groupName, groupIndex) {
+            var groupItems = csGroups[groupName];
+            
+            /* Sort this group's items by value to get ranks within the group */
+            var sortedGroupByValue = groupItems.slice().sort(function(a,b){ return a.v - b.v; });
+            var groupN = sortedGroupByValue.length;
+            
+            console.log('[_buildTileChart cum_sigma] Group ' + (groupIndex + 1) + '/' + Object.keys(csGroups).length + ': ' + groupName + ' with ' + groupN + ' items');
+            
+            /* Process all items in this group - synchronously */
+            for (var i = 0; i < sortedGroupByValue.length; i++) {
+                var item = sortedGroupByValue[i];
+                var sortIdx = i;
+                
+                /* Percentile position (0 to 1) within this group */
+                var pct = (sortIdx + 0.5) / groupN;
+                
+                /* Simple inverse normal using approximation */
+                var sigma;
+                if (pct < 0.5) {
+                    sigma = -Math.sqrt(-2 * Math.log(2 * pct));
+                } else {
+                    sigma = Math.sqrt(-2 * Math.log(2 * (1 - pct)));
+                }
+                rankToSigmaTile[item.idx] = sigma;
+                if (i < 3 || i === sortedGroupByValue.length - 1) {
+                    console.log('[_buildTileChart cum_sigma SYNC CALC] Group ' + groupName + ' Item idx=' + item.idx + ': sortIdx=' + sortIdx + '/' + groupN + ', pct=' + pct.toFixed(4) + ', sigma=' + sigma.toFixed(4));
+                }
+            }
+        });
+        
+        console.log('[_buildTileChart cum_sigma] SYNCHRONOUS sigma calculation complete, rankToSigmaTile has ' + Object.keys(rankToSigmaTile).length + ' entries');
+        
+        /* Continue immediately with chart creation (synchronous flow) */
         /* Read z-order from UI */
 
-        var zOrderElem = document.getElementById('z-order-input');
+            var zOrderElem = document.getElementById('z-order-input');
 
-        var zOrderInput = (zOrderElem && zOrderElem.value) ? zOrderElem.value.trim() : '';
+            var zOrderInput = (zOrderElem && zOrderElem.value) ? zOrderElem.value.trim() : '';
 
-        var zOrderList = [];
+            var zOrderList = [];
 
-        if (zOrderInput) {
+            if (zOrderInput) {
 
-            zOrderList = zOrderInput.split(',').map(function(s) { return s.trim(); });
+                zOrderList = zOrderInput.split(',').map(function(s) { return s.trim(); });
 
-        }
+            }
 
-        
+            
 
-        /* Sort groups based on z-order */
+            /* Sort groups based on z-order */
 
-        var csOrder_dedup = Object.keys(csGroups);
+            var csOrder_dedup = Object.keys(csGroups);
 
-        var csKeys;
+            var csKeys;
 
         
 
@@ -10186,6 +10335,8 @@ function _buildTileChart(canvas, ct, tileData, xCol, yCol, xRx, yRx, colCol, col
 
                 var sigma = rankToSigmaTile[item.idx];
 
+                console.log('[_buildTileChart cum_sigma] Group ' + g + ' Item idx=' + item.idx + ': v=' + item.v.toFixed(4) + ', sigma=' + (sigma !== undefined ? sigma.toFixed(4) : 'UNDEFINED'));
+
                 cumulativeData.push({ x: item.v, y: sigma });
 
             });
@@ -10195,6 +10346,10 @@ function _buildTileChart(canvas, ct, tileData, xCol, yCol, xRx, yRx, colCol, col
             /* Sort by X for smooth line rendering */
 
             cumulativeData.sort(function(a, b) { return a.x - b.x; });
+
+            /* Plot ALL points - no decimation */
+
+            console.log('[_buildTileChart cum_sigma] Group ' + g + ': plotting all ' + cumulativeData.length + ' points (no decimation)');
 
             
 
@@ -10216,7 +10371,7 @@ function _buildTileChart(canvas, ct, tileData, xCol, yCol, xRx, yRx, colCol, col
 
                 borderWidth: 0.5,
 
-                pointRadius: n <= 2000 ? 2 : 0,
+                pointRadius: n <= 2000 ? 2 : 1.5,
 
                 pointHoverRadius: n <= 2000 ? 4 : 0,
 
@@ -10287,7 +10442,6 @@ function _buildTileChart(canvas, ct, tileData, xCol, yCol, xRx, yRx, colCol, col
                     x: Object.assign({ type: xLog ? 'logarithmic' : 'linear',
 
                         title: { display: true, text: _axisXTitle('Observed ' + xCol + (xRx ? ' ['+xRx+']' : '') + (xLog ? ' (log)' : '')) } }, xScale),
-
                     y: Object.assign({ title: { display: true, text: _axisYTitle('Theoretical Quantiles (Sigma / --)') },
 
                          grace: 0 }, yScale)
@@ -10748,7 +10902,7 @@ function _drawSplitCharts() {
 
     /* Collect all points, bucket by split key */
 
-    var isXOnly = ct === 'histogram' || ct === 'cumproba' || ct === 'rcdf' || ct === 'cum_sigma';
+    var isXOnly = ct === 'histogram' || ct === 'cumproba' || ct === 'rcdf';
 
     /* WARN if dataset is too large - check BEFORE loading data */
     if (filteredIndices.length > 2000000) {
@@ -10769,6 +10923,16 @@ function _drawSplitCharts() {
                     colCol || null, xRx, isXOnly ? null : yRx,
 
                     iv.xLo, iv.xHi, isXOnly ? '' : iv.yLo, isXOnly ? '' : iv.yHi);
+
+
+
+    /* APPLY SAMPLING if user configured it - CRITICAL for large datasets in split charts */
+    var sampledPoints = _applyPointSampling(res.points);
+    var wasSampledSplitChart = (sampledPoints.length < res.points.length);
+    if (wasSampledSplitChart) {
+        console.log('[_drawSplitCharts] Applied sampling: ' + res.points.length + ' → ' + sampledPoints.length + ' points per tile');
+        res.points = sampledPoints;  /* Use sampled points for rest of split chart computation */
+    }
 
 
 
@@ -10880,7 +11044,7 @@ function _drawSplitCharts() {
 
             var si2  = splitCol ? currentHeaders.indexOf(splitCol) : -1;
 
-            var pt2  = { x: xv2, y: isXOnly ? xv2 : yv2, _ri: rowIdx };
+            var pt2  = { x: xv2, y: yv2, _ri: rowIdx };
 
             if (gi2 >= 0 && row[gi2] != null)  pt2.group      = String(row[gi2]);
 
@@ -10930,149 +11094,136 @@ function _drawSplitCharts() {
 
 
 
-    keys.forEach(function(key, ki) {
-
+    /* CRITICAL: Process tiles asynchronously to avoid OOM crashes during cum_sigma rendering
+       For cum_sigma with 24 tiles, each tile runs expensive quantile calculations.
+       Without yields between tiles, all calculations run synchronously → heap exhaustion.
+       Solution: Yield after every tile to allow GC and browser responsiveness. */
+    
+    var tileIndex = 0;
+    var tileStartTime = Date.now();
+    
+    /* Create progress bar container */
+    var progressBar = document.getElementById('tile-progress-bar');
+    if (!progressBar) {
+        progressBar = document.createElement('div');
+        progressBar.id = 'tile-progress-bar';
+        progressBar.style.display = 'none';
+        progressBar.style.position = 'fixed';
+        progressBar.style.top = '0';
+        progressBar.style.left = '0';
+        progressBar.style.right = '0';
+        progressBar.style.height = '3px';
+        progressBar.style.backgroundColor = '#007bff';
+        progressBar.style.zIndex = '10000';
+        progressBar.style.transition = 'width 0.3s ease';
+        document.body.appendChild(progressBar);
+    }
+    
+    /* Show progress bar for multi-tile charts */
+    if (keys.length > 1) {
+        progressBar.style.display = 'block';
+        progressBar.style.width = '5%';
+    }
+    
+    function processTileAsync() {
+        if (tileIndex >= keys.length) {
+            /* All tiles complete */
+            _wireTileTitles();
+            var filtNote  = hasActiveFilters() ? ' - filtered' : '';
+            var totalBucketed = keys.reduce(function(s, k){ return s + (buckets[k]||[]).length; }, 0);
+            var elapsedMs = Date.now() - tileStartTime;
+            var elapsedSec = (elapsedMs / 1000).toFixed(1);
+            status.textContent = keys.length + ' tiles \u00b7 ' + totalBucketed.toLocaleString() +
+                ' pts \u00b7 split by ' + scCol + (scRx ? ' ['+scRx+']' : '') +
+                ' \u2192 keys: ' + (keys.length <= 8 ? keys.join(', ') : keys.slice(0,8).join(', ') + '\u2026') +
+                filtNote + _intervalNote() + ' \u2022 ' + elapsedSec + 's';
+            
+            /* Hide progress bar and reset */
+            progressBar.style.width = '100%';
+            setTimeout(function() { progressBar.style.display = 'none'; }, 500);
+            
+            _spinStop();
+            return;
+        }
+        
+        var key = keys[tileIndex];
+        var ki = tileIndex;
+        tileIndex++;
+        
+        /* Update progress bar */
+        var progressPercent = Math.min(95, (tileIndex / keys.length) * 100);
+        progressBar.style.width = progressPercent + '%';
+        
         var tile  = document.createElement('div');
-
         tile.className   = 'split-tile';
-
         tile.style.width  = tileW;
-
         tile.style.height = tileH + 'px';
-
-        tile.dataset.chartId = (ki + 1);  /* Store chart ID (1-indexed) */
-
-
+        tile.dataset.chartId = (ki + 1);
 
         var titleEl = document.createElement('div');
-
         titleEl.className   = 'split-tile-title';
 
-        
-
         /* Get pre-assigned color from the map */
-
         var tileColor = window._tileGroupColorMap[key] || PALETTE[0];
 
-        
-
         /* Apply the color as a background for the title */
-
-        titleEl.style.backgroundColor = tileColor + '33';  /* Light background */
-
-        titleEl.style.borderLeft = '4px solid ' + tileColor;  /* Colored left border */
-
-        
+        titleEl.style.backgroundColor = tileColor + '33';
+        titleEl.style.borderLeft = '4px solid ' + tileColor;
 
         titleEl.innerHTML = '<span style="flex:1">' + scCol + ' = ' + escHtml(key) + '  (n=' + (buckets[key]||[]).length + ')</span>';
-
         tile.appendChild(titleEl);
 
-
-
         var canvasWrap = document.createElement('div');
-
         canvasWrap.className = 'split-tile-canvas';
-
-        canvasWrap.style.position = 'relative';  /* Make it a positioning context for the badge */
-
+        canvasWrap.style.position = 'relative';
         var canvas = document.createElement('canvas');
-
         canvasWrap.appendChild(canvas);
 
-        
-
-        /* Add chart ID badge at bottom right, inside the canvas area */
-
+        /* Add chart ID badge at bottom right */
         var badgeEl = document.createElement('div');
-
         badgeEl.style.position = 'absolute';
-
         badgeEl.style.bottom = '10px';
-
         badgeEl.style.right = '8px';
-
         badgeEl.style.color = '#495057';
-
         badgeEl.style.fontWeight = 'bold';
-
         badgeEl.style.fontSize = '0.85em';
-
         badgeEl.style.pointerEvents = 'none';
-
         badgeEl.style.zIndex = '5';
-
         badgeEl.style.padding = '2px 6px';
-
         badgeEl.textContent = (ki + 1);
-
         canvasWrap.appendChild(badgeEl);
 
-        
-
         tile.appendChild(canvasWrap);
-
         grid.appendChild(tile);
 
-
-
+        console.log('[_drawSplitCharts async] Processing tile ' + (ki+1) + ' of ' + keys.length);
+        
         var inst = _buildTileChart(canvas, ct, buckets[key] || [],
-
                     xCol, yCol, xRx, yRx, colCol, colorRx, xLog, yLog, splitCol, splitRx, ki+1);
-
         if (inst) {
-
             _splitInsts.push(inst);
-
             /* Attach ResizeObserver to tile for responsive resize handling */
-
             if (window.ResizeObserver) {
-
                 var resizeObs = new ResizeObserver(function() {
-
                     console.log('[ResizeObserver] Tile resized, updating chart');
-
                     if (inst && inst.canvas && inst.canvas.parentElement) {
-
                         var container = inst.canvas.parentElement;
-
                         inst.canvas.width = container.clientWidth;
-
                         inst.canvas.height = container.clientHeight;
-
                         inst.resize();
-
                         inst.update('none');
-
                     }
-
                 });
-
                 resizeObs.observe(tile);
-
             }
-
         }
-
-    });
-
-
-
-    _wireTileTitles();
-
-    var filtNote  = hasActiveFilters() ? ' - filtered' : '';
-
-    var totalBucketed = keys.reduce(function(s, k){ return s + (buckets[k]||[]).length; }, 0);
-
-    status.textContent = keys.length + ' tiles \u00b7 ' + totalBucketed.toLocaleString() +
-
-        ' pts \u00b7 split by ' + scCol + (scRx ? ' ['+scRx+']' : '') +
-
-        ' \u2192 keys: ' + (keys.length <= 8 ? keys.join(', ') : keys.slice(0,8).join(', ') + '\u2026') +
-
-        filtNote + _intervalNote();
-
-    _spinStop();
+        
+        /* Yield to browser after each tile to allow GC and prevent OOM */
+        setTimeout(processTileAsync, 0);
+    }
+    
+    /* Start async tile processing */
+    processTileAsync();
 
     } catch(e) { 
         var status = document.getElementById('plot-status');
@@ -12900,6 +13051,43 @@ function drawCumProba() {
 
     var skipped = res.skipped;
 
+    
+
+    /* Apply point sampling to avoid OOM and decimation distortion for large datasets */
+    /* FOR CUMPROBA: FORCE RANDOM sampling mode to avoid distorting probability distribution */
+    var userMode = document.getElementById('sampling-mode') ? document.getElementById('sampling-mode').value : 'none';
+    var maxPts = document.getElementById('max-points') ? parseInt(document.getElementById('max-points').value) : 10000;
+    maxPts = maxPts || 10000;
+    
+    /* Override to Random if user selected Decimation (decimation distorts cumulative plots) */
+    if (userMode === 'decimation') {
+        console.log('[Cumproba] FORCING Random sampling (user selected Decimation) - Decimation with Max Y distorts cumulative probability distribution');
+        console.log('[Cumproba] Original points: ' + points.length + ', Max points: ' + maxPts);
+        /* Temporarily override the sampling mode for this chart only */
+        var origMode = document.getElementById('sampling-mode').value;
+        document.getElementById('sampling-mode').value = 'random';
+        var sampledPoints = _applyPointSampling(points);
+        document.getElementById('sampling-mode').value = origMode;  /* Restore original mode for other charts */
+    } else {
+        var sampledPoints = _applyPointSampling(points);
+    }
+
+    var wasSampled = (sampledPoints.length < points.length);
+
+    if (wasSampled) {
+
+        console.log('[Cumproba] Applied sampling: ' + points.length + ' → ' + sampledPoints.length + ' points');
+
+        points = sampledPoints;
+
+    } else {
+
+        console.log('[Cumproba] NO sampling applied - proceeding with ' + points.length + ' points');
+
+    }
+
+    console.log('[Cumproba] Using Random sampling to preserve representative original data distribution for accurate CDF');
+
 
 
     if (!points.length) { status.textContent = 'No numeric values in column ' + xCol; _spinStop(); return; }
@@ -12956,7 +13144,7 @@ function drawCumProba() {
 
             borderWidth: 1.8,
 
-            pointRadius: n <= 2000 ? 2 : 0,
+            pointRadius: n <= 2000 ? 2 : 1.5,
 
             showLine: true,
 
@@ -13118,8 +13306,147 @@ function drawCumProba() {
 
 /* --- Cumulative Probability (Sigma Scale) ------------------------------- */
 
-function drawCumSigma() {
+/* Helper function to finish Cum Sigma plot after async quantile calculation */
+function _finishCumSigmaPlot(groups, groupKeys, rankToSigma, status, xCol, xRx, xLog, colorDims, points, skipped) {
+    /* Read z-order from UI */
+    var zOrderElem = document.getElementById('z-order-input');
+    var zOrderInput = (zOrderElem && zOrderElem.value) ? zOrderElem.value.trim() : '';
+    var zOrderList = [];
+    if (zOrderInput) {
+        zOrderList = zOrderInput.split(',').map(function(s) { return s.trim(); });
+    }
 
+    /* Sort datasets based on z-order */
+    var sortedGroupKeys;
+
+    if (zOrderList.length > 0) {
+        /* Parse z-order list */
+        var convertedZOrderList = [];
+        zOrderList.forEach(function(item) {
+            var trimmed = item.trim();
+            var idx = parseInt(trimmed, 10);
+            if (!isNaN(idx) && idx >= 1 && idx <= groupKeys.length) {
+                convertedZOrderList.push(groupKeys[idx - 1]);
+            } else if (isNaN(idx)) {
+                convertedZOrderList.push(trimmed);
+            }
+        });
+
+        var inZOrder = [];
+        var notInZOrder = [];
+        groupKeys.forEach(function(g) {
+            if (convertedZOrderList.indexOf(g) >= 0) {
+                inZOrder.push(g);
+            } else {
+                notInZOrder.push(g);
+            }
+        });
+
+        inZOrder.sort(function(a, b) {
+            return convertedZOrderList.indexOf(a) - convertedZOrderList.indexOf(b);
+        });
+
+        notInZOrder.sort();
+        sortedGroupKeys = inZOrder.concat(notInZOrder);
+    } else {
+        sortedGroupKeys = groupKeys.sort();
+    }
+
+    /* Create datasets for each group using the PER-GROUP theoretical quantiles */
+    var datasets = sortedGroupKeys.map(function(g) {
+        var groupItems = groups[g];
+        var n = groupItems.length;
+
+        var cumulativeData = [];
+        groupItems.forEach(function(item) {
+            var sigma = rankToSigma[item.idx];
+            cumulativeData.push({ x: item.v, y: sigma });
+        });
+
+        cumulativeData.sort(function(a, b) { return a.x - b.x; });
+
+        var colorIdx = groupKeys.indexOf(g);
+
+        return {
+            label: g + ' (n=' + n.toLocaleString() + ')',
+            data: cumulativeData,
+            borderColor:     PALETTE[colorIdx % PALETTE.length],
+            backgroundColor: 'transparent',
+            borderWidth: 0.5,
+            pointRadius: n <= 2000 ? 2 : 1.5,
+            pointHoverRadius: n <= 2000 ? 4 : 0,
+            showLine: true,
+            tension: 0
+        };
+    });
+
+    if (chartInst) chartInst.destroy();
+    console.log('[Cum Sigma] Creating chart with ' + datasets.length + ' groups');
+
+    try {
+        chartInst = new Chart(document.getElementById('plot-canvas').getContext('2d'), {
+            type: 'scatter',
+            data: { datasets: datasets },
+            options: {
+                parsing: {
+                    xAxisKey: 'x',
+                    yAxisKey: 'y'
+                },
+                animation: false,
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: true, position: 'bottom',
+                              labels: { boxWidth: 12, font: { size: _legendFontSize || 10 } } },
+                    tooltip: { enabled: false, external: _htmlTooltip, callbacks: {
+                        label: function(item) {
+                            var sigma = item.parsed.y;
+                            return item.dataset.label + ':  ' + xCol + '=' + item.parsed.x.toFixed(6) +
+                                   '  --=' + sigma.toFixed(6);
+                        }
+                    }},
+                    annotation: { annotations: _buildAnnotations() }
+                },
+                scales: {
+                    x: Object.assign({
+                        type: xLog ? 'logarithmic' : 'linear',
+                        title: { display: true,
+                                 text: _axisXTitle(xCol + (xRx ? ' [' + xRx + ']' : '')) }
+                    }, getAxisScale('x-min', 'x-max', 'x-step')),
+                    y: Object.assign({
+                        type: 'linear',
+                        position: 'left',
+                        title: { display: true, text: _axisYTitle('Theoretical Quantiles (Sigma / --)') },
+                        grace: 0
+                    }, getAxisScale('y-min', 'y-max', 'y-step'))
+                }
+            }
+        });
+    } catch(e) { 
+        status.textContent = 'Chart error: ' + e.message; 
+        _spinStop(); 
+        return; 
+    }
+
+    _setPointLabels(chartInst, null);
+    _syncMainTitle('Cum Sigma - ' + xCol + (colorDims.length > 0 ? '  -  ' + colorDims.map(function(d){ return d.col; }).join(', ') : ''));
+    
+    var filtNote  = hasActiveFilters() ? ' - filtered' : '';
+    var nGroups   = groupKeys.length;
+    var splitDesc = colorDims.length > 0
+        ? (' grouped by ' + colorDims.map(function(d){ return d.col + (d.rx ? ' [' + d.rx + ']' : ''); }).join(', ')) : '';
+    
+    status.textContent = points.length.toLocaleString() + ' values' + splitDesc +
+        (nGroups > 1 ? ', ' + nGroups + ' groups' : '') +
+        (skipped > 0 ? ', ' + skipped + ' skipped' : '') + filtNote + _intervalNote();
+    
+    _showChartIdBadge();
+    _spinStop();
+}
+
+function drawCumSigma() {
+    console.log('[drawCumSigma] ENTRY POINT REACHED');
+    
     _resetTitleBar();
 
     var xCol     = document.getElementById('x-col').value;
@@ -13170,6 +13497,48 @@ function drawCumSigma() {
 
 
 
+    /* APPLY SAMPLING if user configured it - CRITICAL for large datasets */
+    /* FOR CUM SIGMA: FORCE RANDOM sampling mode to avoid decimation quantile bottleneck */
+    var userMode = document.getElementById('sampling-mode') ? document.getElementById('sampling-mode').value : 'none';
+    var maxPts = document.getElementById('max-points') ? parseInt(document.getElementById('max-points').value) : 10000;
+    maxPts = maxPts || 10000;
+    
+    console.log('[Cum Sigma] User sampling mode: ' + userMode + ', max points: ' + maxPts + ', current points: ' + points.length);
+    
+    /* CRITICAL: If user set sampling-mode to 'none', use ALL data - skip sampling entirely */
+    if (userMode !== 'none') {
+        console.log('[Cum Sigma] Applying sampling (mode=' + userMode + ')');
+        
+        /* Override to Random if user selected Decimation (decimation distorts cumulative plots) */
+        if (userMode === 'decimation') {
+            console.log('[Cum Sigma] FORCING Random sampling (user selected Decimation) - Decimation with Max Y distorts cumulative distributions');
+            console.log('[Cum Sigma] Original points: ' + points.length + ', Max points: ' + maxPts);
+            /* Temporarily override the sampling mode for this chart only */
+            var origMode = document.getElementById('sampling-mode').value;
+            document.getElementById('sampling-mode').value = 'random';
+            var sampledPoints = _applyPointSampling(points);
+            document.getElementById('sampling-mode').value = origMode;  /* Restore original mode for other charts */
+        } else {
+            var sampledPoints = _applyPointSampling(points);
+        }
+        
+        var wasSampled = (sampledPoints.length < points.length);
+        if (wasSampled) {
+            console.log('[Cum Sigma] Applied sampling: ' + points.length + ' → ' + sampledPoints.length + ' points');
+            points = sampledPoints;  /* Use sampled points for rest of computation */
+        }
+    } else {
+        console.log('[Cum Sigma] Sampling mode is "none" - using ALL ' + points.length + ' points (NO SAMPLING)');
+    }
+    
+    /* FOR COLOR-BY: Apply per-group sampling to avoid expensive multi-group quantile calculation */
+    if (hasColorDims && colorDims.length > 0) {
+        console.log('[Cum Sigma] Color dims detected - will sample PER COLOR GROUP to reduce quantile calculation cost');
+    }
+
+
+
+
     function groupKey(pt) {
 
         if (hasColorDims && pt._ri != null && allRows[pt._ri] != null) {
@@ -13186,81 +13555,126 @@ function drawCumSigma() {
 
 
 
-    /* First: Get all values with their original indices and row info */
-
-    var indexedPoints = [];
-
-    points.forEach(function(pt, idx) {
-
-        indexedPoints.push({ v: pt.x, idx: idx, _ri: pt._ri, origGroup: groupKey(pt) });
-
-    });
-
-    
-
-    /* Group the data by color/split FIRST */
+    /* Group the data by color/split FIRST (avoid creating intermediate indexedPoints array) */
 
     var groups = {};
 
-    indexedPoints.forEach(function(item) {
+    points.forEach(function(pt, idx) {
 
-        var g = item.origGroup;
+        var g = groupKey(pt);
 
         if (!groups[g]) groups[g] = [];
 
-        groups[g].push(item);
+        groups[g].push({ v: pt.x, idx: idx, _ri: pt._ri });
 
     });
 
     
 
     /* Calculate theoretical quantiles PER GROUP based on each group's own ranking */
-
+    /* OPTIMIZATION: Sample large color groups to keep quantile calculation fast */
+    /* CRITICAL: Use async chunks to avoid blocking browser on large datasets */
+    
     var rankToSigma = {};  /* Maps original index -> theoretical sigma */
-
-    Object.keys(groups).forEach(function(groupName) {
-
-        var groupItems = groups[groupName];
-
+    
+    /* Helper to yield to browser periodically during heavy computation */
+    function yieldToBrowser() {
+        return new Promise(function(resolve) { setTimeout(resolve, 0); });
+    }
+    
+    /* Process groups asynchronously to avoid blocking browser */
+    var groupKeysList = Object.keys(groups);
+    
+    /* Process groups sequentially, yielding between each group */
+    var processGroupIndex = 0;
+    
+    var processGroupItemIndex = 0;  /* For processing items within a group */
+    var currentGroupItems = [];  /* Items in current group */
+    var sortedGroupByValue = [];  /* Sorted items for current group */
+    var currentGroupN = 0;  /* Item count in current group */
+    
+    function processGroupItems() {
+        /* Process items within current group in smaller batches */
+        var batchSize = 100;  /* Process 100 items at a time before yielding */
+        var endIdx = Math.min(processGroupItemIndex + batchSize, sortedGroupByValue.length);
         
+        for (var i = processGroupItemIndex; i < endIdx; i++) {
+            var item = sortedGroupByValue[i];
+            var sortIdx = i;
+            /* Percentile position (0 to 1) within this group */
+            var pct = (sortIdx + 0.5) / currentGroupN;
+            
+            /* Simple inverse normal using approximation */
+            var sigma;
+            if (pct < 0.5) {
+                sigma = -Math.sqrt(-2 * Math.log(2 * pct));
+            } else {
+                sigma = Math.sqrt(-2 * Math.log(2 * (1 - pct)));
+            }
+            rankToSigma[item.idx] = sigma;
+        }
+        
+        processGroupItemIndex = endIdx;
+        
+        if (processGroupItemIndex < sortedGroupByValue.length) {
+            /* More items in this group - continue after brief yield */
+            status.textContent = 'Computing quantiles (' + processGroupIndex + '/' + groupKeysList.length + ') - item ' + processGroupItemIndex + '…';
+            setTimeout(processGroupItems, 0);
+        } else {
+            /* Done with this group - move to next */
+            processGroupIndex++;
+            status.textContent = 'Computing quantiles (' + processGroupIndex + '/' + groupKeysList.length + ')…';
+            setTimeout(processNextGroup, 0);
+        }
+    }
+    
+    function processNextGroup() {
+        if (processGroupIndex >= groupKeysList.length) {
+            /* All groups processed - continue with rendering */
+            _finishCumSigmaPlot(groups, groupKeysList, rankToSigma, status, xCol, xRx, xLog, colorDims, points, skipped);
+            return;
+        }
+        
+        var groupName = groupKeysList[processGroupIndex];
+        var groupItems = groups[groupName];
+        
+        /* If this color group is too large, sample it further - BUT ONLY if sampling is enabled */
+        if (userMode !== 'none') {
+            var maxPerGroup = Math.max(1000, Math.ceil(maxPts / 3));  /* Cap each group at ~1000 points */
+            if (groupItems.length > maxPerGroup) {
+                console.log('[Cum Sigma] Color group "' + groupName + '" has ' + groupItems.length + ' points - sampling to ' + maxPerGroup);
+                /* Deterministic sampling within this group */
+                var ratio = maxPerGroup / groupItems.length;
+                var sampledGroup = [];
+                groupItems.forEach(function(item, idx) {
+                    var hash = 0;
+                    for (var i = 0; i < idx.toString().length; i++) {
+                        hash = ((hash << 5) - hash) + idx.toString().charCodeAt(i);
+                        hash = hash & hash;
+                    }
+                    if ((Math.abs(hash) % 100000) / 100000 < ratio) {
+                        sampledGroup.push(item);
+                    }
+                });
+                groupItems = sampledGroup;
+            }
+        } else {
+            console.log('[Cum Sigma] Sampling disabled (mode=none) - using ALL ' + groupItems.length + ' points in group "' + groupName + '"');
+        }
 
         /* Sort this group's items by value to get ranks within the group */
-
-        var sortedGroupByValue = groupItems.slice().sort(function(a,b){ return a.v - b.v; });
-
-        var groupN = sortedGroupByValue.length;
-
+        sortedGroupByValue = groupItems.slice().sort(function(a,b){ return a.v - b.v; });
+        currentGroupN = sortedGroupByValue.length;
+        processGroupItemIndex = 0;  /* Reset item index for this group */
         
-
-        /* Calculate sigma for each item in this group based on its rank within the group */
-
-        sortedGroupByValue.forEach(function(item, sortIdx) {
-
-            /* Percentile position (0 to 1) within this group */
-
-            var pct = (sortIdx + 0.5) / groupN;  /* Use midpoint for better estimation */
-
-            
-
-            /* Simple inverse normal using approximation */
-
-            var sigma;
-
-            if (pct < 0.5) {
-
-                sigma = -Math.sqrt(-2 * Math.log(2 * pct));
-
-            } else {
-
-                sigma = Math.sqrt(-2 * Math.log(2 * (1 - pct)));
-
-            }
-
-            rankToSigma[item.idx] = sigma;
-
-        });
-
-    });
+        /* Start processing items within this group with micro-yields */
+        status.textContent = 'Computing quantiles (' + processGroupIndex + '/' + groupKeysList.length + ')…';
+        setTimeout(processGroupItems, 0);
+    }
+    
+    /* Start processing groups asynchronously */
+    processNextGroup();
+    return;
 
 
 
@@ -13430,7 +13844,7 @@ function drawCumSigma() {
 
             borderWidth: 0.5,
 
-            pointRadius: n <= 2000 ? 2 : 0,
+            pointRadius: n <= 2000 ? 2 : 1.5,
 
             pointHoverRadius: n <= 2000 ? 4 : 0,
 
