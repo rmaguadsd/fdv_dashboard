@@ -1,12 +1,12 @@
 ﻿#!/usr/bin/env python3
 import sys
 
-log_path = r'd:\FDV\git\fdv_dashboard\dev\aitools\fdv_chart\fdv_chart_startup.log'
+log_path = r'd:\FDV\git\fdv_dashboard\dev\aitools\fdv_chart_rev13\fdv_chart_startup.log'
 with open(log_path, 'w') as f:
     f.write("STARTUP_BEGIN\n")
 
 # Also set up a debug log file
-DEBUG_LOG = r'd:\FDV\git\fdv_dashboard\dev\aitools\fdv_chart\fdv_chart_debug.log'
+DEBUG_LOG = r'd:\FDV\git\fdv_dashboard\dev\aitools\fdv_chart_rev13\fdv_chart_debug.log'
 
 def debug_log(msg):
     """Write message to debug log and stdout"""
@@ -17,6 +17,8 @@ def debug_log(msg):
     except:
         pass
     print(msg, flush=True)
+
+debug_log("[INIT] debug_log function is working!")
 
 print("PYTHON_START")
 sys.stdout.flush()
@@ -373,6 +375,21 @@ def _get_total_rows(cache_id):
 class ThreadedHTTPServer(ThreadingMixIn, HTTPServer):
     """Handle each request in a separate thread so long parses don't block."""
     daemon_threads = True
+    timeout = 3600  # 1 hour socket timeout for large file uploads
+    
+    def server_bind(self):
+        """Bind server socket and configure it for large transfers"""
+        import socket
+        self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        # Enable TCP keepalive to prevent connection drops
+        self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+        if hasattr(socket, 'TCP_KEEPIDLE'):
+            self.socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPIDLE, 300)  # 5 min
+        if hasattr(socket, 'TCP_KEEPINTVL'):
+            self.socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPINTVL, 60)   # 1 min
+        if hasattr(socket, 'TCP_KEEPCNT'):
+            self.socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPCNT, 3)      # 3 probes
+        HTTPServer.server_bind(self)
 
 
 def parse_log_file(file_path, regex_include=None, regex_exclude=None, source_name=None):
@@ -649,21 +666,13 @@ def parse_log_file(file_path, regex_include=None, regex_exclude=None, source_nam
 
 
 def get_html():
-    """Return the HTML interface from external file with cache-busting timestamp"""
-    import time
+    """Return the HTML interface from external file"""
     html_file = Path(__file__).parent / 'fdv_chart.html'
     print(f"[get_html] Reading from: {html_file}", flush=True)
     print(f"[get_html] File exists: {html_file.exists()}", flush=True)
     html_content = html_file.read_text(encoding='utf-8')
     print(f"[get_html] Loaded {len(html_content)} bytes", flush=True)
     print(f"[get_html] Has 'point' selected: {'value=\"point\" selected' in html_content}", flush=True)
-    
-    # CACHE BUSTING: Inject current timestamp into version comment
-    # This forces browser to treat it as NEW content every time it's requested
-    timestamp = int(time.time() * 1000)  # milliseconds for extra uniqueness
-    cache_buster = f'<!-- CACHE-BUSTER: {timestamp} -->'
-    html_content = html_content.replace('<!-- VERSION: v2.1.3-xlog-fix-ts -->', cache_buster)
-    
     return html_content
 
 
@@ -686,9 +695,9 @@ def _run_parse_job(job_id, file_path, regex_include, regex_exclude, temp_path=No
     # Calculate dynamic timeout based on file size
     try:
         file_size_gb = os.path.getsize(file_path) / (1024 ** 3)
-        # Base 10 min + 10 min per GB, capped at 60 min
+        # Base 10 min + 10 min per GB, capped at 2 hours
         calculated_timeout = 600 + int(file_size_gb * 600)
-        MAX_PARSE_TIME = max(600, min(calculated_timeout, 3600))
+        MAX_PARSE_TIME = max(600, min(calculated_timeout, 7200))
     except:
         MAX_PARSE_TIME = 600  # Fallback to 10 min if size check fails
     
@@ -784,7 +793,7 @@ def _run_parse_multi_job(job_id, file_paths, regex_include, regex_exclude, temp_
     try:
         total_size_gb = sum(os.path.getsize(fp) / (1024 ** 3) for fp in file_paths)
         calculated_timeout = 600 + int(total_size_gb * 600)
-        MAX_PARSE_TIME = max(600, min(calculated_timeout, 3600))
+        MAX_PARSE_TIME = max(600, min(calculated_timeout, 7200))  # Cap at 2 hours for large datasets
     except:
         MAX_PARSE_TIME = 600  # Fallback to 10 min if size check fails
     
@@ -857,27 +866,44 @@ def _run_parse_multi_job(job_id, file_paths, regex_include, regex_exclude, temp_
         elapsed = time.time() - start_time
         csv_id = 'csv_' + uuid.uuid4().hex[:8]
         
+        debug_log(f"[PARSE_MULTI_JOB] All files parsed, total_rows={total_row_count}, headers={len(headers) if headers else 0}")
+        
         # Retrieve first 500 rows for preview
         preview_rows = []
         if primary_cache_id:
-            db_path = f"{CACHE_DIR}/{primary_cache_id}.db"
-            if Path(db_path).exists():
-                db = sqlite3.connect(db_path, check_same_thread=False)
-                db.row_factory = sqlite3.Row
-                col_names = ','.join([f'"{h}"' for h in headers])
-                cursor = db.execute(f'SELECT {col_names} FROM rows LIMIT 500')
-                preview_rows = [list(row) for row in cursor.fetchall()]
-                db.close()
+            try:
+                db_path = f"{CACHE_DIR}/{primary_cache_id}.db"
+                if Path(db_path).exists():
+                    db = sqlite3.connect(db_path, check_same_thread=False)
+                    db.row_factory = sqlite3.Row
+                    col_names = ','.join([f'"{h}"' for h in headers])
+                    cursor = db.execute(f'SELECT {col_names} FROM rows LIMIT 500')
+                    preview_rows = [list(row) for row in cursor.fetchall()]
+                    db.close()
+                    debug_log(f"[PARSE_MULTI_JOB] Retrieved {len(preview_rows)} preview rows")
+            except Exception as preview_err:
+                debug_log(f"[PARSE_MULTI_JOB] Error retrieving preview: {preview_err}")
+                errors.append(f'Preview error: {preview_err}')
         
-        parsed_cache[csv_id] = {
-            'headers': headers, 
-            'cache_id': primary_cache_id,
-            'row_count': total_row_count,
-            'is_sqlite': True
-        }
+        try:
+            parsed_cache[csv_id] = {
+                'headers': headers, 
+                'cache_id': primary_cache_id,
+                'row_count': total_row_count,
+                'is_sqlite': True
+            }
+            debug_log(f"[PARSE_MULTI_JOB] Added to parsed_cache: {csv_id}")
+        except Exception as cache_err:
+            debug_log(f"[PARSE_MULTI_JOB] Error updating parsed_cache: {cache_err}")
+            raise
         
         # Save metadata for session recovery after restart
-        _save_cache_metadata(primary_cache_id, csv_id, headers)
+        try:
+            _save_cache_metadata(primary_cache_id, csv_id, headers)
+            debug_log(f"[PARSE_MULTI_JOB] Saved metadata for {csv_id}")
+        except Exception as meta_err:
+            debug_log(f"[PARSE_MULTI_JOB] Error saving metadata: {meta_err}")
+            errors.append(f'Metadata save error: {meta_err}')
 
         PREVIEW = 500
         result = {
@@ -889,11 +915,16 @@ def _run_parse_multi_job(job_id, file_paths, regex_include, regex_exclude, temp_
             'parse_time_seconds': elapsed,
             'has_more': total_row_count > PREVIEW
         }
+        debug_log(f"[PARSE_MULTI_JOB] About to update job state to done")
         with parse_jobs_lock:
             parse_jobs[job_id]['state'] = 'done'
             parse_jobs[job_id]['result'] = result
+        debug_log(f"[PARSE_MULTI_JOB] Job completed successfully: {job_id}")
 
     except Exception as e:
+        import traceback
+        debug_log(f"[PARSE_MULTI_JOB] EXCEPTION: {e}")
+        debug_log(f"[PARSE_MULTI_JOB] Traceback: {traceback.format_exc()}")
         with parse_jobs_lock:
             parse_jobs[job_id]['state'] = 'error'
             parse_jobs[job_id]['error'] = str(e)
@@ -903,41 +934,6 @@ def _run_parse_multi_job(job_id, file_paths, regex_include, regex_exclude, temp_
                 Path(tp).unlink(missing_ok=True)
             except Exception:
                 pass
-
-
-def _parse_multipart_part_multi(part, file_contents, regex_include_ref, regex_exclude_ref):
-    """Parse a single multipart part for multi-file upload (streaming-safe)"""
-    if not part.strip():
-        return
-    
-    if b'name="file"' in part and b'filename=' in part:
-        lines = part.split(b'\r\n')
-        for i, line in enumerate(lines):
-            if i == 0:
-                continue
-            if line == b'':
-                content = b'\r\n'.join(lines[i+1:-1])
-                fname = ''
-                disp = lines[1].decode('utf-8', errors='ignore') if len(lines) > 1 else ''
-                m = re.search(r'filename="([^"]+)"', disp)
-                if m:
-                    fname = m.group(1)
-                file_contents.append((fname, content))
-                return
-    elif b'name="regex_include"' in part:
-        lines = part.split(b'\r\n')
-        for i, line in enumerate(lines):
-            if i == 0:
-                continue
-            if line == b'':
-                return b'\r\n'.join(lines[i+1:-1]).decode('utf-8', errors='ignore').strip()
-    elif b'name="regex_exclude"' in part:
-        lines = part.split(b'\r\n')
-        for i, line in enumerate(lines):
-            if i == 0:
-                continue
-            if line == b'':
-                return b'\r\n'.join(lines[i+1:-1]).decode('utf-8', errors='ignore').strip()
 
 
 def _send_json(handler, status, obj):
@@ -954,34 +950,34 @@ class RequestHandler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         """Handle GET requests"""
-        print(f"[DEBUG] GET {self.path}", flush=True)
+        msg = f"[GET] {self.path} - {time.time()}"
+        print(msg, flush=True)
+        sys.stdout.flush()
+        debug_log(f"[GET] {self.path}")
         # Treat /fdv_chart.html (with or without query string) as an alias for /,
         # so links/bookmarks created against the static dev server still work.
         _root_path = self.path.split('?', 1)[0]
         if _root_path in ('/', '/fdv_chart.html', '/index.html'):
             # Serve HTML interface
             try:
-                print(f"[DEBUG] Serving root path", flush=True)
+                debug_log(f"[GET] Serving root path")
                 body = get_html().encode('utf-8')
-                print(f"[DEBUG] Got HTML body: {len(body)} bytes", flush=True)
+                debug_log(f"[GET] Got HTML body: {len(body)} bytes")
                 self.send_response(200)
-                print(f"[DEBUG] Sent response code", flush=True)
+                debug_log(f"[GET] Sent response code")
                 self.send_header('Content-Type', 'text/html; charset=utf-8')
                 self.send_header('Content-Length', len(body))
-                # AGGRESSIVE cache busting - force browser to re-fetch on every request
-                self.send_header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0, post-check=0, pre-check=0')
+                self.send_header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
                 self.send_header('Pragma', 'no-cache')
-                self.send_header('Expires', '-1')
-                # Unique ETag based on current milliseconds to force re-fetch
-                current_ms = int(time.time() * 1000000)
-                self.send_header('ETag', f'"{current_ms}"')
-                print(f"[DEBUG] Sending headers with ETag: {current_ms}", flush=True)
+                self.send_header('Expires', '0')
+                self.send_header('ETag', f'"{int(time.time() * 1000)}"')
+                debug_log(f"[GET] Sending headers")
                 self.end_headers()
-                print(f"[DEBUG] Headers done, writing body", flush=True)
+                debug_log(f"[GET] Headers done, writing body")
                 self.wfile.write(body)
-                print(f"[DEBUG] Body written, done", flush=True)
+                debug_log(f"[GET] Body written, done")
             except Exception as e:
-                print(f"ERROR serving /: {e}", flush=True)
+                debug_log(f"[GET] ERROR serving /: {e}")
                 import traceback
                 traceback.print_exc(file=sys.stderr)
                 try:
@@ -1045,22 +1041,6 @@ class RequestHandler(BaseHTTPRequestHandler):
             cached = parsed_cache[csv_id]
             headers = cached['headers']
             
-            # Load rows from SQLite if needed
-            if cached.get('is_sqlite'):
-                cache_id = cached.get('cache_id')
-                db_path = f"{CACHE_DIR}/{cache_id}.db"
-                rows = []
-                if Path(db_path).exists():
-                    db = sqlite3.connect(db_path, check_same_thread=False)
-                    db.row_factory = sqlite3.Row
-                    col_names = ','.join([f'"{h}"' for h in headers])
-                    cursor = db.execute(f'SELECT {col_names} FROM rows')
-                    rows = [list(row) for row in cursor.fetchall()]
-                    db.close()
-            else:
-                # Fallback to in-memory rows for backward compatibility
-                rows = cached.get('rows', [])
-
             def col_idx(name):
                 try: return headers.index(name)
                 except ValueError: return None
@@ -1093,17 +1073,61 @@ class RequestHandler(BaseHTTPRequestHandler):
 
             points = []
             skipped = 0
-            step = max(1, len(rows) // max_pts) if len(rows) > max_pts else 1
-            for row in rows[::step]:
-                xv = extract_num(row[xi], x_regex)
-                yv = extract_num(row[yi], y_regex)
-                if xv is None or yv is None:
-                    skipped += 1
-                    continue
-                pt = {'x': xv, 'y': yv}
-                if ci is not None and ci < len(row):
-                    pt['group'] = row[ci]
-                points.append(pt)
+            row_count = 0
+            sampled_count = 0
+            
+            # Stream rows from SQLite without loading all into memory
+            if cached.get('is_sqlite'):
+                cache_id = cached.get('cache_id')
+                db_path = f"{CACHE_DIR}/{cache_id}.db"
+                if Path(db_path).exists():
+                    db = sqlite3.connect(db_path, check_same_thread=False)
+                    db.row_factory = sqlite3.Row
+                    col_names = ','.join([f'"{h}"' for h in headers])
+                    cursor = db.execute(f'SELECT {col_names} FROM rows')
+                    
+                    # Stream rows in batches to avoid loading all into memory
+                    batch_size = 10000
+                    while True:
+                        batch = cursor.fetchmany(batch_size)
+                        if not batch:
+                            break
+                        
+                        for row in batch:
+                            row_count += 1
+                            # Sampling: only process every Nth row for plotting
+                            step = max(1, row_count // max_pts) if row_count > max_pts else 1
+                            if row_count % step != 0:
+                                continue
+                            
+                            row_list = list(row)
+                            xv = extract_num(row_list[xi], x_regex)
+                            yv = extract_num(row_list[yi], y_regex)
+                            if xv is None or yv is None:
+                                skipped += 1
+                                continue
+                            pt = {'x': xv, 'y': yv}
+                            if ci is not None and ci < len(row_list):
+                                pt['group'] = row_list[ci]
+                            points.append(pt)
+                            sampled_count += 1
+                    
+                    db.close()
+            else:
+                # Fallback to in-memory rows for backward compatibility
+                rows = cached.get('rows', [])
+                row_count = len(rows)
+                step = max(1, len(rows) // max_pts) if len(rows) > max_pts else 1
+                for row in rows[::step]:
+                    xv = extract_num(row[xi], x_regex)
+                    yv = extract_num(row[yi], y_regex)
+                    if xv is None or yv is None:
+                        skipped += 1
+                        continue
+                    pt = {'x': xv, 'y': yv}
+                    if ci is not None and ci < len(row):
+                        pt['group'] = row[ci]
+                    points.append(pt)
 
             resp = json.dumps({'success': True, 'points': points, 'skipped': skipped}).encode()
             self.send_response(200)
@@ -1395,6 +1419,7 @@ class RequestHandler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         """Handle POST requests"""
+        debug_log(f"[POST] {self.path}")
         if self.path == '/parse_path':
             # Server-side path parse — starts async job, returns job_id immediately
             try:
@@ -1576,75 +1601,96 @@ class RequestHandler(BaseHTTPRequestHandler):
             # Multi-file upload — save each to temp, parse all, concatenate
             try:
                 content_len = int(self.headers.get('Content-Length', 0))
-                MAX_UPLOAD_SIZE = 10 * 1024 * 1024 * 1024  # 10 GB
-                if content_len > MAX_UPLOAD_SIZE:
-                    raise ValueError(f'Upload too large (>{MAX_UPLOAD_SIZE / (1024**3):.0f} GB)')
+                debug_log(f"[/parse_multi] Starting upload, Content-Length: {content_len / (1024**3):.2f} GB")
+                
+                if content_len > 10 * 1024 * 1024 * 1024:  # Increased to 10 GB
+                    raise ValueError('Upload too large (>10 GB)')
 
                 # Stream directly to temp file first
                 temp_upload_path = Path(tempfile.gettempdir()) / ('fdv_upload_' + uuid.uuid4().hex + '.tmp')
                 bytes_written = 0
-                max_chunk = 2 * 1024 * 1024  # 2 MB chunks (4x faster)
+                max_chunk = 1024 * 1024  # 1 MB chunks (faster streaming)
+                last_log = 0
                 
+                debug_log(f"[/parse_multi] Streaming to: {temp_upload_path}")
                 with open(temp_upload_path, 'wb') as tmp:
                     while bytes_written < content_len:
-                        chunk_size = min(max_chunk, content_len - bytes_written)
-                        chunk = self.rfile.read(chunk_size)
-                        if not chunk:
-                            break
-                        tmp.write(chunk)
-                        bytes_written += len(chunk)
-                        if bytes_written % (100 * 1024 * 1024) == 0:  # Log every 100MB
-                            debug_log(f"[UPLOAD] {bytes_written / (1024**3):.2f} GB written...")
+                        try:
+                            chunk_size = min(max_chunk, content_len - bytes_written)
+                            chunk = self.rfile.read(chunk_size)
+                            if not chunk:
+                                break
+                            tmp.write(chunk)
+                            bytes_written += len(chunk)
+                            
+                            # Log progress every 100 MB
+                            if bytes_written - last_log > 100 * 1024 * 1024:
+                                debug_log(f"[/parse_multi] Streamed {bytes_written / (1024**3):.2f} GB of {content_len / (1024**3):.2f} GB")
+                                last_log = bytes_written
+                        except Exception as chunk_err:
+                            debug_log(f"[/parse_multi] Error reading chunk: {chunk_err}")
+                            raise
 
-                # Parse multipart from disk using streaming (memory-safe)
+                # SEND 202 RESPONSE IMMEDIATELY after streaming completes (before parsing)
+                job_id = 'job_' + uuid.uuid4().hex[:8]
+                with parse_jobs_lock:
+                    parse_jobs[job_id] = {'state': 'pending', 'result': None, 'error': None}
+
+                debug_log(f"[/parse_multi] Upload complete, parsing multipart from disk")
+                
+                # Now parse multipart from disk
+                body = temp_upload_path.read_bytes()
+                
                 boundary = None
+                # Extract boundary from Content-Type header
                 content_type = self.headers.get('content-type', '')
                 if 'multipart/form-data' in content_type:
                     parts = content_type.split('boundary=')
                     if len(parts) > 1:
-                        boundary = parts[1].strip(' "')
+                        boundary = parts[1].strip(' "')  # Remove surrounding quotes and spaces
 
                 if not boundary:
                     raise ValueError('Missing multipart boundary')
+
+                boundary_bytes = ('--' + boundary).encode()
+                parts_list = body.split(boundary_bytes)
 
                 file_contents = []   # list of (filename, bytes)
                 regex_include = ''
                 regex_exclude = ''
 
-                # Stream multipart file with 8MB buffer (memory-efficient)
-                boundary_bytes = ('--' + boundary).encode()
-                buffer_size = 8 * 1024 * 1024  # 8MB buffer
-                current_part = b''
-                
-                with open(temp_upload_path, 'rb') as f:
-                    while True:
-                        chunk = f.read(buffer_size)
-                        if not chunk:
-                            # Process final part
-                            if current_part.strip():
-                                _parse_multipart_part_multi(current_part, file_contents, regex_include, regex_exclude)
-                            break
-                        
-                        current_part += chunk
-                        
-                        # Find boundaries in buffer
-                        while True:
-                            idx = current_part.find(boundary_bytes)
-                            if idx == -1:
+                for part in parts_list:
+                    debug_log(f"[parse_multi] Processing part, size={len(part)} bytes")
+                    if b'name="file"' in part and b'filename=' in part:
+                        lines = part.split(b'\r\n')
+                        for i, line in enumerate(lines):
+                            if i == 0: continue
+                            if line == b'':
+                                content = b'\r\n'.join(lines[i+1:-1])
+                                fname = ''
+                                disp = lines[1].decode('utf-8', errors='ignore') if len(lines) > 1 else ''
+                                m = re.search(r'filename="([^"]+)"', disp)
+                                if m:
+                                    fname = m.group(1)
+                                debug_log(f"[parse_multi] Found file: {fname}, size={len(content)} bytes")
+                                file_contents.append((fname, content))
                                 break
-                            
-                            # Process part before boundary
-                            part = current_part[:idx]
-                            if part.strip():
-                                _parse_multipart_part_multi(part, file_contents, regex_include, regex_exclude)
-                            
-                            # Move past boundary
-                            current_part = current_part[idx + len(boundary_bytes):]
-                
-                # Extract final values from parsed parts
-                for fname, content in file_contents:
-                    debug_log(f"[parse_multi] Found file: {fname}, size={len(content)} bytes")
-                
+                    elif b'name="regex_include"' in part:
+                        lines = part.split(b'\r\n')
+                        for i, line in enumerate(lines):
+                            if i == 0: continue
+                            if line == b'':
+                                regex_include = b'\r\n'.join(lines[i+1:-1]).decode('utf-8', errors='ignore').strip()
+                                break
+                    elif b'name="regex_exclude"' in part:
+                        lines = part.split(b'\r\n')
+                        for i, line in enumerate(lines):
+                            if i == 0: continue
+                            if line == b'':
+                                regex_exclude = b'\r\n'.join(lines[i+1:-1]).decode('utf-8', errors='ignore').strip()
+                                break
+
+                del body
                 try:
                     temp_upload_path.unlink()
                 except:
@@ -1667,10 +1713,20 @@ class RequestHandler(BaseHTTPRequestHandler):
                     orig_names.append(Path(fname).name if fname else None)
                 del file_contents
 
-                job_id = 'job_' + uuid.uuid4().hex[:8]
-                with parse_jobs_lock:
-                    parse_jobs[job_id] = {'state': 'pending', 'result': None, 'error': None}
-
+                debug_log(f"[/parse_multi] Created job {job_id}, sending 202 response now")
+                
+                # SEND 202 RESPONSE IMMEDIATELY (before starting parse job)
+                try:
+                    _send_json(self, 202, {
+                        'success': False, 'state': 'pending', 'job_id': job_id,
+                        'file_count': len(file_paths)
+                    })
+                    debug_log(f"[/parse_multi] 202 response sent successfully for job {job_id}")
+                except Exception as send_err:
+                    debug_log(f"[/parse_multi] ERROR sending 202 response: {send_err}")
+                    raise
+                
+                # NOW start the parse job in a background thread (after response sent)
                 threading.Thread(
                     target=_run_parse_multi_job,
                     args=(job_id, file_paths, regex_include if regex_include else None,
@@ -1678,13 +1734,14 @@ class RequestHandler(BaseHTTPRequestHandler):
                     daemon=True
                 ).start()
 
-                _send_json(self, 202, {
-                    'success': False, 'state': 'pending', 'job_id': job_id,
-                    'file_count': len(file_paths)
-                })
-
             except Exception as e:
-                _send_json(self, 400, {'success': False, 'error': str(e)})
+                debug_log(f"[/parse_multi] EXCEPTION in /parse_multi: {e}")
+                import traceback
+                debug_log(f"[/parse_multi] Traceback: {traceback.format_exc()}")
+                try:
+                    _send_json(self, 400, {'success': False, 'error': str(e)})
+                except:
+                    pass
 
         elif self.path == '/analyze':
             # Single-turn AI analysis — no session history
@@ -2306,18 +2363,26 @@ class RequestHandler(BaseHTTPRequestHandler):
                 if cached is None:
                     raise ValueError('csv_id not found in cache — re-parse the file first')
                 
-                # Load rows from SQLite if needed
+                # Load rows from SQLite in batches to avoid OOM
+                rows = []
                 if cached.get('is_sqlite'):
                     cache_id = cached.get('cache_id')
                     db_path = f"{CACHE_DIR}/{cache_id}.db"
-                    rows = []
                     if Path(db_path).exists():
                         db = sqlite3.connect(db_path, check_same_thread=False)
                         db.row_factory = sqlite3.Row
                         headers = cached.get('headers', [])
                         col_names = ','.join([f'"{h}"' for h in headers])
                         cursor = db.execute(f'SELECT {col_names} FROM rows')
-                        rows = [list(row) for row in cursor.fetchall()]
+                        
+                        # Stream rows in batches
+                        batch_size = 10000
+                        while True:
+                            batch = cursor.fetchmany(batch_size)
+                            if not batch:
+                                break
+                            rows.extend([list(row) for row in batch])
+                        
                         db.close()
                 else:
                     rows = cached.get('rows', [])
@@ -2412,26 +2477,69 @@ class RequestHandler(BaseHTTPRequestHandler):
             try:
                 length = int(self.headers.get('Content-Length', 0))
                 body   = json.loads(self.rfile.read(length).decode('utf-8'))
-                d      = (body.get('dir', '') or '').strip()
-                fname  = os.path.basename((body.get('file', '') or '').strip())
-                if not d or not fname:
-                    raise ValueError('dir and file are required')
-                if not (fname.endswith('.fdv_recipe') or fname.endswith('.fdv_session')):
-                    raise ValueError('Invalid file type')
-                fpath = os.path.join(d, fname)
-                if not os.path.isfile(fpath):
-                    raise ValueError('File not found: ' + fname)
                 os.remove(fpath)
                 _send_json(self, 200, {'success': True})
             except Exception as e:
                 _send_json(self, 200, {'success': False, 'error': str(e)})
 
+        elif self.path == '/calculate_quantiles':
+            """Server-side cum_sigma quantile calculation endpoint"""
+            try:
+                content_len = int(self.headers.get('Content-Length', 0))
+                body = json.loads(self.rfile.read(content_len).decode('utf-8'))
+                
+                tile_data = body.get('tileData', [])
+                color_groups = body.get('colorGroups', {})
+                
+                if not tile_data or not color_groups:
+                    raise ValueError('tileData and colorGroups required')
+                
+                # Calculate quantiles on server using Python (much faster)
+                rank_to_sigma = {}
+                
+                for group_name, group_indices in color_groups.items():
+                    # Extract values for this group
+                    group_items = []
+                    for idx in group_indices:
+                        if idx >= 0 and idx < len(tile_data):
+                            val = tile_data[idx]
+                            if val is not None:
+                                group_items.append((idx, val))
+                    
+                    if not group_items:
+                        continue
+                    
+                    # Sort by value to get ranks within group
+                    group_items_sorted = sorted(group_items, key=lambda x: x[1])
+                    group_n = len(group_items_sorted)
+                    
+                    # Calculate sigma for each item using percentile position
+                    for sort_idx, (orig_idx, val) in enumerate(group_items_sorted):
+                        # Percentile position (0 to 1) within this group
+                        pct = (sort_idx + 0.5) / group_n
+                        
+                        # Simple inverse normal approximation
+                        import math
+                        if pct < 0.5:
+                            sigma = -math.sqrt(-2 * math.log(2 * pct))
+                        else:
+                            sigma = math.sqrt(-2 * math.log(2 * (1 - pct)))
+                        
+                        rank_to_sigma[orig_idx] = sigma
+                
+                debug_log(f"[calculate_quantiles] Calculated {len(rank_to_sigma)} quantiles for {len(color_groups)} groups")
+                _send_json(self, 200, {'success': True, 'rankToSigma': rank_to_sigma})
+                
+            except Exception as e:
+                debug_log(f"[calculate_quantiles] Error: {e}")
+                _send_json(self, 400, {'success': False, 'error': str(e)})
+
         else:
             self.send_error(404)
 
     def log_message(self, format, *args):
-        """Suppress request logging"""
-        pass
+        """Log request messages to stdout"""
+        print(f"[{self.log_date_time_string()}] {format % args}", flush=True)
 
 
 def main():
@@ -2459,7 +2567,7 @@ def main():
         except ValueError:
             _SERVER_STORE_DIR = a.strip()
 
-    log_file = r'd:\FDV\git\fdv_dashboard\dev\aitools\fdv_chart\server.log'
+    log_file = r'd:\FDV\git\fdv_dashboard\dev\aitools\fdv_chart_rev13\server.log'
     with open(log_file, 'w') as f:
         f.write("Starting FDV Chart Parser...\n")
         f.flush()
@@ -2467,19 +2575,38 @@ def main():
     print("Starting FDV Chart Parser...", file=sys.stderr, flush=True)
     print("Port      : " + str(_SERVER_PORT), file=sys.stderr, flush=True)
     print("Store dir : " + (_SERVER_STORE_DIR or '(none)'), file=sys.stderr, flush=True)
-    
-    # Recover any orphaned sessions from previous server runs
-    print("Recovering sessions from cache...", file=sys.stderr, flush=True)
-    _recover_sessions_from_cache()
+    print("Skipping session recovery for faster startup...", file=sys.stderr, flush=True)
+    # NOTE: Session recovery is now done on-demand (when browser requests /session-list)
+    # This allows the server to start immediately instead of blocking during recovery
     
     try:
         server = ThreadedHTTPServer(('0.0.0.0', _SERVER_PORT), RequestHandler)
+        # Set socket options for large file uploads
+        import socket
+        server.socket.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 16 * 1024 * 1024)  # 16 MB recv buffer
+        server.socket.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 16 * 1024 * 1024)  # 16 MB send buffer
         server.socket.settimeout(None)   # no accept() timeout; threads handle per-request I/O
         with open(log_file, 'a') as f:
             f.write("FDV Chart Parser is running at http://0.0.0.0:{} (all interfaces)\n".format(_SERVER_PORT))
             f.flush()
         print("FDV Chart Parser is running at http://0.0.0.0:{} (all interfaces)".format(_SERVER_PORT), file=sys.stderr, flush=True)
         print("Press Ctrl+C to stop", file=sys.stderr, flush=True)
+        
+        # Start heartbeat thread to show server is alive
+        def heartbeat():
+            start_time = time.time()
+            while True:
+                time.sleep(30)
+                uptime = int(time.time() - start_time)
+                with parse_jobs_lock:
+                    pending = sum(1 for j in parse_jobs.values() if j.get('state') == 'pending')
+                    running = sum(1 for j in parse_jobs.values() if j.get('state') == 'running')
+                    completed = sum(1 for j in parse_jobs.values() if j.get('state') == 'complete')
+                debug_log(f"[HEARTBEAT] uptime={uptime}s, pending={pending}, running={running}, completed={completed}")
+        
+        hb_thread = threading.Thread(target=heartbeat, daemon=True)
+        hb_thread.start()
+        
         server.serve_forever()
     except KeyboardInterrupt:
         print("\nShutting down...", file=sys.stderr, flush=True)
