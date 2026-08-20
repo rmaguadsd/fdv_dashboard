@@ -1,0 +1,7 @@
+STDERR_START
+Starting FDV Chart Parser...
+Port      : 5059
+Store dir : D:\FDV\recipes
+Skipping session recovery for faster startup...
+FDV Chart Parser is running at http://0.0.0.0:5059 (all interfaces)
+Press Ctrl+C to stop
