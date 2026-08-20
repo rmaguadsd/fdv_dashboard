@@ -10105,7 +10105,7 @@ function _buildTileChart(canvas, ct, tileData, xCol, yCol, xRx, yRx, colCol, col
 
                 plugins: { 
 
-                    legend: { display: histDatasets.length > 1, position: 'bottom',
+                    legend: { display: histDatasets.length > 0, position: 'bottom',
 
                               labels: { boxWidth: 10, font: { size: _legendFontSize || 9 } } }, 
 
@@ -10280,7 +10280,7 @@ function _buildTileChart(canvas, ct, tileData, xCol, yCol, xRx, yRx, colCol, col
 
                 plugins: {
 
-                    legend: { display: cpDatasets.length > 1, position: 'bottom',
+                    legend: { display: cpDatasets.length > 0, position: 'bottom',
 
                               labels: { boxWidth: 10, font: { size: _legendFontSize || 9 } } },
 
@@ -10635,7 +10635,7 @@ function _buildTileChart(canvas, ct, tileData, xCol, yCol, xRx, yRx, colCol, col
 
                 plugins: {
 
-                    legend: { display: csDatasets.length > 1, position: 'bottom',
+                    legend: { display: csDatasets.length > 0, position: 'bottom',
 
                               labels: { boxWidth: 10, font: { size: _legendFontSize || 9 } } },
 
@@ -11020,7 +11020,7 @@ function _buildTileChart(canvas, ct, tileData, xCol, yCol, xRx, yRx, colCol, col
 
             plugins: {
 
-                legend: { display: datasets.length > 1, position: 'bottom',
+                legend: { display: datasets.length > 0, position: 'bottom',
 
                           labels: { boxWidth: 10, font: { size: _legendFontSize || 9 } } },
 
@@ -11111,8 +11111,6 @@ function _drawSplitCharts() {
         var iv      = _getIntervals();
 
         
-        console.log('[_drawSplitCharts] RAW xRx from input: "' + document.getElementById('x-regex').value + '"');
-        console.log('[_drawSplitCharts] TRIMMED xRx: "' + xRx + '"');
         console.log('[_drawSplitCharts] REGEX VALUES: xRx="' + xRx + '" | yRx="' + yRx + '" | colorRx="' + colorRx + '"');
 
         /* SAFETY: If xCol is empty in split mode, auto-select a sensible default
